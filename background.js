@@ -951,11 +951,19 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
  * Keep session when tab navigates to new URL
  */
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.url) {
-    console.log('[Navigation] Tab', tabId, 'navigated to', changeInfo.url);
+  // Update badge when URL changes OR when page finishes loading
+  // This ensures badge is set during both navigation and refresh (Ctrl+R)
+  if (changeInfo.url || changeInfo.status === 'complete') {
+    if (changeInfo.url) {
+      console.log('[Navigation] Tab', tabId, 'navigated to', changeInfo.url);
+    }
+    if (changeInfo.status === 'complete') {
+      console.log('[Navigation] Tab', tabId, 'page load complete');
+    }
+
     const sessionId = sessionStore.tabToSession[tabId];
     if (sessionId) {
-      console.log('[Navigation] Tab', tabId, 'still has session', sessionId);
+      console.log('[Navigation] Tab', tabId, 'has session', sessionId);
       // Update badge
       const session = sessionStore.sessions[sessionId];
       if (session) {
@@ -963,6 +971,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       }
     } else {
       console.log('[Navigation] Tab', tabId, 'has no session');
+      // Clear badge for non-session tabs
+      clearBadge(tabId);
     }
   }
 });
