@@ -1,0 +1,5 @@
+# Ignore Claude-related data
+.claude/
+
+# Ignore commit message file
+commit_message.txt
