@@ -119,15 +119,37 @@
     let cookiesInitialized = false;
 
     /**
-     * Fetches cookies asynchronously and updates cache
+     * Timestamp of last cache refresh
+     * @type {number}
      */
-    async function fetchCookies() {
+    let lastCacheRefreshTime = 0;
+
+    /**
+     * Cache refresh interval (milliseconds)
+     * SECURITY FIX: Periodic refresh to ensure HTTP-set cookies are visible
+     */
+    const CACHE_REFRESH_INTERVAL = 500;
+
+    /**
+     * Fetches cookies asynchronously and updates cache
+     * @param {boolean} force - Force refresh even if recently refreshed
+     */
+    async function fetchCookies(force = false) {
+      const now = Date.now();
+
+      // SECURITY FIX: Check if cache needs refresh
+      if (!force && cookiesInitialized && (now - lastCacheRefreshTime) < CACHE_REFRESH_INTERVAL) {
+        // Cache is still fresh
+        return;
+      }
+
       try {
         const cookies = await sendMessageToContentScript({
           type: 'GET_COOKIE'
         });
         cachedCookies = cookies;
         cookiesInitialized = true;
+        lastCacheRefreshTime = now;
         console.log('[Cookie Isolation - Page] Cookies fetched and cached');
       } catch (error) {
         console.error('[Cookie Isolation - Page] Error fetching cookies:', error);
@@ -147,8 +169,8 @@
         });
         console.log('[Cookie Isolation - Page] Cookie set:', cookieString);
 
-        // Refresh cached cookies after setting
-        await fetchCookies();
+        // SECURITY FIX: Force refresh to get updated cookie list
+        await fetchCookies(true);
       } catch (error) {
         console.error('[Cookie Isolation - Page] Error setting cookie:', error);
         throw error;
@@ -163,8 +185,13 @@
       if (cookieDescriptor && cookieDescriptor.configurable) {
         Object.defineProperty(document, 'cookie', {
           get() {
+            // SECURITY FIX: Trigger cache refresh on read to get latest HTTP-set cookies
+            // This is async but fire-and-forget to maintain synchronous API
+            fetchCookies(false).catch(err => {
+              console.error('[Cookie Isolation - Page] Background refresh failed:', err);
+            });
+
             // For synchronous access, return cached cookies
-            // Note: This may be stale if cookies were modified elsewhere
             if (!cookiesInitialized) {
               console.warn('[Cookie Isolation - Page] Cookies not yet initialized, returning empty string');
               return '';

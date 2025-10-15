@@ -42,13 +42,15 @@
 
   /**
    * Creates a prefixed key with session ID
+   * SECURITY FIX: Throws error instead of falling back to unprefixed key
    * @param {string} key - The original key
    * @returns {string} The prefixed key
+   * @throws {Error} If session ID is not available
    */
   function getPrefixedKey(key) {
     if (!currentSessionId) {
-      console.warn('[Storage Isolation] Session ID not ready, operation may fail');
-      return key; // Fallback to unprefixed key
+      // SECURITY: Explicitly fail instead of using unprefixed key
+      throw new Error('[Storage Isolation] SECURITY: Cannot access storage without session ID');
     }
     return `__SID_${currentSessionId}__${key}`;
   }
@@ -356,6 +358,7 @@
 
   /**
    * Fetches the current session ID from the background script with retry logic
+   * SECURITY FIX: Removed 'default' fallback - fail explicitly instead
    * @returns {Promise<boolean>}
    */
   async function fetchSessionId() {
@@ -395,12 +398,13 @@
       }
     }
 
-    // Only warn on final failure
-    console.warn('%c[Storage Isolation] ⚠ No session assigned to this tab', 'color: orange; font-weight: bold');
-    console.warn('[Storage Isolation] Using fallback session ID: default');
-    currentSessionId = 'default';
-    sessionIdReady = true;
-    executePendingOperations();
+    // SECURITY FIX: Do NOT use fallback - fail explicitly
+    // Storage operations should not work in non-session tabs to prevent data leakage
+    console.error('%c[Storage Isolation] ✗ FAILED to get session ID', 'color: red; font-weight: bold');
+    console.error('[Storage Isolation] Storage operations will be BLOCKED for security');
+    currentSessionId = null;
+    sessionIdReady = true; // Mark as ready to unblock code flow
+    // DO NOT execute pending operations - let them fail
     return false;
   }
 

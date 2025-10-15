@@ -15,7 +15,11 @@ const sessionStore = {
 
   // Map of sessionId to cookie store
   // Structure: { sessionId: { domain: { path: { cookieName: cookieObject } } } }
-  cookieStore: {}
+  cookieStore: {},
+
+  // Map of domain to recent session activity (for noopener link inheritance)
+  // Structure: { domain: { sessionId: lastAccessTime } }
+  domainToSessionActivity: {}
 };
 
 // ============= Utilities =============
@@ -63,11 +67,52 @@ function clearBadge(tabId) {
 }
 
 /**
+ * Validates that a cookie domain is valid for the given tab URL
+ * SECURITY: Prevents cookie injection attacks across domains
+ * @param {string} cookieDomain - The domain from the cookie
+ * @param {string} tabUrl - The URL of the tab setting the cookie
+ * @returns {boolean} True if domain is valid for this tab
+ */
+function isValidCookieDomain(cookieDomain, tabUrl) {
+  try {
+    const url = new URL(tabUrl);
+    const tabHostname = url.hostname;
+
+    // Remove leading dot from cookie domain for comparison
+    const normalizedCookieDomain = cookieDomain.startsWith('.')
+      ? cookieDomain.substring(1)
+      : cookieDomain;
+
+    // Cookie domain must match tab hostname exactly OR be a parent domain
+    // Examples:
+    // - tab: sub.example.com, cookie: sub.example.com ✓
+    // - tab: sub.example.com, cookie: .example.com ✓
+    // - tab: sub.example.com, cookie: example.com ✓
+    // - tab: sub.example.com, cookie: evil.com ✗
+    // - tab: example.com, cookie: sub.example.com ✗
+
+    if (tabHostname === normalizedCookieDomain) {
+      return true; // Exact match
+    }
+
+    if (tabHostname.endsWith('.' + normalizedCookieDomain)) {
+      return true; // Parent domain match
+    }
+
+    return false;
+  } catch (e) {
+    console.error('[SECURITY] Invalid URL in domain validation:', e);
+    return false;
+  }
+}
+
+/**
  * Parse cookie string into object
  * @param {string} cookieString
- * @returns {Object}
+ * @param {string} tabUrl - Optional tab URL for domain validation
+ * @returns {Object|null} Parsed cookie object or null if invalid
  */
-function parseCookie(cookieString) {
+function parseCookie(cookieString, tabUrl = null) {
   const parts = cookieString.split(';').map(p => p.trim());
   const [nameValue, ...attributes] = parts;
   const [name, value] = nameValue.split('=');
@@ -102,6 +147,14 @@ function parseCookie(cookieString) {
     }
   });
 
+  // SECURITY: Validate cookie domain if tabUrl provided
+  if (tabUrl && cookie.domain) {
+    if (!isValidCookieDomain(cookie.domain, tabUrl)) {
+      console.error('[SECURITY] Cookie domain validation failed:', cookie.domain, 'for URL:', tabUrl);
+      return null; // Reject invalid cookie
+    }
+  }
+
   return cookie;
 }
 
@@ -124,12 +177,56 @@ function getSessionForTab(tabId) {
 }
 
 /**
+ * Remove expired cookies from session store
+ * @param {string} sessionId
+ */
+function removeExpiredCookies(sessionId) {
+  const sessionCookies = sessionStore.cookieStore[sessionId];
+  if (!sessionCookies) return;
+
+  let removedCount = 0;
+
+  Object.keys(sessionCookies).forEach(domain => {
+    Object.keys(sessionCookies[domain]).forEach(path => {
+      Object.keys(sessionCookies[domain][path]).forEach(cookieName => {
+        const cookie = sessionCookies[domain][path][cookieName];
+        if (isExpiredCookie(cookie)) {
+          delete sessionCookies[domain][path][cookieName];
+          removedCount++;
+          console.log(`[Cookie Expiration] Removed expired cookie: ${cookieName} for ${domain}`);
+        }
+      });
+
+      // Clean up empty path objects
+      if (Object.keys(sessionCookies[domain][path]).length === 0) {
+        delete sessionCookies[domain][path];
+      }
+    });
+
+    // Clean up empty domain objects
+    if (Object.keys(sessionCookies[domain]).length === 0) {
+      delete sessionCookies[domain];
+    }
+  });
+
+  if (removedCount > 0) {
+    console.log(`[Cookie Expiration] Removed ${removedCount} expired cookies from session ${sessionId}`);
+  }
+}
+
+/**
  * Store cookie in session store
  * @param {string} sessionId
  * @param {string} domain
  * @param {Object} cookie
  */
 function storeCookie(sessionId, domain, cookie) {
+  // SECURITY: Don't store already-expired cookies
+  if (isExpiredCookie(cookie)) {
+    console.log(`[Cookie Expiration] Rejecting expired cookie: ${cookie.name} for ${domain}`);
+    return;
+  }
+
   if (!sessionStore.cookieStore[sessionId]) {
     sessionStore.cookieStore[sessionId] = {};
   }
@@ -146,6 +243,300 @@ function storeCookie(sessionId, domain, cookie) {
 
   // Persist cookies after storing (debounced to avoid excessive writes)
   persistSessions(false);
+}
+
+/**
+ * Checks if a cookie has expired
+ * @param {Object} cookie - The cookie object
+ * @returns {boolean} True if cookie is expired
+ */
+function isExpiredCookie(cookie) {
+  if (!cookie.expirationDate) {
+    return false; // No expiration = session cookie, never expires in our store
+  }
+
+  // Handle numeric timestamp (seconds since epoch)
+  if (typeof cookie.expirationDate === 'number') {
+    return Date.now() / 1000 > cookie.expirationDate;
+  }
+
+  // Handle date string
+  try {
+    const expiryTime = new Date(cookie.expirationDate).getTime();
+    return Date.now() > expiryTime;
+  } catch (e) {
+    console.error('[Cookie Expiration] Error parsing expiration date:', cookie.expirationDate, e);
+    return false; // Keep cookie if we can't parse expiration
+  }
+}
+
+/**
+ * Checks if a hostname is an IP address (IPv4 or IPv6)
+ * @param {string} hostname - The hostname to check
+ * @returns {boolean} True if this is an IP address
+ */
+function isIPAddress(hostname) {
+  // IPv4 pattern: 0.0.0.0 to 255.255.255.255
+  const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+
+  // IPv6 patterns: handles various formats including ::1, [::1], full addresses
+  const ipv6Pattern = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
+  const ipv6WithBracketsPattern = /^\[([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}\]$/;
+
+  // Check IPv4
+  if (ipv4Pattern.test(hostname)) {
+    // Validate each octet is 0-255
+    const octets = hostname.split('.');
+    const isValid = octets.every(octet => {
+      const num = parseInt(octet, 10);
+      return !isNaN(num) && num >= 0 && num <= 255;
+    });
+    return isValid;
+  }
+
+  // Check IPv6 (with or without brackets)
+  if (ipv6Pattern.test(hostname) || ipv6WithBracketsPattern.test(hostname)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Checks if a domain part is a valid hostname for cookie matching
+ * SECURITY: Prevents matching across TLDs (e.g., .com, .co.uk)
+ * COMPATIBILITY: Allows localhost, IP addresses, and single-word hostnames
+ * @param {string} domainPart - The domain part to check
+ * @returns {boolean} True if this is a valid hostname for cookie matching
+ */
+function isValidSLDPlusTLD(domainPart) {
+  // Handle localhost (common in development)
+  if (domainPart === 'localhost') {
+    return true;
+  }
+
+  // Handle IP addresses (IPv4 and IPv6)
+  // IMPORTANT: Check for IP address pattern FIRST, before splitting into parts
+  // This prevents invalid IPs like "256.1.1.1" from being treated as domains
+  const looksLikeIPv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(domainPart);
+  const looksLikeIPv6 = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/.test(domainPart) ||
+                        /^\[([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}\]$/.test(domainPart);
+
+  if (looksLikeIPv4 || looksLikeIPv6) {
+    // If it looks like an IP, validate it properly
+    // This rejects invalid IPs like "256.1.1.1"
+    return isIPAddress(domainPart);
+  }
+
+  // Comprehensive list of TLDs (Top-Level Domains)
+  // SECURITY: This list prevents cookie leakage across bare TLDs (e.g., .com, .co.uk)
+  // while allowing valid domain names (e.g., google.com, google.co.uk)
+  const commonTLDs = [
+    // ===== Generic TLDs (gTLD) =====
+    'com', 'org', 'net', 'info', 'biz', 'name', 'pro', 'tel', 'mobi',
+
+    // ===== Sponsored TLDs (sTLD) =====
+    'edu', 'gov', 'mil', 'int', 'aero', 'asia', 'cat', 'coop', 'jobs',
+    'museum', 'post', 'travel', 'xxx',
+
+    // ===== New Generic TLDs (ngTLD) - Popular & Tech-focused =====
+    'app', 'dev', 'io', 'ai', 'cloud', 'tech', 'digital', 'online', 'site',
+    'website', 'space', 'host', 'store', 'shop', 'blog', 'news', 'media',
+    'email', 'link', 'live', 'social', 'network', 'web', 'services',
+    'solutions', 'systems', 'technology', 'software', 'codes', 'computer',
+    'domains', 'download', 'academy', 'agency', 'center', 'consulting',
+    'expert', 'management', 'marketing', 'support', 'wiki', 'design',
+    'studio', 'graphics', 'photos', 'video', 'works', 'zone', 'xyz',
+    'top', 'win', 'click', 'fun', 'cool', 'lol', 'game', 'games',
+    'play', 'rocks', 'world', 'city', 'today', 'life', 'style',
+    'art', 'club', 'plus', 'red', 'blue', 'pink', 'black', 'green',
+
+    // ===== Country Code TLDs (ccTLD) - Alphabetical =====
+    // A
+    'ac', 'ad', 'ae', 'af', 'ag', 'ai', 'al', 'am', 'ao', 'aq', 'ar', 'as', 'at', 'au', 'aw', 'ax', 'az',
+    // B
+    'ba', 'bb', 'bd', 'be', 'bf', 'bg', 'bh', 'bi', 'bj', 'bm', 'bn', 'bo', 'br', 'bs', 'bt', 'bw', 'by', 'bz',
+    // C
+    'ca', 'cc', 'cd', 'cf', 'cg', 'ch', 'ci', 'ck', 'cl', 'cm', 'cn', 'co', 'cr', 'cu', 'cv', 'cw', 'cx', 'cy', 'cz',
+    // D
+    'de', 'dj', 'dk', 'dm', 'do', 'dz',
+    // E
+    'ec', 'ee', 'eg', 'er', 'es', 'et', 'eu',
+    // F
+    'fi', 'fj', 'fk', 'fm', 'fo', 'fr',
+    // G
+    'ga', 'gd', 'ge', 'gf', 'gg', 'gh', 'gi', 'gl', 'gm', 'gn', 'gp', 'gq', 'gr', 'gs', 'gt', 'gu', 'gw', 'gy',
+    // H
+    'hk', 'hm', 'hn', 'hr', 'ht', 'hu',
+    // I
+    'id', 'ie', 'il', 'im', 'in', 'io', 'iq', 'ir', 'is', 'it',
+    // J
+    'je', 'jm', 'jo', 'jp',
+    // K
+    'ke', 'kg', 'kh', 'ki', 'km', 'kn', 'kp', 'kr', 'kw', 'ky', 'kz',
+    // L
+    'la', 'lb', 'lc', 'li', 'lk', 'lr', 'ls', 'lt', 'lu', 'lv', 'ly',
+    // M
+    'ma', 'mc', 'md', 'me', 'mg', 'mh', 'mk', 'ml', 'mm', 'mn', 'mo', 'mp', 'mq', 'mr', 'ms', 'mt', 'mu', 'mv', 'mw', 'mx', 'my', 'mz',
+    // N
+    'na', 'nc', 'ne', 'nf', 'ng', 'ni', 'nl', 'no', 'np', 'nr', 'nu', 'nz',
+    // O
+    'om',
+    // P
+    'pa', 'pe', 'pf', 'pg', 'ph', 'pk', 'pl', 'pm', 'pn', 'pr', 'ps', 'pt', 'pw', 'py',
+    // Q
+    'qa',
+    // R
+    're', 'ro', 'rs', 'ru', 'rw',
+    // S
+    'sa', 'sb', 'sc', 'sd', 'se', 'sg', 'sh', 'si', 'sk', 'sl', 'sm', 'sn', 'so', 'sr', 'ss', 'st', 'su', 'sv', 'sx', 'sy', 'sz',
+    // T
+    'tc', 'td', 'tf', 'tg', 'th', 'tj', 'tk', 'tl', 'tm', 'tn', 'to', 'tr', 'tt', 'tv', 'tw', 'tz',
+    // U
+    'ua', 'ug', 'uk', 'us', 'uy', 'uz',
+    // V
+    'va', 'vc', 've', 'vg', 'vi', 'vn', 'vu',
+    // W
+    'wf', 'ws',
+    // Y
+    'ye', 'yt',
+    // Z
+    'za', 'zm', 'zw',
+
+    // ===== Multi-part TLDs (Second-Level Domains) =====
+    // United Kingdom
+    'co.uk', 'ac.uk', 'gov.uk', 'org.uk', 'net.uk', 'me.uk', 'ltd.uk', 'plc.uk', 'sch.uk',
+    // Japan
+    'co.jp', 'ac.jp', 'go.jp', 'or.jp', 'ne.jp', 'gr.jp', 'ed.jp', 'lg.jp',
+    // Australia
+    'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au', 'asn.au', 'id.au',
+    // New Zealand
+    'co.nz', 'ac.nz', 'govt.nz', 'geek.nz', 'gen.nz', 'kiwi.nz', 'maori.nz', 'net.nz', 'org.nz', 'school.nz',
+    // Brazil
+    'com.br', 'net.br', 'org.br', 'gov.br', 'edu.br', 'mil.br', 'art.br', 'blog.br',
+    // India
+    'co.in', 'net.in', 'org.in', 'gen.in', 'firm.in', 'ind.in',
+    // South Africa
+    'co.za', 'net.za', 'org.za', 'web.za', 'gov.za', 'ac.za',
+    // Canada
+    'co.ca', 'ab.ca', 'bc.ca', 'mb.ca', 'nb.ca', 'nf.ca', 'nl.ca', 'ns.ca', 'nt.ca', 'nu.ca', 'on.ca', 'pe.ca', 'qc.ca', 'sk.ca', 'yk.ca',
+    // Mexico
+    'com.mx', 'net.mx', 'org.mx', 'edu.mx', 'gob.mx',
+    // Singapore
+    'com.sg', 'net.sg', 'org.sg', 'gov.sg', 'edu.sg', 'per.sg',
+    // Hong Kong
+    'com.hk', 'net.hk', 'org.hk', 'edu.hk', 'gov.hk',
+    // China
+    'com.cn', 'net.cn', 'org.cn', 'edu.cn', 'gov.cn', 'ac.cn',
+    // Taiwan
+    'com.tw', 'net.tw', 'org.tw', 'edu.tw', 'gov.tw', 'idv.tw',
+    // South Korea
+    'co.kr', 'ne.kr', 'or.kr', 're.kr', 'pe.kr', 'go.kr', 'mil.kr', 'ac.kr', 'hs.kr', 'ms.kr', 'es.kr', 'sc.kr', 'kg.kr',
+    // Russia
+    'com.ru', 'net.ru', 'org.ru', 'pp.ru', 'msk.ru', 'spb.ru',
+    // Germany
+    'com.de', 'net.de', 'org.de',
+    // France
+    'com.fr', 'asso.fr', 'nom.fr', 'presse.fr', 'tm.fr', 'gouv.fr',
+    // Italy
+    'com.it', 'net.it', 'org.it', 'edu.it', 'gov.it',
+    // Spain
+    'com.es', 'nom.es', 'org.es', 'gob.es', 'edu.es',
+    // Netherlands
+    'co.nl', 'net.nl', 'org.nl',
+    // Argentina
+    'com.ar', 'net.ar', 'org.ar', 'gov.ar', 'edu.ar',
+    // Chile
+    'co.cl', 'gob.cl', 'gov.cl', 'mil.cl',
+    // Colombia
+    'com.co', 'net.co', 'nom.co', 'edu.co', 'org.co', 'gov.co', 'mil.co',
+    // Venezuela
+    'co.ve', 'net.ve', 'org.ve', 'edu.ve', 'gov.ve', 'mil.ve',
+    // Peru
+    'com.pe', 'net.pe', 'org.pe', 'edu.pe', 'gob.pe', 'mil.pe', 'nom.pe',
+    // UAE
+    'co.ae', 'net.ae', 'org.ae', 'sch.ae', 'ac.ae', 'gov.ae', 'mil.ae',
+    // Saudi Arabia
+    'com.sa', 'net.sa', 'org.sa', 'gov.sa', 'edu.sa', 'sch.sa', 'med.sa', 'pub.sa',
+    // Israel
+    'co.il', 'net.il', 'org.il', 'ac.il', 'gov.il', 'idf.il', 'muni.il',
+    // Turkey
+    'com.tr', 'net.tr', 'org.tr', 'edu.tr', 'gov.tr', 'mil.tr', 'bel.tr', 'pol.tr',
+    // Thailand
+    'co.th', 'ac.th', 'go.th', 'in.th', 'mi.th', 'net.th', 'or.th',
+    // Malaysia
+    'com.my', 'net.my', 'org.my', 'edu.my', 'gov.my', 'mil.my', 'name.my',
+    // Indonesia
+    'co.id', 'ac.id', 'or.id', 'go.id', 'mil.id', 'net.id', 'web.id', 'sch.id',
+    // Philippines
+    'com.ph', 'net.ph', 'org.ph', 'edu.ph', 'gov.ph', 'mil.ph', 'ngo.ph',
+    // Vietnam
+    'com.vn', 'net.vn', 'org.vn', 'edu.vn', 'gov.vn', 'int.vn', 'ac.vn', 'biz.vn', 'info.vn', 'name.vn', 'pro.vn', 'health.vn',
+    // Pakistan
+    'com.pk', 'net.pk', 'org.pk', 'edu.pk', 'gov.pk', 'gob.pk', 'gok.pk', 'gop.pk', 'gos.pk', 'info.pk', 'web.pk',
+    // Bangladesh
+    'com.bd', 'net.bd', 'org.bd', 'edu.bd', 'gov.bd', 'mil.bd', 'ac.bd',
+    // Nigeria
+    'com.ng', 'net.ng', 'org.ng', 'edu.ng', 'gov.ng', 'mil.ng', 'mobi.ng', 'name.ng', 'sch.ng',
+    // Kenya
+    'co.ke', 'ac.ke', 'or.ke', 'go.ke', 'ne.ke', 'sc.ke', 'me.ke', 'mobi.ke', 'info.ke',
+    // Egypt
+    'com.eg', 'net.eg', 'org.eg', 'edu.eg', 'gov.eg', 'mil.eg', 'sci.eg',
+    // Poland
+    'com.pl', 'net.pl', 'org.pl', 'edu.pl', 'gov.pl', 'mil.pl', 'biz.pl', 'info.pl',
+    // Czech Republic
+    'co.cz',
+    // Greece
+    'com.gr', 'net.gr', 'org.gr', 'edu.gr', 'gov.gr',
+    // Portugal
+    'com.pt', 'edu.pt', 'gov.pt', 'int.pt', 'net.pt', 'nome.pt', 'org.pt', 'publ.pt',
+    // Sweden
+    'com.se', 'org.se',
+    // Norway
+    'com.no', 'net.no', 'org.no',
+    // Denmark
+    'co.dk',
+    // Finland
+    'com.fi',
+    // Ireland
+    'ie',
+    // Belgium
+    'co.be',
+    // Switzerland
+    'com.ch',
+    // Austria
+    'co.at', 'or.at', 'gv.at', 'ac.at',
+    // Ukraine
+    'com.ua', 'net.ua', 'org.ua', 'edu.ua', 'gov.ua',
+    // Belarus
+    'com.by', 'net.by', 'org.by',
+    // Kazakhstan
+    'com.kz', 'net.kz', 'org.kz', 'edu.kz', 'gov.kz', 'mil.kz'
+  ];
+
+  const parts = domainPart.split('.');
+
+  // SECURITY: Reject bare TLDs (.com, .org, etc.)
+  // But allow single-word hostnames (intranet, server01, etc.)
+  if (parts.length === 1) {
+    // Single word: allow it unless it's a bare TLD
+    return !commonTLDs.includes(parts[0]);
+  }
+
+  // Check against known multi-part TLDs (e.g., co.uk)
+  const lastTwoParts = parts.slice(-2).join('.');
+  if (commonTLDs.includes(lastTwoParts)) {
+    return true; // e.g., co.uk
+  }
+
+  // Check against known single-part TLDs (e.g., google.com)
+  const lastPart = parts[parts.length - 1];
+  if (commonTLDs.includes(lastPart) && parts.length === 2) {
+    return true; // e.g., google.com
+  }
+
+  // If not in list but has 2+ parts, assume valid (conservative approach)
+  return parts.length >= 2;
 }
 
 /**
@@ -168,9 +559,19 @@ function getCookiesForSession(sessionId, domain, path) {
   const domainsToCheck = [];
 
   // Add current domain and parent domains
+  // SECURITY FIX: Stop at valid SLD+TLD to prevent TLD-level matching
   for (let i = 0; i < domainParts.length; i++) {
-    domainsToCheck.push(domainParts.slice(i).join('.'));
-    domainsToCheck.push('.' + domainParts.slice(i).join('.'));
+    const domainToCheck = domainParts.slice(i).join('.');
+
+    // SECURITY: Only add domain if it's a valid SLD+TLD or more specific
+    // Prevents matching against bare TLDs like ".com"
+    if (isValidSLDPlusTLD(domainToCheck)) {
+      domainsToCheck.push(domainToCheck);
+      domainsToCheck.push('.' + domainToCheck);
+    } else {
+      // Stop iteration once we hit invalid domains (bare TLDs)
+      break;
+    }
   }
 
   domainsToCheck.forEach(d => {
@@ -179,7 +580,10 @@ function getCookiesForSession(sessionId, domain, path) {
         // Check if path matches
         if (path.startsWith(p)) {
           Object.values(sessionCookies[d][p]).forEach(cookie => {
-            cookies.push(cookie);
+            // SECURITY: Check expiration before adding
+            if (!cookie.expirationDate || !isExpiredCookie(cookie)) {
+              cookies.push(cookie);
+            }
           });
         }
       });
@@ -490,6 +894,13 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
       const domain = url.hostname;
       const path = url.pathname;
 
+      // SECURITY: Track domain activity for session inheritance (noopener links)
+      // This helps match new tabs to recent session activity on the same domain
+      if (!sessionStore.domainToSessionActivity[domain]) {
+        sessionStore.domainToSessionActivity[domain] = {};
+      }
+      sessionStore.domainToSessionActivity[domain][sessionId] = Date.now();
+
       // Get cookies for this session and domain
       const cookies = getCookiesForSession(sessionId, domain, path);
 
@@ -674,9 +1085,11 @@ chrome.cookies.onChanged.addListener((changeInfo) => {
           // Persist the change
           persistSessions(false); // debounced
 
-          // Immediately remove the cookie from browser's native store
-          // to maintain isolation
+          // SECURITY FIX: Immediately and aggressively remove cookie from browser's native store
+          // Use immediate callback-free removal for faster execution
           const cookieUrl = `http${cookie.secure ? 's' : ''}://${cookie.domain}${cookie.path || '/'}`;
+
+          // Attempt 1: Immediate removal (fastest)
           chrome.cookies.remove({
             url: cookieUrl,
             name: cookie.name,
@@ -684,6 +1097,19 @@ chrome.cookies.onChanged.addListener((changeInfo) => {
           }, (removedCookie) => {
             if (chrome.runtime.lastError) {
               console.error('[chrome.cookies.onChanged] Failed to remove browser cookie:', chrome.runtime.lastError);
+
+              // SECURITY: Retry removal on failure
+              setTimeout(() => {
+                chrome.cookies.remove({
+                  url: cookieUrl,
+                  name: cookie.name,
+                  storeId: cookie.storeId
+                }, (retryRemoved) => {
+                  if (retryRemoved) {
+                    console.log(`[${sessionId}] Removed browser cookie on retry: ${cookie.name}`);
+                  }
+                });
+              }, 100);
             } else if (removedCookie) {
               console.log(`[${sessionId}] Removed browser cookie: ${cookie.name} (keeping only in session store)`);
             }
@@ -766,6 +1192,22 @@ setInterval(() => {
     });
   }
 }, 2000); // Check every 2 seconds
+
+/**
+ * SECURITY: Periodically remove expired cookies from all sessions
+ * This prevents expired cookies from accumulating in storage
+ */
+setInterval(() => {
+  const sessionIds = Object.keys(sessionStore.sessions);
+
+  if (sessionIds.length > 0) {
+    console.log(`[Cookie Expiration] Checking ${sessionIds.length} sessions for expired cookies`);
+
+    sessionIds.forEach(sessionId => {
+      removeExpiredCookies(sessionId);
+    });
+  }
+}, 60000); // Check every 60 seconds
 
 // ============= Message Handler =============
 
@@ -870,10 +1312,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return false;
       }
 
-      try {
-        const cookie = parseCookie(message.cookie);
+      if (!message.url) {
+        console.error('[SECURITY] setCookie: No URL provided for domain validation');
+        sendResponse({ success: false, error: 'No URL provided' });
+        return false;
+      }
 
-        // Extract domain from URL if not specified
+      try {
+        // SECURITY: Parse cookie with domain validation
+        const cookie = parseCookie(message.cookie, message.url);
+
+        if (!cookie) {
+          console.error('[SECURITY] setCookie: Cookie validation failed');
+          sendResponse({ success: false, error: 'Invalid cookie domain' });
+          return false;
+        }
+
+        // Extract domain from URL if not specified in cookie
         if (!cookie.domain && message.url) {
           const url = new URL(message.url);
           cookie.domain = url.hostname;
@@ -882,6 +1337,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (!cookie.domain) {
           console.error('setCookie: No domain specified');
           sendResponse({ success: false, error: 'No domain specified' });
+          return false;
+        }
+
+        // SECURITY: Final domain validation check
+        if (!isValidCookieDomain(cookie.domain, message.url)) {
+          console.error('[SECURITY] setCookie: Domain validation failed:', cookie.domain, 'for URL:', message.url);
+          sendResponse({ success: false, error: 'Invalid cookie domain' });
           return false;
         }
 
@@ -1039,6 +1501,44 @@ chrome.webNavigation.onCreatedNavigationTarget.addListener((details) => {
 });
 
 /**
+ * Find most recent session for a domain (for noopener link inheritance)
+ * @param {string} domain - The domain to find a session for
+ * @param {number} maxAgeMs - Maximum age of activity to consider (default 30 seconds)
+ * @returns {string|null} Session ID or null
+ */
+function findRecentSessionForDomain(domain, maxAgeMs = 30000) {
+  const domainActivity = sessionStore.domainToSessionActivity[domain];
+  if (!domainActivity) {
+    return null;
+  }
+
+  const now = Date.now();
+  let mostRecentSessionId = null;
+  let mostRecentTime = 0;
+
+  // Find the session with most recent activity on this domain
+  Object.keys(domainActivity).forEach(sessionId => {
+    const activityTime = domainActivity[sessionId];
+    const age = now - activityTime;
+
+    // Only consider recent activity (within maxAgeMs)
+    if (age <= maxAgeMs && activityTime > mostRecentTime) {
+      // Verify session still exists
+      if (sessionStore.sessions[sessionId]) {
+        mostRecentTime = activityTime;
+        mostRecentSessionId = sessionId;
+      }
+    }
+  });
+
+  if (mostRecentSessionId) {
+    console.log(`[Session Inheritance] Found recent session ${mostRecentSessionId} for domain ${domain} (${(now - mostRecentTime) / 1000}s ago)`);
+  }
+
+  return mostRecentSessionId;
+}
+
+/**
  * Handle links opened in new tabs (target="_blank")
  * This catches cases where webNavigation.onCreatedNavigationTarget doesn't fire
  * NOTE: Does NOT inherit for new blank tabs (user clicked + button)
@@ -1082,6 +1582,40 @@ chrome.tabs.onCreated.addListener((tab) => {
       persistSessions(true);
     } else {
       console.log(`[Tab Created] Opener tab ${tab.openerTabId} has no session`);
+    }
+  } else if (tab.url && !tab.openerTabId) {
+    // SECURITY FIX: Handle noopener links (no openerTabId due to rel="noopener")
+    // Use domain-based heuristic to find recent session activity
+    console.log(`[Tab Created] Tab ${tab.id} has no opener (noopener link?), checking domain heuristic`);
+
+    try {
+      const url = new URL(tab.url);
+      const domain = url.hostname;
+
+      // Find most recent session for this domain (within last 30 seconds)
+      const recentSessionId = findRecentSessionForDomain(domain, 30000);
+
+      if (recentSessionId) {
+        console.log(`[Session Inheritance - Noopener] Inheriting session ${recentSessionId} for domain ${domain}`);
+
+        sessionStore.tabToSession[tab.id] = recentSessionId;
+
+        const session = sessionStore.sessions[recentSessionId];
+        if (session && !session.tabs.includes(tab.id)) {
+          session.tabs.push(tab.id);
+        }
+
+        const color = session?.color || sessionColor(recentSessionId);
+        setSessionBadge(tab.id, color);
+
+        console.log(`[Session Inheritance - Noopener] ✓ Tab ${tab.id} inherited session ${recentSessionId}`);
+
+        persistSessions(true);
+      } else {
+        console.log(`[Session Inheritance - Noopener] No recent session found for domain ${domain}`);
+      }
+    } catch (e) {
+      console.error('[Session Inheritance - Noopener] Error parsing URL:', e);
     }
   } else {
     console.log(`[Tab Created] Tab ${tab.id} has no opener or URL, not inheriting session`);
