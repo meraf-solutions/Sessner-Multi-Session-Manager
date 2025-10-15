@@ -45,6 +45,24 @@ function sessionColor(sessionId) {
 }
 
 /**
+ * Set colored badge (glowing dot) for a session tab
+ * @param {number} tabId - The tab ID
+ * @param {string} color - Hex color code
+ */
+function setSessionBadge(tabId, color) {
+  chrome.browserAction.setBadgeText({ text: '●', tabId: tabId });
+  chrome.browserAction.setBadgeBackgroundColor({ color: color, tabId: tabId });
+}
+
+/**
+ * Clear badge for non-session tabs
+ * @param {number} tabId - The tab ID
+ */
+function clearBadge(tabId) {
+  chrome.browserAction.setBadgeText({ text: '', tabId: tabId });
+}
+
+/**
  * Parse cookie string into object
  * @param {string} cookieString
  * @returns {Object}
@@ -271,8 +289,7 @@ function loadPersistedSessions() {
           const sessionId = sessionStore.tabToSession[tab.id];
           if (sessionId && sessionStore.sessions[sessionId]) {
             const color = sessionStore.sessions[sessionId].color;
-            chrome.browserAction.setBadgeText({ text: '●', tabId: tab.id });
-            chrome.browserAction.setBadgeBackgroundColor({ color: color, tabId: tab.id });
+            setSessionBadge(tab.id, color);
           }
         });
       });
@@ -326,9 +343,8 @@ function createNewSession(url, callback) {
     sessionStore.tabToSession[tab.id] = sessionId;
     sessionStore.sessions[sessionId].tabs.push(tab.id);
 
-    // Set badge
-    chrome.browserAction.setBadgeText({ text: '●', tabId: tab.id });
-    chrome.browserAction.setBadgeBackgroundColor({ color: color, tabId: tab.id });
+    // Set colored badge for this session
+    setSessionBadge(tab.id, color);
 
     // Clear any existing browser cookies for this tab
     // This prevents cookie leakage from previous browsing
@@ -943,8 +959,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       // Update badge
       const session = sessionStore.sessions[sessionId];
       if (session) {
-        chrome.browserAction.setBadgeText({ text: '●', tabId: tabId });
-        chrome.browserAction.setBadgeBackgroundColor({ color: session.color, tabId: tabId });
+        setSessionBadge(tabId, session.color);
       }
     } else {
       console.log('[Navigation] Tab', tabId, 'has no session');
@@ -960,10 +975,9 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
 
   if (sessionId) {
     const color = sessionStore.sessions[sessionId]?.color || sessionColor(sessionId);
-    chrome.browserAction.setBadgeText({ text: '●', tabId: activeInfo.tabId });
-    chrome.browserAction.setBadgeBackgroundColor({ color: color, tabId: activeInfo.tabId });
+    setSessionBadge(activeInfo.tabId, color);
   } else {
-    chrome.browserAction.setBadgeText({ text: '', tabId: activeInfo.tabId });
+    clearBadge(activeInfo.tabId);
   }
 });
 
@@ -1004,10 +1018,9 @@ chrome.webNavigation.onCreatedNavigationTarget.addListener((details) => {
     sourceSession.tabs.push(targetTabId);
   }
 
-  // Set badge immediately
+  // Set colored badge immediately
   const color = sourceSession.color || sessionColor(sourceSessionId);
-  chrome.browserAction.setBadgeText({ text: '●', tabId: targetTabId });
-  chrome.browserAction.setBadgeBackgroundColor({ color: color, tabId: targetTabId });
+  setSessionBadge(targetTabId, color);
 
   console.log(`[Popup Inheritance] ✓ Tab ${targetTabId} now has session ${sourceSessionId}`);
 
@@ -1018,12 +1031,27 @@ chrome.webNavigation.onCreatedNavigationTarget.addListener((details) => {
 /**
  * Handle links opened in new tabs (target="_blank")
  * This catches cases where webNavigation.onCreatedNavigationTarget doesn't fire
+ * NOTE: Does NOT inherit for new blank tabs (user clicked + button)
  */
 chrome.tabs.onCreated.addListener((tab) => {
-  console.log(`[Tab Created] New tab ${tab.id} created`);
+  console.log(`[Tab Created] New tab ${tab.id} created, URL: ${tab.url || 'none'}`);
 
-  // If the tab has an openerTabId, it was opened from another tab
-  if (tab.openerTabId) {
+  // Check if this is a new blank tab (user clicked + button)
+  // New tab button creates tabs with about:blank, newtab, or no URL
+  const isNewTabButton = !tab.url ||
+                         tab.url === '' ||
+                         tab.url === 'about:blank' ||
+                         tab.url === 'chrome://newtab/' ||
+                         tab.url === 'edge://newtab/' ||
+                         tab.url.includes('://newtab');
+
+  if (isNewTabButton) {
+    console.log(`[Tab Created] Tab ${tab.id} is a new blank tab (+ button), NOT inheriting session`);
+    return;
+  }
+
+  // If the tab has an openerTabId and a real URL, it was opened from a link
+  if (tab.openerTabId && tab.url) {
     const parentSessionId = sessionStore.tabToSession[tab.openerTabId];
 
     if (parentSessionId) {
@@ -1037,8 +1065,7 @@ chrome.tabs.onCreated.addListener((tab) => {
       }
 
       const color = session?.color || sessionColor(parentSessionId);
-      chrome.browserAction.setBadgeText({ text: '●', tabId: tab.id });
-      chrome.browserAction.setBadgeBackgroundColor({ color: color, tabId: tab.id });
+      setSessionBadge(tab.id, color);
 
       console.log(`[Tab Created] ✓ Tab ${tab.id} inherited session ${parentSessionId}`);
 
@@ -1047,7 +1074,7 @@ chrome.tabs.onCreated.addListener((tab) => {
       console.log(`[Tab Created] Opener tab ${tab.openerTabId} has no session`);
     }
   } else {
-    console.log(`[Tab Created] Tab ${tab.id} has no opener, not inheriting session`);
+    console.log(`[Tab Created] Tab ${tab.id} has no opener or URL, not inheriting session`);
   }
 });
 

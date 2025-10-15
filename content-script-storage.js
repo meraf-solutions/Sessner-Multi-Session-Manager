@@ -376,10 +376,8 @@
           sessionIdReady = true;
           console.log('%c[Storage Isolation] ✓ Session ready:', 'color: green; font-weight: bold', currentSessionId);
 
-          // Optional: Show brief visual indicator
-          if (window.location.href.indexOf('about:') !== 0) {
-            showSessionReadyIndicator(currentSessionId);
-          }
+          // Visual indicator disabled to prevent interference with website functionality
+          // (some websites read all DOM elements, causing the indicator to appear in error dialogs)
 
           // Process queued operations
           executePendingOperations();
@@ -406,50 +404,8 @@
     return false;
   }
 
-  /**
-   * Shows a brief visual indicator when session is ready
-   * @param {string} sessionId - The current session ID
-   */
-  function showSessionReadyIndicator(sessionId) {
-    const indicator = document.createElement('div');
-    indicator.style.cssText = `
-      position: fixed;
-      top: 10px;
-      right: 10px;
-      background: linear-gradient(135deg, #1ea7e8 0%, #0066cc 100%);
-      color: white;
-      padding: 10px 15px;
-      border-radius: 8px;
-      font-family: Arial, sans-serif;
-      font-size: 13px;
-      font-weight: bold;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      z-index: 2147483647;
-      animation: slideIn 0.3s ease-out;
-    `;
-    indicator.textContent = 'Session Active';
-
-    // Add animation keyframes
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes slideIn {
-        from { transform: translateX(400px); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-      }
-      @keyframes slideOut {
-        from { transform: translateX(0); opacity: 1; }
-        to { transform: translateX(400px); opacity: 0; }
-      }
-    `;
-    document.head.appendChild(style);
-    document.body.appendChild(indicator);
-
-    // Remove after 2 seconds
-    setTimeout(() => {
-      indicator.style.animation = 'slideOut 0.3s ease-out';
-      setTimeout(() => indicator.remove(), 300);
-    }, 2000);
-  }
+  // Visual indicator function removed to prevent interference with website functionality
+  // Console logging (line 377) is sufficient for debugging session initialization
 
   /**
    * Installs the storage proxies

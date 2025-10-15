@@ -287,6 +287,116 @@
     .footer a:hover {
       text-decoration: underline;
     }
+
+    /* Dark Mode Support */
+    @media (prefers-color-scheme: dark) {
+      body {
+        background: #1a1a1a;
+      }
+
+      .content {
+        background: #1a1a1a;
+      }
+
+      .new-session-section {
+        background: #2d2d2d;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      }
+
+      #sessionUrl {
+        background: #1a1a1a !important;
+        color: #e0e0e0 !important;
+        border: 2px solid #444 !important;
+      }
+
+      #sessionUrl::placeholder {
+        color: #888;
+      }
+
+      .sessions-section {
+        background: #2d2d2d;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      }
+
+      .sessions-section h3 {
+        color: #e0e0e0;
+      }
+
+      .session-count {
+        color: #999;
+      }
+
+      .session-group {
+        border-color: #444;
+      }
+
+      .session-group:hover {
+        border-color: #1ea7e8;
+      }
+
+      .session-header-bar {
+        background: #242424;
+        border-bottom-color: #444;
+      }
+
+      .session-id {
+        color: #999;
+      }
+
+      .tab-list {
+        background: #2d2d2d;
+      }
+
+      .tab-item {
+        border-bottom-color: #333;
+      }
+
+      .tab-item:hover {
+        background: #353535;
+      }
+
+      .tab-title {
+        color: #e0e0e0;
+      }
+
+      .tab-domain {
+        color: #888;
+      }
+
+      .loading {
+        color: #888;
+      }
+
+      .empty-state {
+        color: #888;
+      }
+
+      .empty-state-hint {
+        color: #666;
+      }
+
+      .sessions-list::-webkit-scrollbar-track {
+        background: #242424;
+      }
+
+      .sessions-list::-webkit-scrollbar-thumb {
+        background: #555;
+      }
+
+      .sessions-list::-webkit-scrollbar-thumb:hover {
+        background: #666;
+      }
+
+      .footer {
+        background: #242424;
+        border-top-color: #444;
+        color: #888;
+      }
+
+      .footer a {
+        color: #1ea7e8;
+      }
+    }
   </style>
 </head>
 <body>
