@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Sessner – Multi-Session Manager for Microsoft Edge",
-  "version": "3.0",
+  "version": "3.0.1",
   "description": "Run multiple accounts on any website — in isolated tabs with true session containers.",
   "permissions": [
     "webRequest",
@@ -37,6 +37,12 @@
       "js": ["content-script-cookie.js"],
       "run_at": "document_start",
       "all_frames": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-script-favicon.js"],
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ],
   "icons": {
@@ -44,5 +50,10 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "web_accessible_resources": [
+    "icons/icon48.png",
+    "icons/icon16.png",
+    "icons/icon128.png"
+  ],
   "incognito": "spanning"
 }

@@ -7,6 +7,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.1] - 2025-10-16
+
+### Performance - Simplified Favicon Badge System
+
+This update simplifies the dynamic favicon feature to prevent infinite loops and reduce resource consumption while maintaining clear session identification.
+
+### Changed
+
+#### Favicon Badge Simplification
+- **Simplified favicon badge to use extension icon only**: Removed complex site favicon overlay logic that was causing infinite loops
+- **Eliminated MutationObserver**: Removed dynamic favicon change detection that was re-triggering badge application repeatedly
+- **Removed CORS detection**: Eliminated unnecessary canvas compatibility testing for site favicons
+- **One-time application**: Favicon badge now applies once per page load instead of continuously monitoring for changes
+
+#### Architecture Improvements
+- **Reduced code complexity**: Removed ~200 lines of complex favicon loading, CORS handling, and fallback logic
+- **Single favicon strategy**: Session tabs now consistently show extension icon + colored badge
+- **Non-session tabs unchanged**: Tabs without sessions keep their original site favicons
+
+### Fixed
+
+#### Critical Performance Issue
+1. **Infinite Loop Prevention** (CRITICAL):
+   - Fixed infinite loop caused by MutationObserver detecting its own favicon changes
+   - Eliminated resource consumption from continuous favicon re-application
+   - Prevented potential browser slowdown from excessive DOM manipulation
+   - Console log spam eliminated (was logging on every favicon detection cycle)
+
+#### User Experience
+- **Consistent visual indicators**: Extension icon + colored badge now matches browser badge indicator
+- **No CORS compatibility issues**: Eliminated cross-origin image loading problems
+- **Predictable behavior**: Favicon appearance is now deterministic and reliable
+
+### Removed
+
+- **Site favicon overlay logic**: No longer attempts to overlay badges on original site favicons
+- **Three-tier fallback system**: Removed site favicon → extension icon → colored circle hierarchy
+- **MutationObserver for favicon changes**: Removed dynamic favicon change detection
+- **CORS detection and testing**: Removed canvas compatibility testing
+- **`originalFaviconUrl` variable**: Cleaned up unused code
+
+### Technical Details
+
+#### Files Modified
+- **content-script-favicon.js**: Simplified from 388 lines to ~220 lines (-168 lines, -43%)
+  - Removed `findFaviconLink()`, `getFaviconUrl()` functions
+  - Removed complex CORS detection in `applyBadgedFavicon()`
+  - Removed MutationObserver setup in `initialize()`
+  - Renamed `createBadgedFavicon()` to `createBadgedIcon()` for clarity
+  - Simplified `applyBadgedFavicon()` to single extension icon loading path
+
+- **CLAUDE.md**: Updated key capabilities description
+  - Changed from "overlay on site favicons" to "extension icon with session color"
+
+#### Performance Impact
+
+**Before** (v3.0.0):
+- Continuous MutationObserver monitoring (CPU usage)
+- Repeated favicon loading and canvas manipulation (memory churn)
+- CORS detection tests on every change (network/canvas overhead)
+- Infinite loop potential causing browser slowdown
+
+**After** (v3.0.1):
+- One-time favicon application per page load (minimal CPU)
+- Single extension icon load per session tab (minimal memory)
+- No CORS testing required (no overhead)
+- Zero infinite loops (stable performance)
+
+### Design Decision
+
+**User Request**: "I have decided to just use the extension's icon plus the colored badge if has session. No need complicate the logic and process."
+
+**Rationale**:
+- Session tabs need clear visual identification matching the browser badge
+- Site favicon overlays add complexity without significant UX benefit
+- Performance and reliability are more important than preserving site favicons
+- Simpler code is more maintainable and less error-prone
+
+### Upgrade Notes
+
+**Automatic upgrade** - No action required:
+- Extension will automatically apply simplified favicon logic on next page load
+- Existing sessions continue to work without any changes
+- Users will see extension icon + colored badge instead of overlayed site favicons
+
+### Compatibility
+
+- ✅ Fully backward compatible with v3.0.0 sessions
+- ✅ No data migration required
+- ✅ No breaking changes to core functionality
+
+---
+
 ## [3.0.0] - 2025-10-14
 
 ### COMPLETE REWRITE - SessionBox-Style Architecture

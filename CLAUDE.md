@@ -13,6 +13,7 @@ This is a **SessionBox-style multi-session browser extension** that creates **is
 - Automatic session inheritance for popup windows and new tabs
 - Persistent session data across browser restarts
 - Color-coded badge indicators for visual session identification
+- **Dynamic favicon badges** showing extension icon with session color for easy tab identification
 - Ephemeral sessions that end when all tabs close
 
 ## Architecture

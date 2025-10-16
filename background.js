@@ -1356,6 +1356,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       return false; // Synchronous response
 
+    } else if (message.action === 'getSessionColor') {
+      // Get color for a specific session
+      const sessionId = message.sessionId;
+
+      if (!sessionId) {
+        sendResponse({ success: false, error: 'No session ID provided' });
+        return false;
+      }
+
+      const session = sessionStore.sessions[sessionId];
+
+      if (!session) {
+        console.warn('getSessionColor: Session not found', sessionId);
+        sendResponse({ success: false, error: 'Session not found' });
+        return false;
+      }
+
+      const color = session.color || sessionColor(sessionId);
+      sendResponse({ success: true, color: color });
+      return false; // Synchronous response
+
     } else if (message.action === 'switchToTab') {
       // Switch to a specific tab
       if (!message.tabId) {
