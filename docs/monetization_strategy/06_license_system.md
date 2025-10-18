@@ -3,7 +3,7 @@
 
 **Document Version:** 2.0
 **Last Updated:** 2025-10-18
-**License API:** https://prod.merafsolutions.com/
+**License API:** https://sandbox.merafsolutions.com/
 
 ---
 
@@ -25,7 +25,7 @@ Sessner uses a **privacy-first, local-validated** license system integrated with
 ### Base Configuration
 ```javascript
 const LICENSE_CONFIG = {
-  API_BASE_URL: 'https://prod.merafsolutions.com',
+  API_BASE_URL: 'https://sandbox.merafsolutions.com',
   PRODUCT_NAME: 'Sessner',
   SECRET_KEYS: {
     RETRIEVE_LICENSE: 'X5UTwKJzY1gmhI3jTTB2',
@@ -50,7 +50,7 @@ GET /api/license/verify/{secret_key}/{license_key}
 
 **URL:**
 ```
-https://prod.merafsolutions.com/api/license/verify/X5UTwKJzY1gmhI3jTTB2/{license_key}
+https://sandbox.merafsolutions.com/api/license/verify/X5UTwKJzY1gmhI3jTTB2/{license_key}
 ```
 
 **Response (Success):**
@@ -112,7 +112,7 @@ GET /api/license/register/device/{device_id}/{secret_key}/{license_key}
 
 **URL:**
 ```
-https://prod.merafsolutions.com/api/license/register/device/{device_id}/jYXqBGUDHk4x5d1YISDu/{license_key}
+https://sandbox.merafsolutions.com/api/license/register/device/{device_id}/jYXqBGUDHk4x5d1YISDu/{license_key}
 ```
 
 **Parameters:**
@@ -155,7 +155,7 @@ GET /api/license/unregister/device/{device_id}/{secret_key}/{license_key}
 
 **URL:**
 ```
-https://prod.merafsolutions.com/api/license/unregister/device/{device_id}/jYXqBGUDHk4x5d1YISDu/{license_key}
+https://sandbox.merafsolutions.com/api/license/unregister/device/{device_id}/jYXqBGUDHk4x5d1YISDu/{license_key}
 ```
 
 **Response (Success):**
@@ -185,7 +185,7 @@ GET /validate?t={product_name}&s={license_key}&d={device_id}
 
 **URL:**
 ```
-https://prod.merafsolutions.com/validate?t=Sessner&s={license_key}&d={device_id}
+https://sandbox.merafsolutions.com/validate?t=Sessner&s={license_key}&d={device_id}
 ```
 
 **Response:**
@@ -195,7 +195,7 @@ https://prod.merafsolutions.com/validate?t=Sessner&s={license_key}&d={device_id}
 **Usage:**
 ```javascript
 async function quickValidation(licenseKey, deviceId) {
-  const url = `https://prod.merafsolutions.com/validate?t=Sessner&s=${licenseKey}&d=${deviceId}`;
+  const url = `https://sandbox.merafsolutions.com/validate?t=Sessner&s=${licenseKey}&d=${deviceId}`;
   const response = await fetch(url);
   const result = await response.text();
   return result === '1';
@@ -421,7 +421,7 @@ async function performPeriodicValidation() {
 
   // 2. Attempt lightweight validation
   try {
-    const url = `https://prod.merafsolutions.com/validate?t=Sessner&s=${licenseCache.key}&d=${licenseCache.deviceId}`;
+    const url = `https://sandbox.merafsolutions.com/validate?t=Sessner&s=${licenseCache.key}&d=${licenseCache.deviceId}`;
     const response = await fetch(url, { timeout: 5000 });
     const result = await response.text();
 
@@ -567,7 +567,7 @@ GRACE_PERIODS = {
 ```javascript
 class LicenseManager {
   constructor() {
-    this.API_BASE_URL = 'https://prod.merafsolutions.com';
+    this.API_BASE_URL = 'https://sandbox.merafsolutions.com';
     this.SECRET_KEYS = {
       RETRIEVE: 'X5UTwKJzY1gmhI3jTTB2',
       REGISTER: 'jYXqBGUDHk4x5d1YISDu',
@@ -935,5 +935,5 @@ https://portal.merafsolutions.com/
 
 **Status:** Ready for Implementation
 **API Provider:** Meraf Solutions
-**API Base URL:** https://prod.merafsolutions.com/
+**API Base URL:** https://sandbox.merafsolutions.com/
 **Previous:** [05_ui_mockups.md](05_ui_mockups.md) | **Next:** [07_timeline.md](07_timeline.md)
