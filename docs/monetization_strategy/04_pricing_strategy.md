@@ -24,7 +24,7 @@
 |------|---------|--------|------------|-------------------|
 | **Free** | $0 | $0 | $0 | Free |
 | **Premium** | $4.99 | $29.99 | $0.16/day | Less than 1 coffee/month |
-| **Premium+** | $9.99 | $59.99 | $0.32/day | Less than 2 coffees/month |
+| **Enterprise** | $9.99 | $59.99 | $0.32/day | Less than 2 coffees/month |
 
 ### Why These Prices?
 
@@ -35,7 +35,7 @@
 - **ROI**: 20-100x return on investment
 - **Impulse Buy**: Low enough to buy without approval
 
-**Premium+ ($9.99/month)**
+**Enterprise ($9.99/month)**
 - **Under $10**: Still feels reasonable
 - **2x Premium**: Clear value differentiation
 - **Team Justification**: $10/user/month is easily expensed
@@ -53,7 +53,7 @@
 
 ### Anchoring Effect
 Present prices in this order:
-1. **Premium+** ($9.99) - Anchor high
+1. **Enterprise** ($9.99) - Anchor high
 2. **Premium** ($4.99) - Looks like a great deal
 3. **Free** ($0) - Highlight limitations
 
@@ -79,7 +79,7 @@ Present prices in this order:
 | Total Installs | 5,000 |
 | Free Users | 4,900 (98%) |
 | Premium Users | 90 (1.8%) |
-| Premium+ Users | 10 (0.2%) |
+| Enterprise Users | 10 (0.2%) |
 | Monthly Revenue | **$500** |
 | Annual Revenue | **$6,000** |
 
@@ -89,7 +89,7 @@ Present prices in this order:
 | Total Installs | 20,000 |
 | Free Users | 19,400 (97%) |
 | Premium Users | 500 (2.5%) |
-| Premium+ Users | 100 (0.5%) |
+| Enterprise Users | 100 (0.5%) |
 | Monthly Revenue | **$3,500** |
 | Annual Revenue | **$42,000** |
 
@@ -99,7 +99,7 @@ Present prices in this order:
 | Total Installs | 50,000 |
 | Free Users | 48,000 (96%) |
 | Premium Users | 1,800 (3.6%) |
-| Premium+ Users | 200 (0.4%) |
+| Enterprise Users | 200 (0.4%) |
 | Monthly Revenue | **$11,000** |
 | Annual Revenue | **$132,000** |
 
@@ -113,7 +113,7 @@ Present prices in this order:
 | Total Installs | 100,000 |
 | Free Users | 94,000 (94%) |
 | Premium Users | 5,000 (5%) |
-| Premium+ Users | 1,000 (1%) |
+| Enterprise Users | 1,000 (1%) |
 | Monthly Revenue | **$35,000** |
 | Annual Revenue | **$420,000** |
 
@@ -125,7 +125,7 @@ Present prices in this order:
 Premium Revenue:
 1,800 users × $4.99/mo = $8,982/mo
 
-Premium+ Revenue:
+Enterprise Revenue:
 200 users × $9.99/mo = $1,998/mo
 
 Total MRR: $10,980/mo
@@ -215,7 +215,7 @@ Total ARR: $131,760/year
 
 **Early Adopter Lifetime Deal** (Limited Time)
 - $99 one-time for Premium
-- $149 one-time for Premium+
+- $149 one-time for Enterprise
 - Limited to first 100 customers
 - Creates urgency and initial revenue
 
@@ -290,27 +290,29 @@ Total ARR: $131,760/year
 
 ---
 
-## 💎 Premium+ Justification
+## 💎 Enterprise Justification
 
 ### Why $9.99 vs. $7.99?
 
 **Value Proposition:**
-- Cross-device sync (worth $5/mo alone)
-- Team features (competitors charge $20+/user)
-- API access (developers will pay for this)
-- Advanced analytics (business intelligence)
+- AES-256 session encryption (worth $5/mo alone)
+- Portable sessions across devices (USB/network drives)
+- Local API server (developers will pay for this)
+- Advanced automation & macros (business productivity)
+- Multi-profile management (client separation)
 
 **Target Market:**
-- Agencies (can expense it)
-- Teams (split cost across users)
+- Security-conscious professionals
+- Freelancers working across multiple computers
 - Power users (managing 20+ accounts)
-- Developers (API access is valuable)
+- Developers (local API access is valuable)
+- Privacy-focused consultants
 
 **Differentiation:**
 - Clear separation from Premium
-- Targets different customer segment
-- Justifies premium pricing
-- Creates upgrade path
+- Targets privacy-conscious power users
+- Justifies premium pricing with security features
+- Creates upgrade path for advanced users
 
 ---
 
@@ -329,6 +331,7 @@ Total ARR: $131,760/year
 - ✅ Better UX than competitors
 - ✅ More focused than productivity suites
 - ✅ Simpler than Firefox Containers
+- ✅ **100% Private** - no cloud dependency unlike competitors
 
 ---
 
@@ -347,7 +350,7 @@ Total ARR: $131,760/year
 - Measure: Annual plan uptake
 
 **Test 3: Tier Positioning**
-- A: Free → Premium → Premium+
+- A: Free → Premium → Enterprise
 - B: Free → Pro ($7.99, includes everything)
 - Measure: Overall revenue
 
@@ -407,7 +410,7 @@ Total ARR: $131,760/year
 ## 📝 Pricing Decision Checklist
 
 - [ ] Premium at $4.99/month feels right?
-- [ ] Premium+ at $9.99/month justified?
+- [ ] Enterprise at $9.99/month justified?
 - [ ] 50% annual discount is compelling?
 - [ ] Free tier (3 sessions) is generous but limited?
 - [ ] Pricing is competitive with SessionBox?
@@ -431,7 +434,7 @@ Total ARR: $131,760/year
 
 ### Phase 3: Standard Pricing (Month 2+)
 - $4.99/month Premium
-- $9.99/month Premium+
+- $9.99/month Enterprise
 - Lifetime deal ends
 - Focus on subscription revenue
 

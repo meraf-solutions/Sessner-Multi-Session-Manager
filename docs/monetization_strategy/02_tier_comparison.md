@@ -9,7 +9,7 @@
 
 ## 📊 Complete Feature Comparison
 
-| Feature Category | FREE | PREMIUM<br>$4.99/mo | PREMIUM+<br>$9.99/mo |
+| Feature Category | FREE | PREMIUM<br>$4.99/mo | ENTERPRISE<br>$9.99/mo |
 |---|:---:|:---:|:---:|
 | **CORE SESSION MANAGEMENT** ||||
 | Concurrent Sessions | **3** | **Unlimited** | **Unlimited** |
@@ -37,11 +37,11 @@
 | Keyboard Shortcuts (Custom) | ❌ | ✅ | ✅ |
 | Quick Session Switcher | ❌ | ✅ | ✅ |
 | Session Rules (Auto-Assign URLs) | ❌ | ❌ | ✅ |
-| **COLLABORATION (Premium+ Only)** ||||
-| Cross-Device Sync | ❌ | ❌ | ✅ |
-| Team Session Sharing | ❌ | ❌ | ✅ |
-| Shared Session Templates | ❌ | ❌ | ✅ |
-| Team Usage Analytics | ❌ | ❌ | ✅ |
+| **SECURITY & PORTABILITY (Enterprise Only)** ||||
+| Session Encryption (AES-256) | ❌ | ❌ | ✅ |
+| Portable Sessions (USB/Network) | ❌ | ❌ | ✅ |
+| Multi-Profile Management | ❌ | ❌ | ✅ |
+| Password-Protected Exports | ❌ | ❌ | ✅ |
 | **ANALYTICS & INSIGHTS** ||||
 | Basic Usage Stats | ❌ | ✅ | ✅ |
 | Advanced Analytics | ❌ | ❌ | ✅ |
@@ -52,8 +52,8 @@
 | Custom Color Themes | ❌ | ❌ | ✅ |
 | UI Layout Options | ❌ | ❌ | ✅ |
 | **DEVELOPER FEATURES** ||||
-| API Access | ❌ | ❌ | ✅ |
-| Webhook Support | ❌ | ❌ | ✅ |
+| Local API Server | ❌ | ❌ | ✅ |
+| Session Macros/Scripts | ❌ | ❌ | ✅ |
 | CLI Tools | ❌ | ❌ | ✅ |
 | **SUPPORT & UPDATES** ||||
 | Community Support | ✅ | ✅ | ✅ |
@@ -110,29 +110,34 @@ ROI: 20-100x
 
 ---
 
-### Choose **PREMIUM+** if you:
+### Choose **ENTERPRISE** if you:
 - ✅ Manage **20+ sessions** regularly
-- ✅ Work across **multiple devices** (need sync)
-- ✅ Need **team collaboration** features
-- ✅ Want **automation** (auto-open, scheduling)
-- ✅ Need **advanced analytics**
-- ✅ Are a **developer** needing API access
-- ✅ Run an **agency** or **team**
+- ✅ Need **portable sessions** across multiple computers (USB/network drives)
+- ✅ Require **advanced encryption** for sensitive data
+- ✅ Want **automation** (auto-open, scheduling, macros)
+- ✅ Need **advanced analytics** and reporting
+- ✅ Are a **developer** needing local API access
+- ✅ Manage **multiple separate profiles** for different clients/projects
 
 **Example Users:**
-- Digital marketing agency with team
-- Developer needing custom integration
-- Enterprise user with multiple devices
-- Power user managing 30+ accounts
-- Team lead coordinating workflows
+- Security-conscious professionals
+- Developers needing custom automation
+- Power users with portable workflow needs
+- Consultants managing 30+ client accounts
+- Freelancers working on multiple computers
+- Privacy-focused agencies
 
-**Team Use Case:**
+**Power User Value:**
 ```
-5-person team × $10/month = $50/month
-vs.
-Manual session management = 20+ hours/month team time
-Savings: $500-$2,000/month in productivity
-ROI: 10-40x
+Advanced Features:
+- AES-256 encrypted session exports
+- Portable session files (work/home/laptop)
+- Local API for custom automation
+- Multi-profile separation (client A, B, C)
+- Session macros for repetitive tasks
+
+Value: Complete control + maximum security
+ROI: Priceless for privacy-conscious professionals
 ```
 
 ---
@@ -151,15 +156,16 @@ ROI: 10-40x
 
 ---
 
-### Premium → Premium+
+### Premium → Enterprise
 **Triggers:**
 - User has 15+ sessions (power user)
-- User needs cross-device sync
-- User is part of a team
-- User requests API access
+- User needs portable sessions across devices
+- User requires encrypted exports
+- User requests local API access
+- User manages multiple client profiles
 
 **Messaging:**
-> "Unlock team features, cross-device sync, and automation with Premium+. Upgrade for just $5/month more."
+> "Unlock advanced encryption, portable sessions, and local API automation with Enterprise. Upgrade for just $5/month more."
 
 ---
 
@@ -169,7 +175,7 @@ ROI: 10-40x
 |------|---------|--------|---------|
 | **Free** | $0 | $0 | - |
 | **Premium** | $4.99 | $29.99 | **$30 (50%)** |
-| **Premium+** | $9.99 | $59.99 | **$60 (50%)** |
+| **Enterprise** | $9.99 | $59.99 | **$60 (50%)** |
 
 ### Payment Options
 - ✅ Credit/Debit Card (Stripe)
@@ -203,18 +209,19 @@ ROI: 10-40x
 - ✅ Keyboard shortcuts
 - ✅ Usage statistics
 
-**Premium+ Launch:**
-- ✅ Cross-device sync (cloud)
-- ✅ Team sharing (basic)
+**Enterprise Launch:**
+- ✅ Session encryption (password-protected)
+- ✅ Portable sessions (export with portability)
 - ✅ Advanced analytics
 - ✅ Custom themes
 
 ### Phase 3: Advanced (Months 4-6)
-**Premium+ Additions:**
-- ✅ Session automation
+**Enterprise Additions:**
+- ✅ Session automation & macros
 - ✅ Scheduling
-- ✅ API access
-- ✅ Webhook support
+- ✅ Local API server
+- ✅ AES-256 encryption
+- ✅ Multi-profile management
 - ✅ Session rules
 
 ---
@@ -243,15 +250,15 @@ ROI: 10-40x
 - "Premium" label in UI
 - No session counter (unlimited)
 
-### Premium+ Badge
+### Enterprise Badge
 ```
 ┌───────────────────┐
-│  (✨) PREMIUM+   │
+│  (✨) ENTERPRISE   │
 │   Unlimited Pro  │
 └───────────────────┘
 ```
 - Sparkle icon
-- "Premium+" label
+- "Enterprise" label
 - Elite styling (gradient)
 
 ---
@@ -268,13 +275,14 @@ ROI: 10-40x
 | **Modern UI** | ✅ | ✅ | ❌ (dated) | ❌ (dated) |
 | **Performance** | ⚡ Fast | ⚡ Fast | 🐌 Slower | 🐌 Slower |
 | **Session Naming** | ❌ | ✅ | ✅ | ✅ |
-| **Auto-Sync** | ❌ | ❌ | ❌ | ✅ |
+| **Privacy (100% Local)** | ✅ | ✅ | ❌ | ❌ |
 
 **Advantages:**
 - ✅ **Cheaper** ($4.99 vs. $7.99)
 - ✅ **Modern Architecture** (better performance)
 - ✅ **Better UX** (cleaner design)
 - ✅ **Edge-Optimized** (native integration)
+- ✅ **100% Private** (no cloud, no data leakage)
 
 ---
 
@@ -282,15 +290,16 @@ ROI: 10-40x
 
 Based on user research and competitor analysis:
 
-| Feature | Free Users | Premium Users | Premium+ Users |
+| Feature | Free Users | Premium Users | Enterprise Users |
 |---------|:----------:|:-------------:|:--------------:|
 | **Average Sessions** | 2-3 | 5-10 | 15-30 |
 | **Daily Active** | 40% | 70% | 90% |
 | **Use Naming** | - | 80% | 95% |
 | **Use Export** | - | 30% | 70% |
 | **Use Templates** | - | 40% | 80% |
-| **Use API** | - | - | 20% |
-| **Use Sync** | - | - | 60% |
+| **Use Local API** | - | - | 20% |
+| **Use Encryption** | - | - | 60% |
+| **Use Portable Sessions** | - | - | 40% |
 
 ---
 
@@ -309,16 +318,16 @@ Based on user research and competitor analysis:
 8. ✅ Session search
 
 ### High Impact + Hard Implementation (Do Later)
-9. ✅ Cross-device sync
-10. ✅ Team collaboration
-11. ✅ API access
-12. ✅ Session automation
+9. ✅ Session encryption (AES-256)
+10. ✅ Portable sessions (USB/network)
+11. ✅ Local API server
+12. ✅ Session automation & macros
 
 ### Lower Impact (Nice to Have)
 13. Custom themes
 14. Advanced analytics
 15. CLI tools
-16. Webhook support
+16. Multi-profile management
 
 ---
 
@@ -331,10 +340,11 @@ Use this to finalize tier features:
 2. **Free Tier:** Is 7-day persistence fair? ✅
 3. **Premium:** Is $4.99/month competitive? ✅
 4. **Premium:** Does unlimited sessions justify price? ✅
-5. **Premium+:** Is $9.99/month too expensive? 🤔 (may test $7.99)
-6. **Premium+:** Are team features compelling enough? ✅
-7. **Annual Discount:** Is 50% off attractive? ✅
-8. **Conversion:** Will 2-5% of free users upgrade? ✅ (likely)
+5. **Enterprise:** Is $9.99/month too expensive? 🤔 (may test $7.99)
+6. **Enterprise:** Are privacy/encryption features compelling enough? ✅
+7. **Privacy Focus:** Does local-only architecture differentiate us? ✅
+8. **Annual Discount:** Is 50% off attractive? ✅
+9. **Conversion:** Will 2-5% of free users upgrade? ✅ (likely)
 
 ---
 

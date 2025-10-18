@@ -9,7 +9,7 @@
 
 ## 📚 Documentation Overview
 
-This folder contains comprehensive documentation for implementing a freemium monetization strategy for Sessner – Multi-Session Manager. The strategy allows users to use core features for free with limitations while offering Premium and Premium+ tiers for power users and businesses.
+This folder contains comprehensive documentation for implementing a freemium monetization strategy for Sessner – Multi-Session Manager. The strategy allows users to use core features for free with limitations while offering Premium and Enterprise tiers for power users and businesses.
 
 ---
 
@@ -29,7 +29,7 @@ This folder contains comprehensive documentation for implementing a freemium mon
 
 ### 2. [Tier Comparison](02_tier_comparison.md)
 **Complete feature matrix for all tiers**
-- Free vs Premium vs Premium+ features
+- Free vs Premium vs Enterprise features
 - Tier selection guide
 - Competitive comparison
 - Feature prioritization
@@ -156,14 +156,15 @@ This folder contains comprehensive documentation for implementing a freemium mon
 - 12+ badge colors
 - **Goal**: Monetize power users (5-15 accounts)
 
-**Premium+ Tier ($9.99/month or $59.99/year):**
+**Enterprise Tier ($9.99/month or $59.99/year):**
 - Everything in Premium
-- Cross-device sync
-- Team collaboration
-- Session automation
+- AES-256 session encryption
+- Portable sessions (USB/network drives)
+- Local API server
+- Session automation & macros
+- Multi-profile management
 - Advanced analytics
-- API access
-- **Goal**: Monetize agencies and teams (20+ accounts)
+- **Goal**: Monetize privacy-conscious power users (20+ accounts)
 
 ---
 
@@ -180,7 +181,7 @@ This folder contains comprehensive documentation for implementing a freemium mon
 
 **Key Assumptions:**
 - 2-5% conversion rate (Free → Premium)
-- 10-15% upgrade rate (Premium → Premium+)
+- 10-15% upgrade rate (Premium → Enterprise)
 - 80% annual retention
 - Organic growth via Product Hunt, Reddit, content marketing
 
@@ -202,7 +203,7 @@ This folder contains comprehensive documentation for implementing a freemium mon
 
 ### Phase 3: Growth (Months 3-12)
 - Optimize conversion funnels
-- Add Premium+ features
+- Add Enterprise features
 - Expand marketing channels
 - Scale to 1,000+ paying users
 
@@ -214,11 +215,12 @@ This folder contains comprehensive documentation for implementing a freemium mon
 
 1. **Generous Free Tier** - 3 sessions is enough to validate, not enough for professionals
 2. **Clear Value Proposition** - Save 10-15 hours/month for $5/month = 20-100x ROI
-3. **Simple Pricing** - $4.99 (Premium) and $9.99 (Premium+) are easy to understand
+3. **Simple Pricing** - $4.99 (Premium) and $9.99 (Enterprise) are easy to understand
 4. **Excellent UX** - Upgrade prompts are helpful, not annoying
 5. **Fair Enforcement** - Never block existing sessions, downgrade gracefully
 6. **Active Marketing** - Product Hunt, Reddit, content, email campaigns
 7. **Continuous Improvement** - Regular feature updates, responsive support
+8. **Privacy First** - 100% Local, 100% Private - our unique competitive advantage
 
 ---
 
@@ -257,7 +259,7 @@ Before implementation, decide on:
 ### Features
 - [ ] Free tier: 3 sessions or 5 sessions?
 - [ ] Premium: Which features in Phase 1?
-- [ ] Premium+: Launch immediately or wait?
+- [ ] Enterprise: Launch immediately or wait?
 
 ### Payment
 - [ ] Gumroad/LemonSqueezy (quick, simple) or Stripe (professional, complex)?

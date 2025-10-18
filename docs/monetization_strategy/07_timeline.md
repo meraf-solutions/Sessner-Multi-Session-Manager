@@ -57,7 +57,7 @@
 - [ ] Add license badge to `popup.html`
 - [ ] Show tier and usage stats
 - [ ] Add "Upgrade" button
-- [ ] Style for all tiers (Free/Premium/Premium+)
+- [ ] Style for all tiers (Free/Premium/Enterprise)
 
 **Days 3-4: Upgrade Modal**
 - [ ] Create `upgrade-modal.html`
@@ -293,7 +293,7 @@
 ### Month 2 Goals
 - Optimize conversion funnels
 - A/B test pricing
-- Implement Premium+ features
+- Implement Enterprise features
 - Build email drip campaigns
 
 ### Month 3 Goals

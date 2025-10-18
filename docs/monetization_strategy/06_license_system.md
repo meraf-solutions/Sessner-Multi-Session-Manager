@@ -14,12 +14,12 @@ SESS-{TIER}-{RANDOM}-{RANDOM}-{CHECKSUM}
 
 Examples:
 SESS-PREM-A1B2-C3D4-E5F6  (Premium)
-SESS-PLUS-G7H8-I9J0-K1L2  (Premium+)
+SESS-PLUS-G7H8-I9J0-K1L2  (Enterprise)
 ```
 
 ### Components
 1. **Prefix**: `SESS` - Identifies Sessner licenses
-2. **Tier Code**: `PREM` (Premium) or `PLUS` (Premium+)
+2. **Tier Code**: `PREM` (Premium) or `PLUS` (Enterprise)
 3. **Random Segments**: Two 4-character segments (A-Z, 0-9)
 4. **Checksum**: 4-character validation code
 
@@ -439,7 +439,7 @@ Response: { tier, activations, expiresAt, status }
 
 ### Test Cases
 1. ✅ Valid Premium license activates correctly
-2. ✅ Valid Premium+ license activates correctly
+2. ✅ Valid Enterprise license activates correctly
 3. ✅ Invalid format rejected
 4. ✅ Wrong checksum rejected
 5. ✅ Expired license downgraded

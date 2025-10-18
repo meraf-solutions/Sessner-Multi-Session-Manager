@@ -97,7 +97,7 @@
 
 ---
 
-### Q: What about Premium+ pricing - is $9.99 too expensive?
+### Q: What about Enterprise pricing - is $9.99 too expensive?
 **A:** **No, it's justified** for target audience:
 - **Agencies**: Can expense $10/month easily
 - **Teams**: Split cost across users
@@ -421,17 +421,17 @@
 ---
 
 ### Q: What about GDPR compliance?
-**A:** **Good news**: Extension is local-only
-- No data sent to servers (initially)
+**A:** **Perfect news**: Extension is 100% local-only
+- **No data ever sent to servers** - this is our core principle
 - No tracking or analytics
 - No personal data collected
-- GDPR compliance is simple
+- GDPR compliance is automatic (no cloud = no privacy concerns)
 
-**If adding server (Phase 2)**:
-- Collect only necessary data
-- Store in EU if targeting EU
-- Provide data export/deletion
-- Update privacy policy
+**Our Privacy Commitment**:
+- 100% Local, 100% Private - forever
+- No plans for cloud features
+- Privacy is our competitive advantage
+- Zero data collection, zero cloud dependency
 
 ---
 

@@ -41,16 +41,16 @@ This document provides visual specifications for all monetization-related UI com
 - No session limit shown (unlimited)
 - No upgrade button
 
-### Premium+ Tier Display
+### Enterprise Tier Display
 ```
 ┌────────────────────────────────────────┐
-│ ✨ PREMIUM+          27 sessions active │
+│ ✨ ENTERPRISE          27 sessions active │
 └────────────────────────────────────────┘
 ```
 
 **Specifications:**
 - Background: Purple tint `#f3e5f5`
-- Badge: `PREMIUM+` in purple `#9c27b0`
+- Badge: `ENTERPRISE` in purple `#9c27b0`
 - Elite styling
 
 ---
@@ -124,10 +124,10 @@ This document provides visual specifications for all monetization-related UI com
 ┌──────────────────────────────────────────────────────────────┐
 │                                                              │
 │            Unlock Unlimited Sessions                         │
-│     Upgrade to Premium or Premium+ for powerful features    │
+│     Upgrade to Premium or Enterprise for powerful features    │
 │                                                              │
 │  ┌─────────────┐  ┌──────────────────┐  ┌─────────────┐   │
-│  │    FREE     │  │ PREMIUM ⭐       │  │  PREMIUM+   │   │
+│  │    FREE     │  │ PREMIUM ⭐       │  │  ENTERPRISE   │   │
 │  │             │  │ MOST POPULAR     │  │             │   │
 │  │    $0       │  │    $4.99/mo      │  │  $9.99/mo   │   │
 │  │  forever    │  │ or $29.99/year   │  │ or $59.99/yr│   │
@@ -235,7 +235,7 @@ This document provides visual specifications for all monetization-related UI com
 │  Most productive: Weekdays 10am    │
 │                                    │
 │  📊 Advanced analytics available   │
-│  in Premium+                       │
+│  in Enterprise                       │
 └────────────────────────────────────┘
 ```
 
@@ -306,7 +306,7 @@ This document provides visual specifications for all monetization-related UI com
 ### Tier Colors
 - **Free**: Gray `#666666`
 - **Premium**: Gold `#f39c12`
-- **Premium+**: Purple `#9c27b0`
+- **Enterprise**: Purple `#9c27b0`
 
 ### UI Colors
 - **Primary**: Blue `#1ea7e8`
@@ -318,7 +318,7 @@ This document provides visual specifications for all monetization-related UI com
 ### Gradients
 - **Primary**: `linear-gradient(135deg, #1ea7e8 0%, #0066cc 100%)`
 - **Premium**: `linear-gradient(135deg, #f39c12 0%, #e67e22 100%)`
-- **Premium+**: `linear-gradient(135deg, #667eea 0%, #764ba2 100%)`
+- **Enterprise**: `linear-gradient(135deg, #667eea 0%, #764ba2 100%)`
 
 ---
 

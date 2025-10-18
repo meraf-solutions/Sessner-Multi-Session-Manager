@@ -297,7 +297,7 @@ async function activateLicense(licenseKey) {
 function parseLicenseKeyTier(key) {
   // Simple offline validation based on key prefix
   // Format: SESS-{TIER}-XXXX-XXXX-XXXX
-  // TIER: PREM (Premium), PLUS (Premium+)
+  // TIER: PREM (Premium), PLUS (Enterprise)
 
   if (!key || !validateLicenseKeyFormat(key)) {
     return null;
@@ -401,7 +401,7 @@ window.LicenseManager = {
     <!-- Header -->
     <div class="upgrade-header">
       <h1>Unlock Unlimited Sessions</h1>
-      <p class="subtitle">Upgrade to Premium or Premium+ for powerful features</p>
+      <p class="subtitle">Upgrade to Premium or Enterprise for powerful features</p>
     </div>
 
     <!-- Pricing Cards -->
@@ -457,10 +457,10 @@ window.LicenseManager = {
         </div>
       </div>
 
-      <!-- Premium+ Tier -->
+      <!-- Enterprise Tier -->
       <div class="pricing-card premium-plus-card">
         <div class="card-header">
-          <h2>Premium+</h2>
+          <h2>Enterprise</h2>
           <div class="price">$9.99</div>
           <div class="period">per month</div>
           <div class="annual-deal">or $59.99/year (save 50%)</div>
@@ -479,7 +479,7 @@ window.LicenseManager = {
         </div>
         <div class="card-footer">
           <button class="btn btn-premium-plus" id="upgradePremiumPlusBtn">
-            Upgrade to Premium+
+            Upgrade to Enterprise
           </button>
         </div>
       </div>

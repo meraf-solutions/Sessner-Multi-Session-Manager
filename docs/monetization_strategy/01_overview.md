@@ -31,11 +31,12 @@ The strategy maintains a **generous free tier** to build user base while monetiz
 - Professional features (export/import, analytics)
 - Business-grade reliability
 
-### For Premium+ Users
-- Team collaboration features
-- Cross-device synchronization
-- Automation and scheduling
-- API access for developers
+### For Enterprise Users
+- Advanced local automation and scheduling
+- Portable session files (USB/network drives)
+- Local API server for custom integration
+- Advanced encryption and security features
+- Multi-profile session management
 
 ---
 
@@ -43,7 +44,7 @@ The strategy maintains a **generous free tier** to build user base while monetiz
 
 ### Primary Revenue Stream: Subscription
 - **Premium**: $4.99/month or $29.99/year (50% discount)
-- **Premium+**: $9.99/month or $59.99/year (50% discount)
+- **Enterprise**: $9.99/month or $59.99/year (50% discount)
 
 ### Secondary Revenue Streams (Future)
 - **Lifetime licenses**: One-time payment ($99-$149)
@@ -52,7 +53,7 @@ The strategy maintains a **generous free tier** to build user base while monetiz
 
 ### Target Conversion Rates
 - **Free → Premium**: 2-5% (industry standard for productivity tools)
-- **Premium → Premium+**: 10-15% (power user upgrade)
+- **Premium → Enterprise**: 10-15% (power user upgrade)
 - **Retention**: 80%+ annual retention (sticky use case)
 
 ---
@@ -133,7 +134,7 @@ The strategy maintains a **generous free tier** to build user base while monetiz
 **Year 3:**
 - Total Users: 50,000
 - Premium Conversions (4%): 2,000 users
-- Premium+ (10% of Premium): 200 users
+- Enterprise (10% of Premium): 200 users
 - MRR: $12,000 (1,800 × $5 + 200 × $10)
 - ARR: $144,000
 
@@ -198,7 +199,7 @@ Target users who:
 
 ---
 
-## 🌟 Premium+ Strategy
+## 🌟 Enterprise Strategy
 
 ### Positioning: "For Teams and Power Users"
 
@@ -208,7 +209,7 @@ Target users who:
 - Want **automation** and **advanced analytics**
 - Have **budget** for professional tools ($10+/month)
 
-### Premium+ Value Proposition
+### Enterprise Value Proposition
 
 **For Agencies:**
 - Share session templates with team
@@ -265,7 +266,7 @@ Target users who:
 - Customer testimonials and case studies
 
 ### Phase 3: Retention & Expansion (Months 12+)
-- Premium+ feature rollout
+- Enterprise feature rollout
 - Team collaboration features
 - API and developer program
 - Referral program
@@ -282,7 +283,7 @@ Target users who:
 1. **Simplicity**: One-click session creation
 2. **Reliability**: True isolation, no cross-contamination
 3. **Transparency**: Clear pricing, no hidden fees
-4. **Privacy**: 100% local, no cloud sync (unless Premium+)
+4. **Privacy**: 100% local, 100% private - zero cloud dependency
 
 ### Taglines
 - Primary: "Multi-Session Manager for Microsoft Edge"
@@ -332,7 +333,7 @@ Target users who:
 
 ### Conversion Metrics
 - **Free → Premium Conversion Rate** (target: 2-5%)
-- **Premium → Premium+ Conversion Rate** (target: 10-15%)
+- **Premium → Enterprise Conversion Rate** (target: 10-15%)
 - **Time to First Upgrade** (average days as free user)
 - **Upgrade Trigger** (hit session limit, feature need, etc.)
 
@@ -411,7 +412,7 @@ Target users who:
 2. Publish marketing content
 3. Product Hunt launch
 4. Collect feedback & iterate
-5. Build Premium+ features
+5. Build Enterprise features
 
 ---
 
