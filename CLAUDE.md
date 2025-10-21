@@ -1,5 +1,67 @@
 # Multi-Session Browser Extension - Technical Documentation
 
+## 📚 Documentation Structure
+
+This project has comprehensive documentation organized across multiple files:
+
+### Core Documentation
+- **[docs/api.md](docs/api.md)** - Extension API Reference
+  - Message passing architecture
+  - Background script API (session management, cookies, license)
+  - Content script API
+  - Popup UI API
+  - Chrome Extension APIs used (webRequest, cookies, tabs, etc.)
+  - Request/response formats and code examples
+
+- **[docs/subscription_api.md](docs/subscription_api.md)** - Subscription & Licensing API
+  - Meraf Solutions API integration
+  - Development license keys (Premium/Enterprise)
+  - API endpoints (verify, register, unregister, validate)
+  - Tier detection logic
+  - Device ID generation
+  - License activation and validation flows
+  - Grace period system
+
+- **[docs/architecture.md](docs/architecture.md)** - System Architecture
+  - High-level system overview
+  - Design patterns (SessionBox-style isolation)
+  - Component architecture (background, content scripts, popup, license manager)
+  - Multi-layer isolation architecture
+  - Data flow diagrams
+  - State management and persistence
+  - Session lifecycle
+  - Security and performance architecture
+
+- **[docs/technical.md](docs/technical.md)** - Technical Implementation
+  - Core algorithms (session ID, device ID, cookie parsing)
+  - Code patterns (ES6 Proxy, exponential backoff, debounced persistence)
+  - Key functions documentation
+  - Technical decisions and trade-offs
+  - Helper functions
+  - Storage schemas
+  - Debugging guide
+  - Performance optimizations
+
+- **[CLAUDE.md](CLAUDE.md)** (this file) - Project Overview & Development Guide
+  - Quick reference for core concepts
+  - Key files and components
+  - Session lifecycle
+  - Common patterns
+
+### Additional Documentation
+- **[docs/monetization_strategy/](docs/monetization_strategy/)** - Business strategy, pricing, license system
+- **[docs/analysis/](docs/analysis/)** - License system delivery summary, integration guides, testing
+
+### 🤖 Working with Claude
+
+**IMPORTANT**: When working on this project, Claude should:
+- **Use the `javascript-pro` agent** for all complex JavaScript tasks, architecture decisions, and code implementations
+- **Consult the documentation structure above** before answering questions (refer to specific docs)
+- **Cross-reference between documents** instead of duplicating information
+- **Update existing documentation** when adding features (never create redundant files)
+
+---
+
 ## Overview
 
 This is a **SessionBox-style multi-session browser extension** that creates **isolated browser sessions per tab**, enabling users to be simultaneously logged into multiple accounts on the same website. Each tab operates in its own isolated session with separate cookies and storage, similar to Firefox Multi-Account Containers or SessionBox.
@@ -1428,6 +1490,82 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 **Differences**:
 - **Profiles**: Separate browser windows, heavy overhead, awkward switching
 - **This Extension**: Tabs in same window, lightweight, quick switching
+
+### Critical Notes for License Validation
+
+**IMPORTANT - Response Parsing**:
+- Meraf Solutions API returns JSON-encoded strings: `"1"` (with quotes) not `1` (plain)
+- **ALWAYS** use `JSON.parse()` when parsing validation responses:
+  ```javascript
+  const text = await response.text();  // text = '"1"'
+  const parsed = JSON.parse(text);     // parsed = '1'
+  const isValid = parsed === '1';      // true
+  ```
+- **NEVER** compare directly: `text === '1'` will fail because `'"1"' !== '1'`
+
+**IMPORTANT - Message-Based Redirect**:
+- Extension popups cannot use `window.open()` to open extension pages
+- **ALWAYS** use message-based redirect pattern for invalid license:
+  ```javascript
+  // Background script:
+  chrome.runtime.sendMessage({ action: 'redirectToPopup' });
+
+  // license-details.js listener:
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'redirectToPopup') {
+      window.location.href = 'popup.html';
+      sendResponse({ success: true });
+      return true;
+    }
+  });
+  ```
+
+**IMPORTANT - Notification Icons**:
+- Extension icons are in `icons/` subdirectory
+- **ALWAYS** use `icons/icon128.png` for notifications (NOT `icon.png`)
+- Available sizes: `icon16.png`, `icon48.png`, `icon128.png`
+
+**IMPORTANT - Error Handling**:
+- **ALWAYS** check if `licenseData` is not null before accessing properties
+- Set to null **AFTER** logging properties that depend on it
+- Example:
+  ```javascript
+  if (this.licenseData) {
+    console.log('Key:', this.licenseData.key);
+  }
+  this.licenseData = null; // Set to null AFTER accessing
+  ```
+
+### Documentation Policy
+
+**IMPORTANT**: When adding new features or fixes, ALWAYS update existing documentation instead of creating new markdown files.
+
+**Documentation Structure**:
+- **`docs/api.md`** - API endpoints, authentication, request/response formats, usage examples
+- **`docs/subscription_api.md`** - Saas-Subscription API endpoints, authentication, request/response formats, usage examples
+- **`docs/technical.md`** - Implementation details, code patterns, helper functions, algorithms
+- **`docs/architecture.md`** - System design, component interactions, data flows, integration patterns
+- **`CLAUDE.md`** - Project overview, development guidelines, critical system behaviors (this file)
+
+**Rules**:
+1. **NEVER create new markdown documentation files** without checking existing docs/ directory first
+2. **ALWAYS update existing documentation files** when adding new features or fixes
+3. **ONLY create a new .md file if**:
+   - No existing category fits the content
+   - The content is substantial enough to warrant a separate file (>500 lines)
+   - You've verified with the user first
+4. **When making changes**:
+   - Update the "Last Updated" date in documentation
+   - Keep documentation concise and avoid redundancy across files
+   - Use cross-references instead of duplicating content
+
+**Examples**:
+- ✅ Add subscription system details → Update `docs/technical.md` section 13
+- ✅ Add new API endpoint → Update `docs/api.md` with endpoint documentation
+- ✅ Add system architecture diagram → Update `docs/architecture.md`
+- ❌ Create `SUBSCRIPTION-IMPLEMENTATION-SUMMARY.md` → Should update existing docs instead
+- ❌ Create `API_FIX_RENEWAL_FLOW.md` → Should update `docs/api.md` instead
+
 
 ## Conclusion
 

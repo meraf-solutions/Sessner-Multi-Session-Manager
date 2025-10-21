@@ -225,6 +225,149 @@ function attachTabListeners() {
   });
 }
 
+// ============= License Status =============
+
+/**
+ * Refresh license status display
+ */
+async function refreshLicenseStatus() {
+  try {
+    const response = await sendMessage({ action: 'getLicenseStatus' });
+
+    if (!response || !response.success) {
+      console.log('No license or error fetching license status');
+      displayFreeTier();
+      return;
+    }
+
+    const license = response.licenseData;
+
+    if (!license || license.tier === 'free') {
+      displayFreeTier();
+    } else if (license.tier === 'premium') {
+      displayPremiumTier(license);
+    } else if (license.tier === 'enterprise') {
+      displayEnterpriseTier(license);
+    }
+  } catch (error) {
+    console.error('Error refreshing license status:', error);
+    displayFreeTier();
+  }
+}
+
+/**
+ * Display Free tier badge
+ */
+function displayFreeTier() {
+  const badge = $('#licenseTierBadge');
+  const details = $('#licenseDetails');
+
+  badge.className = 'license-tier-badge free';
+  badge.textContent = 'Free Version';
+  badge.href = 'popup-license.html';
+  badge.title = 'Activate license';
+
+  details.innerHTML = `
+    <div class="license-details-item">
+      <span class="license-details-label">Status:</span>
+      <span>Limited to 3 sessions</span>
+    </div>
+  `;
+}
+
+/**
+ * Display Premium tier badge
+ * @param {Object} license
+ */
+function displayPremiumTier(license) {
+  const badge = $('#licenseTierBadge');
+  const details = $('#licenseDetails');
+
+  badge.className = 'license-tier-badge premium';
+  badge.textContent = 'Premium Version';
+  badge.href = 'license-details.html';
+  badge.title = 'View license details';
+
+  const registeredName = `${license.first_name || ''} ${license.last_name || ''}`.trim() || license.email || 'Unknown';
+  const dateSubscribed = license.date_created ? `${license.date_created} UTC` : 'N/A';
+  const dateRenewed = license.date_renewed ? `${license.date_renewed} UTC` : 'Never';
+  const expiryDate = license.date_expiry ? `${license.date_expiry} UTC` : 'N/A';
+
+  details.innerHTML = `
+    <div class="license-details-item">
+      <span class="license-details-label">Registered:</span>
+      <span>${escapeHtml(registeredName)}</span>
+    </div>
+    <div class="license-details-item">
+      <span class="license-details-label">Date Subscribed:</span>
+      <span>${dateSubscribed}</span>
+    </div>
+    <div class="license-details-item">
+      <span class="license-details-label">Date Renewed:</span>
+      <span>${dateRenewed}</span>
+    </div>
+    <div class="license-details-item">
+      <span class="license-details-label">Expiry Date:</span>
+      <span>${expiryDate}</span>
+    </div>
+  `;
+}
+
+/**
+ * Display Enterprise tier badge
+ * @param {Object} license
+ */
+function displayEnterpriseTier(license) {
+  const badge = $('#licenseTierBadge');
+  const details = $('#licenseDetails');
+
+  badge.className = 'license-tier-badge enterprise';
+  badge.textContent = 'Enterprise Version';
+  badge.href = 'license-details.html';
+  badge.title = 'View license details';
+
+  const registeredName = `${license.first_name || ''} ${license.last_name || ''}`.trim() || license.email || 'Unknown';
+  const dateSubscribed = license.date_created ? `${license.date_created} UTC` : 'N/A';
+  const dateRenewed = license.date_renewed ? `${license.date_renewed} UTC` : 'Never';
+  const expiryDate = license.date_expiry ? `${license.date_expiry} UTC` : 'N/A';
+
+  details.innerHTML = `
+    <div class="license-details-item">
+      <span class="license-details-label">Registered:</span>
+      <span>${escapeHtml(registeredName)}</span>
+    </div>
+    <div class="license-details-item">
+      <span class="license-details-label">Date Subscribed:</span>
+      <span>${dateSubscribed}</span>
+    </div>
+    <div class="license-details-item">
+      <span class="license-details-label">Date Renewed:</span>
+      <span>${dateRenewed}</span>
+    </div>
+    <div class="license-details-item">
+      <span class="license-details-label">Expiry Date:</span>
+      <span>${expiryDate}</span>
+    </div>
+  `;
+}
+
+/**
+ * Format date for display
+ * @param {string} dateString - ISO date string
+ * @returns {string}
+ */
+function formatDate(dateString) {
+  if (!dateString) return 'N/A';
+
+  try {
+    const date = new Date(dateString);
+    const options = { year: 'numeric', month: 'short', day: 'numeric' };
+    return date.toLocaleDateString('en-US', options);
+  } catch (error) {
+    return 'N/A';
+  }
+}
+
 // ============= Event Listeners =============
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -232,6 +375,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Load initial data
   await refreshSessions();
+  await refreshLicenseStatus();
 
   // New Session button
   $('#newSessionBtn').addEventListener('click', async () => {

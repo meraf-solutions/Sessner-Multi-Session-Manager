@@ -22,6 +22,36 @@
       color: white;
       padding: 20px;
       text-align: center;
+      position: relative;
+    }
+
+    .header .license-link {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+
+    .header .license-link:hover {
+      background: rgba(255, 255, 255, 0.3);
+      transform: translateY(-1px);
+    }
+
+    .header .license-link svg {
+      width: 14px;
+      height: 14px;
     }
 
     .header .brand-wrapper {
@@ -288,6 +318,68 @@
       text-decoration: underline;
     }
 
+    .license-status {
+      margin-bottom: 12px;
+      padding: 12px;
+      background: white;
+      border-radius: 8px;
+      border: 2px solid #e0e0e0;
+    }
+
+    .license-status-header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .license-tier-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .license-tier-badge.free {
+      background: #e0e0e0;
+      color: #666;
+    }
+
+    .license-tier-badge.premium {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .license-tier-badge.enterprise {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      color: white;
+    }
+
+    .license-tier-badge:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+
+    .license-details {
+      font-size: 10px;
+      color: #888;
+      line-height: 1.5;
+    }
+
+    .license-details-item {
+      display: flex;
+      justify-content: center;
+      gap: 4px;
+    }
+
+    .license-details-label {
+      font-weight: 600;
+    }
+
     /* Dark Mode Support */
     @media (prefers-color-scheme: dark) {
       body {
@@ -396,6 +488,20 @@
       .footer a {
         color: #1ea7e8;
       }
+
+      .license-status {
+        background: #2d2d2d;
+        border-color: #444;
+      }
+
+      .license-tier-badge.free {
+        background: #444;
+        color: #bbb;
+      }
+
+      .license-details {
+        color: #888;
+      }
     }
   </style>
 </head>
@@ -432,6 +538,21 @@
   </div>
 
   <div class="footer">
+    <!-- License Status Display -->
+    <div class="license-status" id="licenseStatus">
+      <div class="license-status-header">
+        <a href="license-details.html" class="license-tier-badge free" id="licenseTierBadge" title="View license details">
+          Free Version
+        </a>
+      </div>
+      <div class="license-details" id="licenseDetails">
+        <div class="license-details-item">
+          <span class="license-details-label">Status:</span>
+          <span>Limited to 3 sessions</span>
+        </div>
+      </div>
+    </div>
+
     © <span id="year">—</span>. MERAF Digital Solutions | All Rights Reserved.<br>
     <a href="https://merafsolutions.com" target="_blank">https://merafsolutions.com</a>
   </div>

@@ -10,10 +10,15 @@
     "tabs",
     "storage",
     "webNavigation",
+    "notifications",
     "<all_urls>"
   ],
   "background": {
-    "scripts": ["background.js"],
+    "scripts": [
+      "license-manager.js",
+      "license-integration.js",
+      "background.js"
+    ],
     "persistent": true
   },
   "browser_action": {

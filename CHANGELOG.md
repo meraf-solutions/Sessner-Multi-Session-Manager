@@ -7,6 +7,140 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.2] - 2025-10-21
+
+### Fixed - License Validation API Integration
+
+This update fixes critical issues with the Meraf Solutions licensing API integration to ensure proper license validation, error handling, and user experience.
+
+#### Critical Fixes
+
+1. **License Validation Endpoint Format** (CRITICAL)
+   - **Fixed**: Corrected endpoint URL format to match API specification
+   - **Before**: `{baseUrl}/validate` with POST body
+   - **After**: `{baseUrl}/validate?t=Sessner&s={license_key}&d={device_name}` with query parameters
+   - **Impact**: License validation now works correctly with the Meraf Solutions API
+   - **Files**: `license-manager.js` (line 431)
+
+2. **API Response Parsing** (CRITICAL)
+   - **Fixed**: API returns JSON-encoded strings (`"1"`, `"0"`) but code expected plain strings
+   - **Solution**: Added `JSON.parse()` to handle both JSON-encoded and plain text responses
+   - **Impact**: Validation no longer fails with "unexpected response" errors
+   - **Files**: `license-manager.js` (lines 444-453)
+   - **Example**:
+     ```javascript
+     // API Response: "1" (JSON-encoded string with quotes)
+     // Before: parsedResponse = "1" → comparison failed
+     // After: parsedResponse = JSON.parse("1") → 1 → comparison succeeds
+     ```
+
+3. **Extension Popup Redirect** (UX Fix)
+   - **Fixed**: Invalid license validation opened new browser window instead of redirecting extension popup
+   - **Root Cause**: Code tried to redirect browser tabs, but validation runs from extension popup (not a tab)
+   - **Solution**: Implemented message-based redirect using `chrome.runtime.sendMessage` with `redirectToPopup` action
+   - **Impact**: Invalid license now properly redirects to popup.html within the extension popup window
+   - **Files**: `license-manager.js` (lines 493-552), `license-details.js` (lines 317-330)
+
+4. **Promise/Callback Error** (Runtime Error Fix)
+   - **Fixed**: `TypeError: Cannot read properties of undefined (reading 'then')`
+   - **Root Cause**: `chrome.runtime.sendMessage()` doesn't return Promise in all Chrome versions
+   - **Solution**: Changed from `.then().catch()` pattern to callback pattern with `chrome.runtime.lastError` checking
+   - **Impact**: No more runtime errors when sending messages
+   - **Files**: `license-manager.js` (lines 493-552)
+
+5. **Notification Icon Path** (Display Fix)
+   - **Fixed**: "Unable to download all specified images" error in notifications
+   - **Root Cause**: Used `iconUrl: 'icon.png'` which doesn't exist in extension structure
+   - **Solution**: Changed to correct path `icons/icon128.png` with proper error handling
+   - **Impact**: Notifications now display correctly with Sessner icon
+   - **Files**: `license-manager.js` (lines 474-491)
+
+6. **Null Reference Error** (Runtime Error Fix)
+   - **Fixed**: `TypeError: Cannot set properties of null (setting 'lastAttempted')`
+   - **Root Cause**: Catch block accessed `this.licenseData` after setting it to `null` during invalid license handling
+   - **Solution**: Added null check before accessing licenseData properties
+   - **Impact**: Error handling no longer crashes, provides better logging
+   - **Files**: `license-manager.js` (lines 605-622)
+
+### Technical Improvements
+
+#### License Validation Flow
+- **Enhanced Error Logging**: Separate logging for error name, message, and stack trace
+- **User-Friendly Messages**: Clear notifications for validation errors vs invalid licenses
+- **Graceful Degradation**: Proper fallback to free tier when validation fails
+- **Data Cleanup**: License data correctly removed from storage on invalid response
+
+#### Message-Based Architecture
+- **New Message Type**: `redirectToPopup` for extension popup navigation
+- **Proper Response Handling**: Callbacks instead of Promises for Manifest V2 compatibility
+- **Error Resilience**: Handles missing listeners gracefully without throwing errors
+
+### Documentation Updates
+
+All documentation has been updated to reflect these changes:
+
+1. **[docs/api.md](docs/api.md)**
+   - Added `redirectToPopup` message action documentation
+   - Included request/response examples
+   - Cross-referenced with license validation flow
+
+2. **[docs/architecture.md](docs/architecture.md)**
+   - Updated periodic validation flow diagram
+   - Added message-based redirect pattern
+   - Documented invalid license handling
+
+3. **[docs/subscription_api.md](docs/subscription_api.md)**
+   - Fixed validation endpoint format with correct query parameters
+   - Added JSON response parsing documentation
+   - Updated all code examples to match implementation
+
+4. **[docs/technical.md](docs/technical.md)**
+   - Added comprehensive section "2025-01-22: License Validation API Response Parsing"
+   - Documented all 6 fixes with before/after code comparisons
+   - Included testing recommendations and debugging steps
+
+5. **[CLAUDE.md](CLAUDE.md)**
+   - Added "Critical Notes for License Validation" section
+   - Emphasized JSON response parsing requirement
+   - Documented message-based redirect pattern for future development
+
+### Files Modified
+
+- `license-manager.js` - Core validation logic fixes (6 changes across 5 sections)
+- `license-details.js` - Message listener for popup redirect
+- `docs/api.md` - API documentation update
+- `docs/architecture.md` - Architecture flow update
+- `docs/subscription_api.md` - Subscription API documentation fix
+- `docs/technical.md` - Technical implementation details
+- `CLAUDE.md` - Development guide updates
+
+### Testing
+
+All fixes have been tested and verified:
+- ✅ Valid license validation returns "1" and activates Premium/Enterprise tier
+- ✅ Invalid license validation returns "0", shows notification, clears data, redirects to popup
+- ✅ Extension popup properly redirects (no new windows)
+- ✅ Notifications display with correct Sessner icon
+- ✅ No runtime errors in Promise handling
+- ✅ Error handling works correctly with proper logging
+
+### Compatibility
+
+- ✅ Fully backward compatible with v3.0.1 and v3.0.0
+- ✅ No breaking changes to core session management
+- ✅ License data migration handled automatically
+- ✅ Works with Meraf Solutions licensing API
+
+### Upgrade Notes
+
+**Automatic upgrade** - No action required:
+- Extension will automatically use corrected validation endpoint
+- Existing licenses will be re-validated on next check
+- Invalid licenses will trigger proper cleanup and notification
+- All users will benefit from improved error handling
+
+---
+
 ## [3.0.1] - 2025-10-16
 
 ### Performance - Simplified Favicon Badge System

@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>License Management</title>
+  <style>
+    body {
+      width: 400px;
+      min-height: 300px;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #333;
+    }
+
+    .container {
+      padding: 20px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+      color: white;
+      position: relative;
+      padding-top: 40px;
+    }
+
+    .header .back-link {
+      position: absolute;
+      top: 0;
+      left: 0;
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+
+    .header .back-link:hover {
+      background: rgba(255, 255, 255, 0.3);
+      transform: translateX(-2px);
+    }
+
+    .header .back-link svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .header p {
+      margin: 5px 0 0 0;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      margin-bottom: 15px;
+    }
+
+    .tier-badge {
+      display: inline-block;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 15px;
+    }
+
+    .tier-free {
+      background: #e0e0e0;
+      color: #666;
+    }
+
+    .tier-premium {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .tier-enterprise {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      color: white;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+    .info-label {
+      color: #666;
+      font-weight: 500;
+    }
+
+    .info-value {
+      color: #333;
+      font-weight: 600;
+    }
+
+    .warning {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 15px;
+      font-size: 13px;
+      color: #856404;
+    }
+
+    .error {
+      background: #f8d7da;
+      border: 1px solid #f5c6cb;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 15px;
+      font-size: 13px;
+      color: #721c24;
+    }
+
+    .success {
+      background: #d4edda;
+      border: 1px solid #c3e6cb;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 15px;
+      font-size: 13px;
+      color: #155724;
+    }
+
+    .input-group {
+      margin-bottom: 15px;
+    }
+
+    .input-group label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .input-group input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: monospace;
+      box-sizing: border-box;
+      transition: border-color 0.2s;
+    }
+
+    .input-group input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .button {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .button-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .button-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .button-secondary {
+      background: white;
+      color: #667eea;
+      border: 2px solid #667eea;
+      margin-top: 10px;
+    }
+
+    .button-secondary:hover {
+      background: #f5f5f5;
+    }
+
+    .button-danger {
+      background: #dc3545;
+      color: white;
+      margin-top: 10px;
+    }
+
+    .button-danger:hover {
+      background: #c82333;
+    }
+
+    .button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .features-list {
+      list-style: none;
+      padding: 0;
+      margin: 15px 0;
+    }
+
+    .features-list li {
+      padding: 8px 0;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .features-list li:last-child {
+      border-bottom: none;
+    }
+
+    .feature-enabled {
+      color: #28a745;
+      font-weight: 600;
+    }
+
+    .feature-disabled {
+      color: #dc3545;
+      font-weight: 600;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: white;
+    }
+
+    .spinner {
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-top: 3px solid white;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 15px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .checkbox-group {
+      margin-bottom: 15px;
+    }
+
+    .checkbox-group label {
+      display: flex;
+      align-items: center;
+      font-size: 13px;
+      color: #666;
+      cursor: pointer;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      margin-right: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <a href="popup.html" class="back-link" title="Back to Sessions">
+        <svg fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+          <path fill-rule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clip-rule="evenodd"/>
+        </svg>
+        Back
+      </a>
+      <h1>License Management</h1>
+      <p>Manage your Sessner license</p>
+    </div>
+
+    <!-- Loading State -->
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Loading license information...</p>
+    </div>
+
+    <!-- License Active View -->
+    <div id="license-active" class="hidden">
+      <div class="card">
+        <div id="tier-badge"></div>
+
+        <div id="status-message"></div>
+
+        <div id="license-info">
+          <div class="info-row">
+            <span class="info-label">License Key:</span>
+            <span class="info-value" id="license-key">-</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Device ID:</span>
+            <span class="info-value" id="device-id" style="font-size: 11px;">-</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Last Validated:</span>
+            <span class="info-value" id="last-validated">-</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Days Until Expiry:</span>
+            <span class="info-value" id="days-until-expiry">-</span>
+          </div>
+        </div>
+
+        <ul class="features-list" id="features-list"></ul>
+
+        <button id="validate-button" class="button button-secondary">Validate Now</button>
+        <button id="deactivate-button" class="button button-danger">Deactivate License</button>
+      </div>
+    </div>
+
+    <!-- License Inactive View (Activation Form) -->
+    <div id="license-inactive" class="hidden">
+      <div class="card">
+        <div class="tier-badge tier-free">Free Tier</div>
+
+        <div id="activation-message"></div>
+
+        <div class="input-group">
+          <label for="license-key-input">License Key:</label>
+          <input
+            type="text"
+            id="license-key-input"
+            placeholder="XXXX-XXXX-XXXX-XXXX"
+            autocomplete="off"
+            spellcheck="false"
+          >
+        </div>
+
+        <div class="checkbox-group">
+          <label>
+            <input type="checkbox" id="sandbox-checkbox">
+            Use Sandbox API (for testing)
+          </label>
+        </div>
+
+        <button id="activate-button" class="button button-primary">Activate License</button>
+      </div>
+
+      <!-- Free Tier Features -->
+      <div class="card">
+        <h3 style="margin-top: 0; font-size: 16px;">Free Tier Features</h3>
+        <ul class="features-list">
+          <li>
+            <span>Max Sessions:</span>
+            <span>3</span>
+          </li>
+          <li>
+            <span>Session Persistence:</span>
+            <span>7 days</span>
+          </li>
+          <li>
+            <span>Session Naming:</span>
+            <span class="feature-disabled">✗</span>
+          </li>
+          <li>
+            <span>Export/Import:</span>
+            <span class="feature-disabled">✗</span>
+          </li>
+        </ul>
+        <p style="font-size: 12px; color: #666; margin-top: 15px; text-align: center;">
+          Upgrade to Premium or Enterprise for more features. Explore the advanced capabilities of Sessner, <a href="">here</a>!
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup-license.js"></script>
+</body>
+</html>

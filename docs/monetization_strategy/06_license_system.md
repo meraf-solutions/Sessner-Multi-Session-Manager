@@ -39,6 +39,70 @@ const LICENSE_CONFIG = {
 
 ---
 
+## 🧪 Development License Keys
+
+For testing and development purposes, use the following license keys:
+
+### Premium License (Development)
+```
+YEKE94W0E6QDICP7FBR5E7GAB9A6X3SFG3I7O6U1
+```
+
+**Expected Behavior:**
+- Tier: `premium`
+- Features: Unlimited sessions, session naming, export/import, session templates, 12 colored badges
+- Device Limit: 1 device
+- Persistence: Unlimited
+
+### Enterprise License (Development)
+```
+XC3CBDD2G8W0N5JFA5ZCPBW9N2P4W2W403P0B3HF
+```
+
+**Expected Behavior:**
+- Tier: `enterprise`
+- Features: All Premium features PLUS AES-256 encryption, portable sessions, local API server, multi-profile management, unlimited colored badges
+- Device Limit: 3 devices (enables portable sessions feature)
+- Persistence: Unlimited
+
+### Testing Workflow
+
+1. **Test Premium Activation:**
+   ```javascript
+   await licenseManager.activateLicense('YEKE94W0E6QDICP7FBR5E7GAB9A6X3SFG3I7O6U1');
+   // Should return: { success: true, tier: 'premium', message: '...' }
+   ```
+
+2. **Test Enterprise Activation:**
+   ```javascript
+   await licenseManager.activateLicense('XC3CBDD2G8W0N5JFA5ZCPBW9N2P4W2W403P0B3HF');
+   // Should return: { success: true, tier: 'enterprise', message: '...' }
+   ```
+
+3. **Test Device Limit (Enterprise):**
+   - Activate Enterprise license on Device 1 ✅
+   - Activate same license on Device 2 ✅
+   - Activate same license on Device 3 ✅
+   - Activate same license on Device 4 ❌ (should show error: "Maximum number of devices reached")
+
+4. **Test Feature Availability:**
+   ```javascript
+   const tier = await licenseManager.getTier();
+   console.log('Current tier:', tier); // 'premium' or 'enterprise'
+
+   const hasEncryption = await licenseManager.hasFeature('encryption');
+   console.log('Has encryption:', hasEncryption); // false for premium, true for enterprise
+   ```
+
+**⚠️ Important Notes:**
+- These keys are for development/testing only
+- Do not share these keys publicly
+- Replace with production keys before release
+- Test both online and offline scenarios
+- Verify grace period behavior (disconnect internet after activation)
+
+---
+
 ## 📡 API Endpoints
 
 ### 1. **Retrieve License Data** (Verify License)

@@ -1395,6 +1395,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true; // Keep channel open for async response
 
     } else {
+      // Try license message handlers
+      if (typeof handleLicenseMessage !== 'undefined') {
+        console.log('[Background] Trying license message handler for action:', message.action);
+        const handled = handleLicenseMessage(message, sender, sendResponse);
+        console.log('[Background] License handler returned:', handled);
+        if (handled) {
+          return handled; // License handler will manage response
+        }
+      }
+
+      console.log('[Background] Unknown action:', message.action);
       sendResponse({ success: false, error: 'Unknown action' });
       return false;
     }
