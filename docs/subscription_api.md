@@ -1,5 +1,5 @@
 # Subscription & Licensing API Documentation
-## Sessner  Multi-Session Manager
+## Sessner  Multi-Session Manager
 
 **Last Updated:** 2025-10-21
 **API Version:** 1.0
@@ -141,7 +141,7 @@ const hasEncryption = await licenseManager.hasFeature('encryption');
 console.log('Has encryption:', hasEncryption); // false for premium, true for enterprise
 ```
 
-**� Important:**
+**Important:**
 - These keys are for development/testing only
 - Do not share these keys publicly
 - Replace with production keys before release
@@ -563,7 +563,7 @@ function detectTier(licenseData) {
   "max_allowed_domains": "999",
   "max_allowed_devices": "1"
 }
-// � Tier: premium
+// -> Tier: premium
 ```
 
 **Enterprise License:**
@@ -572,7 +572,7 @@ function detectTier(licenseData) {
   "max_allowed_domains": "999",
   "max_allowed_devices": "3"
 }
-// � Tier: enterprise
+// -> Tier: enterprise
 ```
 
 ---
@@ -643,14 +643,14 @@ SESSNER_a1b2c3d4e5f6_X7Y8Z9W0V1
 
 ### Privacy Guarantees
 
--  Device ID stored locally only
--  Not reversible to personal data
--  Unique per browser installation
--  No cross-site tracking
--  Used only for license validation
--  No canvas fingerprinting (privacy-invasive technique avoided)
--  No audio fingerprinting
--  No WebGL fingerprinting
+-  Device ID stored locally only
+-  Not reversible to personal data
+-  Unique per browser installation
+-  No cross-site tracking
+-  Used only for license validation
+-  No canvas fingerprinting (privacy-invasive technique avoided)
+-  No audio fingerprinting
+-  No WebGL fingerprinting
 
 ---
 
@@ -659,61 +659,65 @@ SESSNER_a1b2c3d4e5f6_X7Y8Z9W0V1
 ### Complete Activation Process
 
 ```
-                                                             
- 1. User enters license key in extension popup               
-    Input: YEKE94W0E6QDICP7FBR5E7GAB9A6X3SFG3I7O6U1          
-                                                             
-                            �
-                                                             
- 2. Extension generates device ID (if not exists)            
-    Device ID: SESSNER_abc123def456_X7Y8Z9W0V1               
-    Stored in: chrome.storage.local                          
-                                                             
-                            �
-                                                             
- 3. Call: /api/license/register/device/{device_id}/         
-          {secret}/{license_key}                             
-    Response: "Device added successfully"                    
-                                                             
-                            �
-                                                             
- 4. Call: /api/license/verify/{secret}/{license_key}         
-    Returns: Full license details                            
-    {                                                         
-      status: "active",                                       
-      max_allowed_domains: "999",                             
-      max_allowed_devices: "1",                               
-      email: "user@example.com",                              
-      ...                                                     
-    }                                                         
-                                                             
-                            �
-                                                             
- 5. Detect tier from response                                
-    maxDevices=1, maxDomains=999 � Tier: premium             
-                                                             
-                            �
-                                                             
- 6. Store license data locally (chrome.storage.local)        
-    {                                                         
-      key: "YEKE94W0E6...",                                   
-      tier: "premium",                                        
-      status: "active",                                       
-      email: "user@example.com",                              
-      dateActivated: "2025-10-21T12:00:00.000Z",              
-      lastValidated: "2025-10-21T12:00:00.000Z",              
-      deviceId: "SESSNER_abc123...",                          
-      features: { /* cached features */ }                     
-    }                                                         
-                                                             
-                            �
-                                                             
- 7. Features unlocked immediately                            
-    Show notification: "Welcome to Sessner PREMIUM!"         
-                                                             
-```
-
-### Code Example
++--------------------------------------------------------------+
+| 1. User enters license key in extension popup               |
+|    Input: YEKE94W0E6QDICP7FBR5E7GAB9A6X3SFG3I7O6U1          |
++--------------------------------------------------------------+
+                            |
+                            v
++--------------------------------------------------------------+
+| 2. Extension generates device ID (if not exists)            |
+|    Device ID: SESSNER_abc123def456_X7Y8Z9W0V1               |
+|    Stored in: chrome.storage.local                          |
++--------------------------------------------------------------+
+                            |
+                            v
++--------------------------------------------------------------+
+| 3. Call: /api/license/register/device/{device_id}/         |
+|          {secret}/{license_key}                             |
+|    Response: "Device added successfully"                    |
++--------------------------------------------------------------+
+                            |
+                            v
++--------------------------------------------------------------+
+| 4. Call: /api/license/verify/{secret}/{license_key}         |
+|    Returns: Full license details                            |
+|    {                                                         |
+|      status: "active",                                       |
+|      max_allowed_domains: "999",                             |
+|      max_allowed_devices: "1",                               |
+|      email: "user@example.com",                              |
+|      ...                                                     |
+|    }                                                         |
++--------------------------------------------------------------+
+                            |
+                            v
++--------------------------------------------------------------+
+| 5. Detect tier from response                                |
+|    maxDevices=1, maxDomains=999 -> Tier: premium            |
++--------------------------------------------------------------+
+                            |
+                            v
++--------------------------------------------------------------+
+| 6. Store license data locally (chrome.storage.local)        |
+|    {                                                         |
+|      key: "YEKE94W0E6...",                                   |
+|      tier: "premium",                                        |
+|      status: "active",                                       |
+|      email: "user@example.com",                              |
+|      dateActivated: "2025-10-21T12:00:00.000Z",              |
+|      lastValidated: "2025-10-21T12:00:00.000Z",              |
+|      deviceId: "SESSNER_abc123...",                          |
+|      features: { /* cached features */ }                     |
+|    }                                                         |
++--------------------------------------------------------------+
+                            |
+                            v
++--------------------------------------------------------------+
+| 7. Features unlocked immediately                            |
+|    Show notification: "Welcome to Sessner PREMIUM!"         |
++--------------------------------------------------------------+
+```### Code Example
 
 ```javascript
 async function activateLicense(licenseKey) {
@@ -883,22 +887,22 @@ setInterval(performPeriodicValidation, 60 * 60 * 1000);
 ### Validation Timeline
 
 ```
-Day 0:  License activated 
+Day 0:  License activated 
         lastValidated = 2025-10-21
 
 Day 1-6: No validation needed
          Validation interval not reached
 
-Day 7:  Validation triggered �
+Day 7:  Validation triggered:
         Call /validate endpoint
-         Success � Update lastValidated
-        L Network error � Start grace period
+        - Success -> Update lastValidated
+        - Network error -> Start grace period
 
-Day 8-30: Grace period active �
+Day 8-30: Grace period active:
           Continue working offline
           Show reminder: "Please reconnect within X days"
 
-Day 31: Grace period expired �
+Day 31: Grace period expired:
         Downgrade to free tier
         Show: "License validation failed"
         User must reconnect and reactivate
@@ -1129,8 +1133,8 @@ exportLicenseDiagnostics();
   - [ ] Device limit enforcement works
 
 - [ ] **Tier Detection**
-  - [ ] Premium: maxDevices=1, maxDomains=999 � tier=premium
-  - [ ] Enterprise: maxDevices=3, maxDomains=999 � tier=enterprise
+  - [ ] Premium: maxDevices=1, maxDomains=999 -> tier=premium
+  - [ ] Enterprise: maxDevices=3, maxDomains=999 -> tier=enterprise
 
 - [ ] **Session Limits**
   - [ ] Free: Cannot create 4th session
@@ -1186,7 +1190,7 @@ console.log(detectTier(enterpriseLicenseData)); // 'enterprise'
 
 ### Activation
 
- **DO:**
+ **DO:**
 - Validate product name (`item_reference === 'Sessner'`)
 - Store device ID persistently
 - Update lastValidated timestamp
@@ -1201,7 +1205,7 @@ L **DON'T:**
 
 ### Validation
 
- **DO:**
+ **DO:**
 - Use lightweight /validate endpoint for periodic checks
 - Implement grace period for offline usage
 - Retry with exponential backoff
@@ -1216,7 +1220,7 @@ L **DON'T:**
 
 ### Error Handling
 
- **DO:**
+ **DO:**
 - Handle all error cases gracefully
 - Show user-friendly messages
 - Fall back to cached license
