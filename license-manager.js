@@ -51,17 +51,24 @@ class LicenseManager {
     // API Configuration
     // NOTE: Development keys work with SANDBOX API only
     // For production deployment, switch to prod.merafsolutions.com with production keys
-    this.API_BASE_URL = 'https://sandbox.merafsolutions.com';
-    this.SANDBOX_BASE_URL = 'https://sandbox.merafsolutions.com';
-    this.PRODUCTION_BASE_URL = 'https://prod.merafsolutions.com';
+    this.IS_DEVELOPMENT = true;
+    this.API_BASE_URL = this.IS_DEVELOPMENT ? 'https://sandbox.merafsolutions.com' : 'https://prod.merafsolutions.com';
     this.PRODUCT_NAME = 'Sessner';
 
     // API Secret Keys (visible in source, but rate-limited by API)
-    // These are DEVELOPMENT keys for SANDBOX API only
-    this.SECRET_KEY_VALIDATION = 'zVIlsYWUtU9LF5ESuLq';
-    this.SECRET_KEY_RETRIEVE = 'K6v3Sse5ULzL5tFp0U5e';
-    this.SECRET_KEY_REGISTER = '5p9Qde20Bs507OGqPWV';
-    this.SECRET_KEY_DEACTIVATE = '5p9Qde20Bs507OGqPWV';
+    if (this.IS_DEVELOPMENT) {
+      // These are DEVELOPMENT keys for SANDBOX API only
+      this.SECRET_KEY_VALIDATION = 'zVIlsYWUtU9LF5ESuLq';
+      this.SECRET_KEY_RETRIEVE = 'K6v3Sse5ULzL5tFp0U5e';
+      this.SECRET_KEY_REGISTER = '5p9Qde20Bs507OGqPWV';
+      this.SECRET_KEY_DEACTIVATE = '5p9Qde20Bs507OGqPWV';
+    } else {
+      // These are LIVE keys API only
+      this.SECRET_KEY_VALIDATION = 'Aly1XiEivaoYhQsbdE';
+      this.SECRET_KEY_RETRIEVE = 'X5UTwKJzY1gmhI3jTTB2';
+      this.SECRET_KEY_REGISTER = 'jYXqBGUDHk4x5d1YISDu';
+      this.SECRET_KEY_DEACTIVATE = 'jYXqBGUDHk4x5d1YISDu';
+    }
 
     // Validation Configuration
     this.VALIDATION_INTERVAL_DAYS = 7; // Full validation every 7 days
@@ -337,7 +344,7 @@ class LicenseManager {
     }
 
     const key = licenseKey.trim();
-    const baseUrl = useSandbox ? this.SANDBOX_BASE_URL : this.API_BASE_URL;
+    const baseUrl = this.API_BASE_URL;
 
     try {
       // Step 1: Register device
@@ -422,7 +429,7 @@ class LicenseManager {
     }
 
     console.log('[LicenseManager] Validating license...');
-    const baseUrl = useSandbox ? this.SANDBOX_BASE_URL : this.API_BASE_URL;
+    const baseUrl = this.API_BASE_URL;
 
     try {
       const key = this.licenseData.licenseKey;
@@ -643,7 +650,7 @@ class LicenseManager {
     }
 
     console.log('[LicenseManager] Deactivating license...');
-    const baseUrl = useSandbox ? this.SANDBOX_BASE_URL : this.API_BASE_URL;
+    const baseUrl = this.API_BASE_URL;
 
     try {
       // Deregister device from API

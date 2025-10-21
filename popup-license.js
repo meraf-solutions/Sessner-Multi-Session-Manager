@@ -24,7 +24,6 @@ const deactivateButton = document.getElementById('deactivate-button');
 // Inactive License Elements
 const activationMessage = document.getElementById('activation-message');
 const licenseKeyInput = document.getElementById('license-key-input');
-const sandboxCheckbox = document.getElementById('sandbox-checkbox');
 const activateButton = document.getElementById('activate-button');
 
 /**
@@ -278,7 +277,6 @@ function stopActivationPolling() {
  */
 async function handleActivation() {
   const licenseKey = licenseKeyInput.value.trim();
-  const useSandbox = sandboxCheckbox.checked;
 
   if (!licenseKey) {
     showError('Please enter a license key', 'activation');
@@ -297,7 +295,6 @@ async function handleActivation() {
     const response = await chrome.runtime.sendMessage({
       action: 'activateLicense',
       licenseKey: licenseKey,
-      useSandbox: useSandbox
     });
 
     // Only stop polling if we got a valid response
@@ -348,7 +345,6 @@ async function handleValidation() {
   try {
     const response = await chrome.runtime.sendMessage({
       action: 'validateLicense',
-      useSandbox: false
     });
 
     if (response.success) {
@@ -388,7 +384,6 @@ async function handleDeactivation() {
   try {
     const response = await chrome.runtime.sendMessage({
       action: 'deactivateLicense',
-      useSandbox: false
     });
 
     if (response.success) {
