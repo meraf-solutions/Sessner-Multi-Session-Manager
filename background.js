@@ -686,6 +686,12 @@ function loadPersistedSessions() {
         session.lastAccessed = session.createdAt || Date.now();
         console.log('[Session Restore] Added lastAccessed to session:', sessionId);
       }
+
+      // Remove _isCreating flag if present (shouldn't persist across restarts)
+      if (session._isCreating) {
+        delete session._isCreating;
+        console.log('[Session Restore] Removed stale _isCreating flag from session:', sessionId);
+      }
     });
 
     // Validate sessions and clean up stale data
@@ -1048,7 +1054,8 @@ function createNewSession(url, callback) {
       color: color,
       createdAt: timestamp,
       lastAccessed: timestamp, // Initialize lastAccessed to creation time
-      tabs: []
+      tabs: [],
+      _isCreating: true  // Flag to prevent immediate lastAccessed updates during creation
     };
 
     // Initialize cookie store for this session
@@ -1111,6 +1118,14 @@ function createNewSession(url, callback) {
 
       // Persist the session immediately
       persistSessions(true);
+
+      // Remove the _isCreating flag after a short delay to allow creation to complete
+      setTimeout(() => {
+        if (sessionStore.sessions[sessionId]) {
+          delete sessionStore.sessions[sessionId]._isCreating;
+          console.log(`[Session Creation] Removed _isCreating flag for session ${sessionId}`);
+        }
+      }, 100); // 100ms delay to let creation complete
 
       callback({
         success: true,
@@ -1832,12 +1847,17 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       // Update badge
       const session = sessionStore.sessions[sessionId];
       if (session) {
-        // Update lastAccessed timestamp for persistence tracking
-        session.lastAccessed = Date.now();
-        console.log(`[Session Activity] Session ${sessionId} accessed (tab updated)`);
+        // Skip lastAccessed update if session is still being created
+        if (session._isCreating) {
+          console.log(`[Session Activity] Skipping lastAccessed update for session ${sessionId} (still creating)`);
+        } else {
+          // Update lastAccessed timestamp for persistence tracking
+          session.lastAccessed = Date.now();
+          console.log(`[Session Activity] Session ${sessionId} accessed (tab updated)`);
 
-        // Persist with debouncing
-        persistSessions(false);
+          // Persist with debouncing
+          persistSessions(false);
+        }
 
         setSessionBadge(tabId, session.color);
       }
@@ -1860,14 +1880,19 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
     const session = sessionStore.sessions[sessionId];
 
     if (session) {
-      // Update lastAccessed timestamp for persistence tracking
-      session.lastAccessed = Date.now();
-      console.log(`[Session Activity] Session ${sessionId} accessed (tab activated)`);
+      // Skip lastAccessed update if session is still being created
+      if (session._isCreating) {
+        console.log(`[Session Activity] Skipping lastAccessed update for session ${sessionId} (still creating)`);
+      } else {
+        // Update lastAccessed timestamp for persistence tracking
+        session.lastAccessed = Date.now();
+        console.log(`[Session Activity] Session ${sessionId} accessed (tab activated)`);
 
-      // Persist with debouncing (don't save on every tab switch)
-      persistSessions(false);
+        // Persist with debouncing (don't save on every tab switch)
+        persistSessions(false);
+      }
 
-      // Update badge
+      // Update badge (always update badge, even during creation)
       const color = session.color || sessionColor(sessionId);
       setSessionBadge(activeInfo.tabId, color);
     }

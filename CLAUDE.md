@@ -214,7 +214,9 @@ const sessionStore = {
       id: 'session_1234567890_abc123',
       color: '#FF6B6B',
       createdAt: 1234567890000,
-      tabs: [123, 456]
+      lastAccessed: 1234567890000,  // Tracks last activity for persistence cleanup
+      tabs: [123, 456],
+      _isCreating: false  // Temporary flag during creation (removed after 100ms)
     }
   },
   cookieStore: {
@@ -254,9 +256,12 @@ function generateSessionId() {
 - Creates a new isolated session
 - Opens a new tab with the specified URL (defaults to 'about:blank')
 - Initializes session metadata and cookie store
+- Sets `createdAt` and `lastAccessed` to same timestamp (ensures exact match on creation)
+- Uses `_isCreating` flag (100ms) to prevent immediate `lastAccessed` updates from tab activity
 - Sets color-coded badge indicator
 - Clears any existing browser cookies for fresh start
 - Persists session immediately
+- **Important**: Tab activity listeners (`onActivated`, `onUpdated`) check `_isCreating` flag and skip timestamp updates during creation
 
 **`getSessionForTab(tabId)`**
 - Returns session ID for a given tab ID
