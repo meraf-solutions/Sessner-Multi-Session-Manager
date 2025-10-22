@@ -92,6 +92,66 @@ const LICENSE_CONFIG_SANDBOX = {
 
 ---
 
+## Development vs Production Mode
+
+### Switching Between Environments
+
+The license manager uses a single constant to control which API environment is used:
+
+**File**: `license-manager.js` (Line 54)
+
+```javascript
+this.IS_DEVELOPMENT = true;  // Set to false for production
+```
+
+### Configuration by Environment
+
+| Environment | IS_DEVELOPMENT | API Base URL | Secret Keys |
+|-------------|----------------|--------------|-------------|
+| **Development** | `true` | `https://sandbox.merafsolutions.com` | Development keys (sandbox) |
+| **Production** | `false` | `https://prod.merafsolutions.com` | Production keys (live) |
+
+### Before Going Live
+
+**CRITICAL**: Before deploying to production, you MUST change this value:
+
+```javascript
+// In license-manager.js, line 54:
+this.IS_DEVELOPMENT = false;  // ← Change to false for production
+```
+
+This single change will:
+- ✓ Switch API from sandbox to production
+- ✓ Use production secret keys automatically
+- ✓ Connect to live license validation system
+- ✓ Enable real license key validation
+
+### Testing Workflow
+
+**Development (Testing)**:
+```javascript
+this.IS_DEVELOPMENT = true;
+// Uses: https://sandbox.merafsolutions.com
+// Test with development license keys
+```
+
+**Production (Live)**:
+```javascript
+this.IS_DEVELOPMENT = false;
+// Uses: https://prod.merafsolutions.com
+// Real user license keys validated
+```
+
+### Verification
+
+After changing to production mode, verify:
+1. Check console logs show prod.merafsolutions.com URLs
+2. Test with a real (non-development) license key
+3. Ensure validation endpoints return expected results
+4. Monitor for any API errors in production
+
+---
+
 ## Development License Keys
 
 ### Premium License (Development)

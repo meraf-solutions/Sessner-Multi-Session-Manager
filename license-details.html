@@ -74,6 +74,9 @@
       padding: 20px;
       box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
       margin-bottom: 15px;
+    }
+
+    .footer {
       text-align: center;
     }
     
@@ -283,9 +286,18 @@
 
     /* Dark Mode Support */
     @media (prefers-color-scheme: dark) {
+      body {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      }
+
       .card {
         background: #2d2d2d;
         color: #e0e0e0;
+        border: 1px solid #444;
+      }
+
+      .card a {
+        color: #1ea7e8;
       }
 
       .section-title {
@@ -317,6 +329,50 @@
       .tier-free {
         background: #444;
         color: #bbb;
+      }
+
+      .button-secondary {
+        background: #2d2d2d;
+        color: #1ea7e8;
+        border-color: #1ea7e8;
+      }
+
+      .button-secondary:hover {
+        background: #353535;
+      }
+
+      .button-danger:hover {
+        background: #a82835;
+      }
+
+      .warning {
+        background: #3d3420;
+        border-color: #665300;
+        color: #ffc107;
+      }
+
+      .success {
+        background: #1e3a2e;
+        border-color: #2d5a3d;
+        color: #4caf50;
+      }
+
+      .error {
+        background: #3a1e1e;
+        border-color: #5a2d2d;
+        color: #f44336;
+      }
+
+      .loading {
+        color: white;
+      }
+
+      .status-active {
+        color: #4caf50;
+      }
+
+      .status-inactive {
+        color: #f44336;
       }
     }
   </style>
@@ -417,7 +473,7 @@
     </div>
 
     <div class="card">
-      Explore the advanced capabilities of Sessner <a href="https://dev.merafsolutions.com/product/sessner-multi-session-manager-for-microsoft-edge/" target="_blank">here</a>!
+      <div class="footer">Explore the advanced capabilities of Sessner <a href="https://dev.merafsolutions.com/product/sessner-multi-session-manager-for-microsoft-edge/" target="_blank">here</a>!</div>
     </div>
   </div>
 

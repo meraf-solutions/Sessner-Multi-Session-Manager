@@ -63,7 +63,7 @@ class LicenseManager {
       this.SECRET_KEY_REGISTER = '5p9Qde20Bs507OGqPWV';
       this.SECRET_KEY_DEACTIVATE = '5p9Qde20Bs507OGqPWV';
     } else {
-      // These are LIVE keys API only
+      // These are LIVE keys for PRODUCTION API only
       this.SECRET_KEY_VALIDATION = 'Aly1XiEivaoYhQsbdE';
       this.SECRET_KEY_RETRIEVE = 'X5UTwKJzY1gmhI3jTTB2';
       this.SECRET_KEY_REGISTER = 'jYXqBGUDHk4x5d1YISDu';
@@ -329,11 +329,10 @@ class LicenseManager {
    * Full flow: Register device → Verify license → Detect tier → Store
    *
    * @param {string} licenseKey - The license key to activate
-   * @param {boolean} useSandbox - Use sandbox API for testing
    * @returns {Promise<{success: boolean, tier: Tier, message: string, features?: FeatureConfig}>}
    */
-  async activateLicense(licenseKey, useSandbox = false) {
-    console.log('[LicenseManager] Activating license...', { useSandbox });
+  async activateLicense(licenseKey) {
+    console.log('[LicenseManager] Activating license...');
 
     if (!licenseKey || typeof licenseKey !== 'string' || licenseKey.trim().length === 0) {
       return {
@@ -419,10 +418,9 @@ class LicenseManager {
    * Validate existing license
    * Lightweight validation using /validate endpoint
    *
-   * @param {boolean} useSandbox - Use sandbox API for testing
    * @returns {Promise<{success: boolean, message: string, tier?: Tier}>}
    */
-  async validateLicense(useSandbox = false) {
+  async validateLicense() {
     if (!this.licenseData || !this.licenseData.licenseKey) {
       console.log('[LicenseManager] No license to validate');
       return { success: false, message: 'No active license' };
@@ -640,10 +638,9 @@ class LicenseManager {
    * Deactivate current license
    * Unregisters device from API and clears local data
    *
-   * @param {boolean} useSandbox - Use sandbox API for testing
    * @returns {Promise<{success: boolean, message: string}>}
    */
-  async deactivateLicense(useSandbox = false) {
+  async deactivateLicense() {
     if (!this.licenseData || !this.licenseData.licenseKey) {
       console.log('[LicenseManager] No license to deactivate');
       return { success: false, message: 'No active license' };
