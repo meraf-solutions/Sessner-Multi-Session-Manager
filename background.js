@@ -678,6 +678,16 @@ function loadPersistedSessions() {
     console.log('[Session Restore] Loaded from storage:', Object.keys(loadedSessions).length, 'sessions');
     console.log('[Session Restore] Loaded from storage:', Object.keys(loadedTabToSession).length, 'tab mappings');
 
+    // Ensure all sessions have lastAccessed field (for backward compatibility)
+    Object.keys(loadedSessions).forEach(sessionId => {
+      const session = loadedSessions[sessionId];
+      if (!session.lastAccessed) {
+        // Set to createdAt or current time as fallback
+        session.lastAccessed = session.createdAt || Date.now();
+        console.log('[Session Restore] Added lastAccessed to session:', sessionId);
+      }
+    });
+
     // Validate sessions and clean up stale data
     chrome.tabs.query({}, (tabs) => {
       if (chrome.runtime.lastError) {
@@ -782,6 +792,117 @@ function loadPersistedSessions() {
       }
     });
   });
+}
+
+// ============= Session Persistence Configuration =============
+
+/**
+ * Session persistence limits by tier (in milliseconds)
+ * Free: 7 days of inactivity
+ * Premium/Enterprise: Never expire (Infinity)
+ */
+const PERSISTENCE_CONFIG = {
+  free: 7 * 24 * 60 * 60 * 1000,        // 7 days in ms
+  premium: Infinity,                     // Never expire
+  enterprise: Infinity,                  // Never expire
+  cleanupInterval: 6 * 60 * 60 * 1000   // Run cleanup every 6 hours
+};
+
+/**
+ * Clean up expired sessions based on tier persistence limits
+ * Free tier: 7 days inactivity
+ * Premium/Enterprise: Never expire
+ */
+async function cleanupExpiredSessions() {
+  console.log('[Session Cleanup] Starting cleanup job...');
+
+  const now = Date.now();
+  const SEVEN_DAYS_MS = PERSISTENCE_CONFIG.free;
+
+  // Get current tier
+  let tier = 'free';
+  try {
+    if (typeof licenseManager !== 'undefined' && licenseManager.isInitialized) {
+      tier = licenseManager.getTier();
+    }
+  } catch (error) {
+    console.error('[Session Cleanup] Error getting tier:', error);
+    tier = 'free'; // Fail safely to free tier
+  }
+
+  console.log('[Session Cleanup] Current tier:', tier);
+
+  // Premium/Enterprise: No cleanup needed
+  if (tier === 'premium' || tier === 'enterprise') {
+    console.log('[Session Cleanup] Premium/Enterprise tier - sessions never expire');
+    return;
+  }
+
+  // Free tier: Check for expired sessions
+  const sessionsToDelete = [];
+
+  Object.keys(sessionStore.sessions).forEach(sessionId => {
+    const session = sessionStore.sessions[sessionId];
+    const lastAccessed = session.lastAccessed || session.createdAt || 0;
+    const inactiveDuration = now - lastAccessed;
+    const daysInactive = Math.floor(inactiveDuration / (24 * 60 * 60 * 1000));
+
+    if (inactiveDuration > SEVEN_DAYS_MS) {
+      console.log(`[Session Cleanup] Session ${sessionId} expired (${daysInactive} days inactive)`);
+      sessionsToDelete.push(sessionId);
+    } else {
+      console.log(`[Session Cleanup] Session ${sessionId} active (${daysInactive} days inactive)`);
+    }
+  });
+
+  // Delete expired sessions
+  if (sessionsToDelete.length > 0) {
+    console.log(`[Session Cleanup] Deleting ${sessionsToDelete.length} expired sessions`);
+
+    sessionsToDelete.forEach(sessionId => {
+      const session = sessionStore.sessions[sessionId];
+
+      // Close all tabs in expired session
+      if (session.tabs && session.tabs.length > 0) {
+        session.tabs.forEach(tabId => {
+          chrome.tabs.remove(tabId, () => {
+            if (chrome.runtime.lastError) {
+              console.log('[Session Cleanup] Tab already closed:', tabId);
+            }
+          });
+        });
+      }
+
+      // Remove session data
+      delete sessionStore.sessions[sessionId];
+      delete sessionStore.cookieStore[sessionId];
+
+      // Remove tab mappings
+      Object.keys(sessionStore.tabToSession).forEach(tabId => {
+        if (sessionStore.tabToSession[tabId] === sessionId) {
+          delete sessionStore.tabToSession[tabId];
+        }
+      });
+    });
+
+    // Persist changes
+    persistSessions(true);
+
+    // Show notification to user
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: 'Sessions Expired',
+      message: `${sessionsToDelete.length} inactive session(s) were automatically deleted (FREE tier: 7-day limit). Upgrade to Premium for permanent storage.`,
+      priority: 1
+    }, (notificationId) => {
+      if (chrome.runtime.lastError) {
+        console.warn('[Session Cleanup] Notification error:', chrome.runtime.lastError.message);
+      }
+    });
+  } else {
+    console.log('[Session Cleanup] No expired sessions found');
+  }
 }
 
 // ============= Session Limits Configuration =============
@@ -913,6 +1034,7 @@ function createNewSession(url, callback) {
     // Proceed with session creation
     const sessionId = generateSessionId();
     const color = sessionColor(sessionId);
+    const timestamp = Date.now();
 
     // Default to about:blank if no URL provided
     const targetUrl = url && url.trim() ? url.trim() : 'about:blank';
@@ -924,7 +1046,8 @@ function createNewSession(url, callback) {
     sessionStore.sessions[sessionId] = {
       id: sessionId,
       color: color,
-      createdAt: Date.now(),
+      createdAt: timestamp,
+      lastAccessed: timestamp, // Initialize lastAccessed to creation time
       tabs: []
     };
 
@@ -1622,6 +1745,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
       return true; // Keep channel open for async response
 
+    } else if (message.action === 'getSessionMetadata') {
+      // Get full session metadata for UI (includes lastAccessed timestamps)
+      const sessionId = message.sessionId;
+
+      if (!sessionId) {
+        // Return all sessions metadata
+        sendResponse({ success: true, sessions: sessionStore.sessions });
+      } else {
+        // Return specific session metadata
+        const session = sessionStore.sessions[sessionId];
+        if (session) {
+          sendResponse({ success: true, session: session });
+        } else {
+          sendResponse({ success: false, error: 'Session not found' });
+        }
+      }
+      return false; // Synchronous response
+
     } else {
       // Try license message handlers
       if (typeof handleLicenseMessage !== 'undefined') {
@@ -1671,6 +1812,7 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
 
 /**
  * Keep session when tab navigates to new URL
+ * Also updates lastAccessed timestamp for session persistence tracking
  */
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   // Update badge when URL changes OR when page finishes loading
@@ -1686,9 +1828,17 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     const sessionId = sessionStore.tabToSession[tabId];
     if (sessionId) {
       console.log('[Navigation] Tab', tabId, 'has session', sessionId);
+
       // Update badge
       const session = sessionStore.sessions[sessionId];
       if (session) {
+        // Update lastAccessed timestamp for persistence tracking
+        session.lastAccessed = Date.now();
+        console.log(`[Session Activity] Session ${sessionId} accessed (tab updated)`);
+
+        // Persist with debouncing
+        persistSessions(false);
+
         setSessionBadge(tabId, session.color);
       }
     } else {
@@ -1701,13 +1851,26 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 
 /**
  * Update badge when tab is activated
+ * Also updates lastAccessed timestamp for session persistence tracking
  */
 chrome.tabs.onActivated.addListener((activeInfo) => {
   const sessionId = getSessionForTab(activeInfo.tabId);
 
   if (sessionId) {
-    const color = sessionStore.sessions[sessionId]?.color || sessionColor(sessionId);
-    setSessionBadge(activeInfo.tabId, color);
+    const session = sessionStore.sessions[sessionId];
+
+    if (session) {
+      // Update lastAccessed timestamp for persistence tracking
+      session.lastAccessed = Date.now();
+      console.log(`[Session Activity] Session ${sessionId} accessed (tab activated)`);
+
+      // Persist with debouncing (don't save on every tab switch)
+      persistSessions(false);
+
+      // Update badge
+      const color = session.color || sessionColor(sessionId);
+      setSessionBadge(activeInfo.tabId, color);
+    }
   } else {
     clearBadge(activeInfo.tabId);
   }
@@ -1898,11 +2061,23 @@ chrome.runtime.onStartup.addListener(() => {
   console.log('Multi-Session Manager started');
   // Load persisted sessions on browser startup
   loadPersistedSessions();
+
+  // Run initial cleanup check
+  cleanupExpiredSessions();
 });
 
 // Load persisted sessions when background script loads
 console.log('Multi-Session Manager background script loaded');
 loadPersistedSessions();
+
+// Run initial cleanup check
+cleanupExpiredSessions();
+
+// Schedule periodic cleanup job (every 6 hours)
+setInterval(() => {
+  cleanupExpiredSessions();
+}, PERSISTENCE_CONFIG.cleanupInterval);
+console.log('[Session Cleanup] Scheduled cleanup job to run every 6 hours');
 
 // Test if webRequest listeners are registered
 console.log('Testing webRequest listeners...');

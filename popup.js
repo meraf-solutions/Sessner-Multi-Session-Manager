@@ -85,6 +85,44 @@ function truncate(text, maxLength) {
   return text.substring(0, maxLength - 3) + '...';
 }
 
+/**
+ * Format time ago from timestamp
+ * @param {number} timestamp - Timestamp in milliseconds
+ * @returns {string} Human-readable time ago
+ */
+function formatTimeAgo(timestamp) {
+  if (!timestamp) return 'Unknown';
+
+  const now = Date.now();
+  const diff = now - timestamp;
+  const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+  const hours = Math.floor(diff / (60 * 60 * 1000));
+  const minutes = Math.floor(diff / (60 * 1000));
+
+  if (days > 0) return `${days}d ago`;
+  if (hours > 0) return `${hours}h ago`;
+  if (minutes > 0) return `${minutes}m ago`;
+  return 'Just now';
+}
+
+/**
+ * Calculate days remaining until session expires (free tier only)
+ * @param {number} lastAccessed - Last accessed timestamp in ms
+ * @param {string} tier - License tier
+ * @returns {number|null} Days remaining or null if permanent
+ */
+function calculateDaysRemaining(lastAccessed, tier) {
+  if (tier !== 'free') return null; // Premium/Enterprise never expire
+
+  const now = Date.now();
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  const inactiveDuration = now - lastAccessed;
+  const daysInactive = Math.floor(inactiveDuration / (24 * 60 * 60 * 1000));
+  const daysRemaining = 7 - daysInactive;
+
+  return Math.max(0, daysRemaining);
+}
+
 // ============= Session Management =============
 
 /**
@@ -255,6 +293,13 @@ async function refreshSessions() {
     const sessions = response.sessions || [];
     console.log('Active sessions:', sessions);
 
+    // Get session metadata from storage to access lastAccessed timestamps
+    const sessionMetadata = await new Promise((resolve) => {
+      chrome.storage.local.get(['sessions'], (data) => {
+        resolve(data.sessions || {});
+      });
+    });
+
     // Get session status for limit display
     const statusResponse = await sendMessage({ action: 'getSessionStatus' });
 
@@ -293,6 +338,29 @@ async function refreshSessions() {
     // Update button state based on limits
     updateSessionButtonState(status);
 
+    // Check for expiring sessions (free tier only, approaching 7-day limit)
+    if (status.tier === 'free' && sessions.length > 0) {
+      const expiringSoon = sessions.filter(session => {
+        const metadata = sessionMetadata[session.sessionId] || {};
+        const lastAccessed = metadata.lastAccessed || metadata.createdAt || Date.now();
+        const daysRemaining = calculateDaysRemaining(lastAccessed, status.tier);
+        return daysRemaining !== null && daysRemaining <= 2; // Warn when 2 days or less
+      });
+
+      if (expiringSoon.length > 0) {
+        const warningContainer = $('#sessionLimitWarning');
+        if (warningContainer) {
+          warningContainer.innerHTML = `
+            <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 12px; margin-bottom: 12px; font-size: 13px; color: #856404; text-align: center;">
+              <strong>⚠️ Sessions Expiring Soon</strong><br>
+              ${expiringSoon.length} session(s) will expire in 2 days or less. <a href="license-details.html" style="color: #856404; text-decoration: underline;">Upgrade to Premium</a> for permanent storage.
+            </div>
+          `;
+          warningContainer.style.display = 'block';
+        }
+      }
+    }
+
     if (sessions.length === 0) {
       $('#sessionsList').innerHTML = `
         <div class="empty-state">
@@ -312,11 +380,27 @@ async function refreshSessions() {
       const sessionColor = session.color || '#999';
       const tabs = session.tabs || [];
 
+      // Get session metadata for lastAccessed
+      const metadata = sessionMetadata[session.sessionId] || {};
+      const lastAccessed = metadata.lastAccessed || metadata.createdAt || Date.now();
+      const lastAccessedText = formatTimeAgo(lastAccessed);
+
+      // Calculate days remaining for free tier
+      const daysRemaining = calculateDaysRemaining(lastAccessed, status.tier);
+      const expiresText = daysRemaining !== null
+        ? ` <span style="color: ${daysRemaining <= 2 ? '#f5576c' : '#999'};">(expires in ${daysRemaining}d)</span>`
+        : ' <span style="color: #4ECDC4;">(permanent)</span>';
+
       html += `
         <div class="session-group">
           <div class="session-header-bar">
             <div class="session-color-dot" style="background-color: ${sessionColor}"></div>
-            <div class="session-id">${truncate(sessionId, 30)}</div>
+            <div class="session-id" style="display: flex; flex-direction: column; gap: 2px;">
+              <span>${truncate(sessionId, 30)}</span>
+              <span style="font-size: 10px; font-weight: normal; color: #999;">
+                Last used: ${lastAccessedText}${expiresText}
+              </span>
+            </div>
           </div>
           <div class="tab-list">
       `;
