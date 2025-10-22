@@ -50,6 +50,7 @@ This project has comprehensive documentation organized across multiple files:
 
 ### Additional Documentation
 - **[docs/monetization_strategy/](docs/monetization_strategy/)** - Business strategy, pricing, license system
+- **[docs/features_implementation/](docs/features_implementation/)** - Feature implementation documentation (01_concurrent_sessions, etc.)
 - **[docs/analysis/](docs/analysis/)** - License system delivery summary, integration guides, testing
 
 ### 🤖 Working with Claude
@@ -77,6 +78,7 @@ This is a **SessionBox-style multi-session browser extension** that creates **is
 - Color-coded badge indicators for visual session identification
 - **Dynamic favicon badges** showing extension icon with session color for easy tab identification
 - Ephemeral sessions that end when all tabs close
+- **Tier-based session limits** (Free: 3 concurrent sessions, Premium/Enterprise: Unlimited)
 
 ## Architecture
 
@@ -1492,6 +1494,99 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 - **This Extension**: Tabs in same window, lightweight, quick switching
 
 ## Critical Notes for Development
+
+### Concurrent Session Limits (✅ Tested & Deployed 2025-10-21)
+
+**Status:** Production Ready - All Tests Passed
+
+**Implementation Overview:**
+- Free tier: Maximum 3 concurrent sessions
+- Premium/Enterprise: Unlimited concurrent sessions
+- Session counting: Only counts sessions with active tabs (ignores stale sessions)
+- Automatic cleanup: Stale sessions removed on browser startup
+- Graceful degradation: Existing sessions preserved when downgrading tiers
+
+**Key Functions:**
+- `getActiveSessionCount()` - Counts sessions with tabs (background.js:720)
+  ```javascript
+  function getActiveSessionCount() {
+    return Object.values(sessionStore.sessions).filter(session =>
+      session.tabs && session.tabs.length > 0
+    ).length;
+  }
+  ```
+
+- `canCreateNewSession()` - Checks limits before creation (background.js:734)
+  ```javascript
+  async function canCreateNewSession() {
+    const tier = await getTier();
+    const limit = SESSION_LIMITS[tier] || SESSION_LIMITS.free;
+    const currentCount = getActiveSessionCount();
+
+    if (currentCount >= limit) {
+      return {
+        allowed: false,
+        tier: tier,
+        current: currentCount,
+        limit: limit,
+        reason: `You've reached the ${tier.toUpperCase()} tier limit of ${limit} concurrent sessions.`
+      };
+    }
+
+    return {
+      allowed: true,
+      tier: tier,
+      current: currentCount,
+      limit: limit
+    };
+  }
+  ```
+
+- `getSessionStatus()` - Returns status for UI (background.js:781)
+  ```javascript
+  function getSessionStatus() {
+    const tier = getTier();
+    const limit = SESSION_LIMITS[tier] || SESSION_LIMITS.free;
+    const activeCount = getActiveSessionCount();
+
+    return {
+      canCreateNew: activeCount < limit,
+      isOverLimit: activeCount > limit,  // Graceful degradation
+      activeCount: activeCount,
+      limit: limit,
+      tier: tier
+    };
+  }
+  ```
+
+**API Endpoints:**
+- `canCreateSession` - Pre-creation validation
+  - Request: `{ action: 'canCreateSession' }`
+  - Response: `{ success: true, allowed: boolean, tier: string, current: number, limit: number, reason?: string }`
+
+- `getSessionStatus` - Real-time status
+  - Request: `{ action: 'getSessionStatus' }`
+  - Response: `{ success: true, canCreateNew: boolean, isOverLimit: boolean, activeCount: number, limit: number, tier: string }`
+
+**UI Integration:**
+- Session counter: "X / Y sessions" (Y = ∞ for Premium/Enterprise)
+- Disabled button state at limit
+- Warning banner with upgrade prompt
+- "Approaching limit" info (1 session away)
+
+**Testing Results (2025-10-21):**
+✅ All test scenarios passed - See [docs/features_implementation/01_concurrent_sessions.md](docs/features_implementation/01_concurrent_sessions.md#testing-results)
+
+**Critical Implementation Details:**
+1. Session counting ONLY includes sessions with `tabs.length > 0`
+2. Stale sessions (no tabs) automatically removed on browser startup
+3. No false warnings on fresh browser start (0 sessions)
+4. Graceful degradation: Existing sessions preserved when downgrading
+5. Performance: No noticeable impact on session operations
+
+**Next Feature:** Session Persistence (7 days vs permanent) - Feature #02
+
+---
 
 ### License Validation Error Handling (2025-10-21)
 

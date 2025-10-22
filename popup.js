@@ -20,6 +20,39 @@ async function sendMessage(message) {
   });
 }
 
+/**
+ * Format session limit for display (handles Infinity, null, undefined, -1)
+ * Background sends -1 for unlimited (Infinity doesn't survive JSON serialization)
+ * JSON.stringify converts Infinity to null, so we handle that case too
+ * @param {number|null|undefined} limit - Session limit
+ * @returns {string} Formatted limit ('3', '∞', etc.)
+ */
+function formatSessionLimit(limit) {
+  console.log('[formatSessionLimit] Input:', limit, 'Type:', typeof limit);
+
+  // Handle all possible "unlimited" representations
+  if (limit === -1 || limit === Infinity || limit === null || limit === undefined) {
+    console.log('[formatSessionLimit] Detected unlimited, returning ∞');
+    return '∞';
+  }
+  // Handle edge case where limit might be a string
+  if (typeof limit === 'string') {
+    const parsed = parseInt(limit, 10);
+    if (isNaN(parsed)) {
+      console.log('[formatSessionLimit] Invalid string, returning ∞');
+      return '∞'; // Invalid number = unlimited
+    }
+    if (parsed === -1) {
+      console.log('[formatSessionLimit] String "-1" detected, returning ∞');
+      return '∞';
+    }
+    console.log('[formatSessionLimit] Valid string number, returning:', parsed);
+    return String(parsed);
+  }
+  console.log('[formatSessionLimit] Numeric limit, returning:', limit);
+  return String(limit);
+}
+
 /** Get current year for copyright footer */
 document.addEventListener('DOMContentLoaded', () => {
   const el = document.getElementById('year');
@@ -61,6 +94,15 @@ async function createNewSession() {
   try {
     console.log('Creating new session...');
 
+    // Check if session creation is allowed
+    const canCreateResponse = await sendMessage({ action: 'canCreateSession' });
+
+    if (canCreateResponse && !canCreateResponse.allowed) {
+      console.warn('Session creation blocked:', canCreateResponse.reason);
+      showSessionLimitWarning(canCreateResponse);
+      return;
+    }
+
     // Get URL from input field
     const urlInput = $('#sessionUrl');
     const url = urlInput ? urlInput.value.trim() : '';
@@ -80,6 +122,10 @@ async function createNewSession() {
 
       // Close popup and let the new tab open
       window.close();
+    } else if (response && response.blocked) {
+      // Session was blocked by license limits
+      console.warn('Session creation blocked:', response.error);
+      showSessionLimitWarning(response);
     } else {
       console.error('Failed to create session:', response);
       alert('Failed to create new session: ' + (response?.error || 'Unknown error'));
@@ -87,6 +133,86 @@ async function createNewSession() {
   } catch (error) {
     console.error('Error creating session:', error);
     alert('Error creating new session: ' + error.message);
+  }
+}
+
+/**
+ * Show session limit warning
+ * @param {Object} limitInfo - Limit information from canCreateSession
+ */
+function showSessionLimitWarning(limitInfo) {
+  const tier = limitInfo.tier || 'free';
+  const current = limitInfo.current || 0;
+  const limit = formatSessionLimit(limitInfo.limit);
+  const reason = limitInfo.reason || 'Session limit reached';
+
+  // Create warning message
+  let message = reason;
+
+  if (tier === 'free') {
+    message += '\n\nClick "View License" to upgrade to Premium for unlimited sessions.';
+  }
+
+  alert(message);
+}
+
+/**
+ * Update session button state based on limits
+ * @param {Object} status - Session status from getSessionStatus
+ */
+function updateSessionButtonState(status) {
+  const button = $('#newSessionBtn');
+  const warningContainer = $('#sessionLimitWarning');
+
+  if (!button) return;
+
+  if (!status.canCreateNew) {
+    // Disable button and show warning
+    button.disabled = true;
+    button.style.opacity = '0.5';
+    button.style.cursor = 'not-allowed';
+    const limitDisplay = formatSessionLimit(status.limit);
+    button.title = `Session limit reached (${status.activeCount}/${limitDisplay})`;
+
+    // Show warning message
+    if (warningContainer) {
+      const tier = status.tier || 'free';
+      const upgradeText = tier === 'free' ? ' <a href="license-details.html" style="color: #1ea7e8; text-decoration: underline;">Upgrade to Premium</a> for unlimited sessions.' : '';
+      const limitDisplay = formatSessionLimit(status.limit);
+
+      warningContainer.innerHTML = `
+        <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 12px; margin-bottom: 12px; font-size: 13px; color: #856404; text-align: center;">
+          <strong>⚠️ Session Limit Reached</strong><br>
+          You have ${status.activeCount} active sessions (${tier.toUpperCase()} tier limit: ${limitDisplay}).${upgradeText}
+        </div>
+      `;
+      warningContainer.style.display = 'block';
+    }
+  } else {
+    // Enable button
+    button.disabled = false;
+    button.style.opacity = '1';
+    button.style.cursor = 'pointer';
+    button.title = 'Create a new isolated session';
+
+    // Hide warning if shown
+    if (warningContainer) {
+      warningContainer.style.display = 'none';
+    }
+
+    // Show approaching limit warning (for free tier only, not unlimited)
+    // Only show if: free tier AND approaching numeric limit AND limit is not unlimited
+    const isUnlimited = (status.limit === -1 || status.limit === Infinity || status.limit === null || status.limit === undefined);
+    if (status.tier === 'free' && !isUnlimited && status.activeCount >= status.limit - 1 && warningContainer) {
+      const limitDisplay = formatSessionLimit(status.limit);
+      warningContainer.innerHTML = `
+        <div style="background: #e7f3ff; border: 1px solid #1ea7e8; border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 12px; color: #0066cc; text-align: center;">
+          <strong>ℹ️ Approaching Limit</strong><br>
+          ${status.activeCount} of ${limitDisplay} sessions used. <a href="license-details.html" style="color: #0066cc; text-decoration: underline;">Upgrade to Premium</a> for unlimited sessions.
+        </div>
+      `;
+      warningContainer.style.display = 'block';
+    }
   }
 }
 
@@ -129,9 +255,43 @@ async function refreshSessions() {
     const sessions = response.sessions || [];
     console.log('Active sessions:', sessions);
 
-    // Update session count
-    const count = sessions.length;
-    $('#sessionCount').textContent = count === 1 ? '1 session' : `${count} sessions`;
+    // Get session status for limit display
+    const statusResponse = await sendMessage({ action: 'getSessionStatus' });
+
+    // Debug logging for limit detection
+    console.log('[Popup] getSessionStatus response:', statusResponse);
+    console.log('[Popup] statusResponse.limit:', statusResponse?.limit);
+    console.log('[Popup] typeof limit:', typeof statusResponse?.limit);
+    console.log('[Popup] limit === Infinity:', statusResponse?.limit === Infinity);
+    console.log('[Popup] limit === null:', statusResponse?.limit === null);
+    console.log('[Popup] limit === -1:', statusResponse?.limit === -1);
+
+    // Ensure we have a valid status object with proper defaults
+    const status = statusResponse && statusResponse.success ? {
+      activeCount: statusResponse.activeCount ?? sessions.length,
+      limit: statusResponse.limit ?? 3,
+      tier: statusResponse.tier || 'free',
+      canCreateNew: statusResponse.canCreateNew ?? (sessions.length < 3)
+    } : {
+      activeCount: sessions.length,
+      limit: 3,
+      tier: 'free',
+      canCreateNew: sessions.length < 3
+    };
+
+    // Update session count with limit info
+    // Use activeCount from status for accurate count (matches backend logic)
+    const count = status.activeCount;
+    const limitDisplay = formatSessionLimit(status.limit);
+    $('#sessionCount').textContent = `${count} / ${limitDisplay} sessions`;
+
+    // Verify consistency between popup sessions and backend active count
+    if (sessions.length !== count) {
+      console.warn('[Popup] Session count mismatch: popup shows', sessions.length, 'sessions but backend reports', count, 'active sessions');
+    }
+
+    // Update button state based on limits
+    updateSessionButtonState(status);
 
     if (sessions.length === 0) {
       $('#sessionsList').innerHTML = `
@@ -236,29 +396,29 @@ async function refreshLicenseStatus() {
 
     if (!response || !response.success) {
       console.log('No license or error fetching license status');
-      displayFreeTier();
+      await displayFreeTier();
       return;
     }
 
     const license = response.licenseData;
 
     if (!license || license.tier === 'free') {
-      displayFreeTier();
+      await displayFreeTier();
     } else if (license.tier === 'premium') {
-      displayPremiumTier(license);
+      await displayPremiumTier(license);
     } else if (license.tier === 'enterprise') {
-      displayEnterpriseTier(license);
+      await displayEnterpriseTier(license);
     }
   } catch (error) {
     console.error('Error refreshing license status:', error);
-    displayFreeTier();
+    await displayFreeTier();
   }
 }
 
 /**
  * Display Free tier badge
  */
-function displayFreeTier() {
+async function displayFreeTier() {
   const badge = $('#licenseTierBadge');
   const details = $('#licenseDetails');
 
@@ -267,10 +427,14 @@ function displayFreeTier() {
   badge.href = 'popup-license.html';
   badge.title = 'Activate license';
 
+  // Get current session count
+  const statusResponse = await sendMessage({ action: 'getSessionStatus' });
+  const activeCount = statusResponse && statusResponse.success ? statusResponse.activeCount : 0;
+
   details.innerHTML = `
     <div class="license-details-item">
       <span class="license-details-label">Status:</span>
-      <span>Limited to 3 sessions</span>
+      <span>Limited to 3 sessions (${activeCount}/3 active)</span>
     </div>
   `;
 }
@@ -279,7 +443,7 @@ function displayFreeTier() {
  * Display Premium tier badge
  * @param {Object} license
  */
-function displayPremiumTier(license) {
+async function displayPremiumTier(license) {
   const badge = $('#licenseTierBadge');
   const details = $('#licenseDetails');
 
@@ -289,9 +453,10 @@ function displayPremiumTier(license) {
   badge.title = 'View license details';
 
   const registeredName = `${license.first_name || ''} ${license.last_name || ''}`.trim() || license.email || 'Unknown';
-  const dateSubscribed = license.date_created ? `${license.date_created} UTC` : 'N/A';
-  const dateRenewed = license.date_renewed ? `${license.date_renewed} UTC` : 'Never';
-  const expiryDate = license.date_expiry ? `${license.date_expiry} UTC` : 'N/A';
+
+  // Get current session count
+  const statusResponse = await sendMessage({ action: 'getSessionStatus' });
+  const activeCount = statusResponse && statusResponse.success ? statusResponse.activeCount : 0;
 
   details.innerHTML = `
     <div class="license-details-item">
@@ -299,16 +464,8 @@ function displayPremiumTier(license) {
       <span>${escapeHtml(registeredName)}</span>
     </div>
     <div class="license-details-item">
-      <span class="license-details-label">Date Subscribed:</span>
-      <span>${dateSubscribed}</span>
-    </div>
-    <div class="license-details-item">
-      <span class="license-details-label">Date Renewed:</span>
-      <span>${dateRenewed}</span>
-    </div>
-    <div class="license-details-item">
-      <span class="license-details-label">Expiry Date:</span>
-      <span>${expiryDate}</span>
+      <span class="license-details-label">Sessions:</span>
+      <span>Unlimited (${activeCount} active)</span>
     </div>
   `;
 }
@@ -317,7 +474,7 @@ function displayPremiumTier(license) {
  * Display Enterprise tier badge
  * @param {Object} license
  */
-function displayEnterpriseTier(license) {
+async function displayEnterpriseTier(license) {
   const badge = $('#licenseTierBadge');
   const details = $('#licenseDetails');
 
@@ -327,9 +484,10 @@ function displayEnterpriseTier(license) {
   badge.title = 'View license details';
 
   const registeredName = `${license.first_name || ''} ${license.last_name || ''}`.trim() || license.email || 'Unknown';
-  const dateSubscribed = license.date_created ? `${license.date_created} UTC` : 'N/A';
-  const dateRenewed = license.date_renewed ? `${license.date_renewed} UTC` : 'Never';
-  const expiryDate = license.date_expiry ? `${license.date_expiry} UTC` : 'N/A';
+
+  // Get current session count
+  const statusResponse = await sendMessage({ action: 'getSessionStatus' });
+  const activeCount = statusResponse && statusResponse.success ? statusResponse.activeCount : 0;
 
   details.innerHTML = `
     <div class="license-details-item">
@@ -337,16 +495,8 @@ function displayEnterpriseTier(license) {
       <span>${escapeHtml(registeredName)}</span>
     </div>
     <div class="license-details-item">
-      <span class="license-details-label">Date Subscribed:</span>
-      <span>${dateSubscribed}</span>
-    </div>
-    <div class="license-details-item">
-      <span class="license-details-label">Date Renewed:</span>
-      <span>${dateRenewed}</span>
-    </div>
-    <div class="license-details-item">
-      <span class="license-details-label">Expiry Date:</span>
-      <span>${expiryDate}</span>
+      <span class="license-details-label">Sessions:</span>
+      <span>Unlimited (${activeCount} active)</span>
     </div>
   `;
 }

@@ -120,6 +120,95 @@ chrome.runtime.sendMessage(message, (response) => {
 
 ### Session Management
 
+#### canCreateSession
+
+**Status:** ✅ Tested & Working (2025-10-21)
+
+Checks if a new session can be created based on current tier limits.
+
+**Request:**
+```javascript
+{
+  action: 'canCreateSession'
+}
+```
+
+**Response:**
+```javascript
+{
+  success: boolean,
+  allowed: boolean,        // true if session creation is allowed
+  tier: string,            // 'free', 'premium', or 'enterprise'
+  current: number,         // Current active session count
+  limit: number,           // Maximum allowed sessions (Infinity for Premium/Enterprise)
+  reason?: string          // Error message if not allowed
+}
+```
+
+**Example:**
+```javascript
+chrome.runtime.sendMessage(
+  { action: 'canCreateSession' },
+  (response) => {
+    if (response.success) {
+      if (response.allowed) {
+        console.log(`Can create session: ${response.current}/${response.limit}`);
+        // Proceed with session creation
+      } else {
+        console.log(`Session limit reached: ${response.reason}`);
+        // Show upgrade prompt
+      }
+    }
+  }
+);
+```
+
+---
+
+#### getSessionStatus
+
+**Status:** ✅ Tested & Working (2025-10-21)
+
+Retrieves the current session status for UI display (count, limit, tier).
+
+**Request:**
+```javascript
+{
+  action: 'getSessionStatus'
+}
+```
+
+**Response:**
+```javascript
+{
+  success: boolean,
+  canCreateNew: boolean,   // true if new session can be created
+  isOverLimit: boolean,    // true if current count exceeds limit (graceful degradation)
+  activeCount: number,     // Current active session count (only tabs with sessions)
+  limit: number,           // Maximum allowed sessions (Infinity for Premium/Enterprise)
+  tier: string             // 'free', 'premium', or 'enterprise'
+}
+```
+
+**Example:**
+```javascript
+chrome.runtime.sendMessage(
+  { action: 'getSessionStatus' },
+  (response) => {
+    if (response.success) {
+      const display = response.limit === Infinity
+        ? `${response.activeCount} / ∞ sessions`
+        : `${response.activeCount} / ${response.limit} sessions`;
+
+      console.log(`Status: ${display}`);
+      console.log(`Can create new: ${response.canCreateNew}`);
+    }
+  }
+);
+```
+
+---
+
 #### createNewSession
 
 Creates a new isolated session and opens it in a new tab.

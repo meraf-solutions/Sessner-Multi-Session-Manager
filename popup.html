@@ -109,6 +109,18 @@
       transform: translateY(0);
     }
 
+    .new-session-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      background: #ccc;
+      box-shadow: none;
+    }
+
+    .new-session-btn:disabled:hover {
+      transform: none;
+      box-shadow: none;
+    }
+
     .sessions-section {
       background: white;
       border-radius: 10px;
@@ -514,6 +526,9 @@
   </div>
 
   <div class="content">
+    <!-- Session Limit Warning Container -->
+    <div id="sessionLimitWarning" style="display: none;"></div>
+
     <div class="new-session-section">
       <input
         id="sessionUrl"
@@ -521,7 +536,7 @@
         placeholder="Enter URL (optional, e.g., https://google.com)"
         style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px; margin-bottom: 12px; box-sizing: border-box;"
       />
-      <button id="newSessionBtn" class="new-session-btn">
+      <button id="newSessionBtn" class="new-session-btn" title="Create a new isolated session">
         + New Session
       </button>
     </div>

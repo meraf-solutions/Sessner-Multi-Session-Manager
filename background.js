@@ -651,54 +651,240 @@ function persistSessions(immediate = false) {
  * Load persisted sessions from storage
  */
 function loadPersistedSessions() {
+  console.log('[Session Restore] Loading persisted sessions...');
+
   chrome.storage.local.get(['sessions', 'cookieStore', 'tabToSession'], (data) => {
     if (chrome.runtime.lastError) {
-      console.error('Failed to load sessions:', chrome.runtime.lastError);
+      console.error('[Session Restore] Failed to load sessions:', chrome.runtime.lastError);
       return;
     }
 
-    if (data.sessions) {
-      sessionStore.sessions = data.sessions;
-      console.log('Loaded', Object.keys(data.sessions).length, 'persisted sessions');
+    // Initialize with empty objects if no data
+    if (!data.sessions || Object.keys(data.sessions).length === 0) {
+      sessionStore.sessions = {};
+      sessionStore.cookieStore = {};
+      sessionStore.tabToSession = {};
+      console.log('[Session Restore] No persisted data found, starting fresh');
+      console.log('[Session Restore] Active sessions (with tabs): 0');
+      console.log('[Session Restore] Total sessions in storage: 0');
+      return;
     }
 
-    if (data.cookieStore) {
-      sessionStore.cookieStore = data.cookieStore;
-      console.log('Loaded persisted cookie store');
-    }
+    // Load sessions and cookieStore temporarily
+    const loadedSessions = data.sessions || {};
+    const loadedCookieStore = data.cookieStore || {};
+    const loadedTabToSession = data.tabToSession || {};
 
-    if (data.tabToSession) {
-      // Only restore tab mappings for tabs that still exist
-      chrome.tabs.query({}, (tabs) => {
-        if (chrome.runtime.lastError) {
-          console.error('Failed to query tabs:', chrome.runtime.lastError);
-          return;
+    console.log('[Session Restore] Loaded from storage:', Object.keys(loadedSessions).length, 'sessions');
+    console.log('[Session Restore] Loaded from storage:', Object.keys(loadedTabToSession).length, 'tab mappings');
+
+    // Validate sessions and clean up stale data
+    chrome.tabs.query({}, (tabs) => {
+      if (chrome.runtime.lastError) {
+        console.error('[Session Restore] Failed to query tabs:', chrome.runtime.lastError);
+        return;
+      }
+
+      const existingTabIds = new Set(tabs.map(t => t.id));
+      console.log('[Session Restore] Found', existingTabIds.size, 'existing tabs in browser');
+
+      // Step 1: Clean up tabToSession mappings for non-existent tabs
+      const restoredMappings = {};
+      let staleTabCount = 0;
+
+      Object.keys(loadedTabToSession).forEach(tabIdStr => {
+        const tabId = parseInt(tabIdStr);
+        if (existingTabIds.has(tabId)) {
+          restoredMappings[tabId] = loadedTabToSession[tabIdStr];
+        } else {
+          staleTabCount++;
+          console.log('[Session Restore] Removing stale tab mapping:', tabIdStr, '-> session', loadedTabToSession[tabIdStr]);
+        }
+      });
+
+      if (staleTabCount > 0) {
+        console.log('[Session Restore] Removed', staleTabCount, 'stale tab mappings');
+      }
+
+      sessionStore.tabToSession = restoredMappings;
+      console.log('[Session Restore] Kept', Object.keys(restoredMappings).length, 'valid tab-to-session mappings');
+
+      // Step 2: Clean up sessions - validate tab lists and remove empty sessions
+      const sessionsToDelete = [];
+
+      Object.keys(loadedSessions).forEach(sessionId => {
+        const session = loadedSessions[sessionId];
+
+        // Ensure session has tabs array
+        if (!session.tabs) {
+          session.tabs = [];
         }
 
-        const existingTabIds = new Set(tabs.map(t => t.id));
-        const restoredMappings = {};
+        // Filter out non-existent tabs from session.tabs array
+        const originalTabCount = session.tabs.length;
+        const validTabs = session.tabs.filter(tabId => existingTabIds.has(tabId));
 
-        Object.keys(data.tabToSession).forEach(tabId => {
-          const tabIdNum = parseInt(tabId);
-          if (existingTabIds.has(tabIdNum)) {
-            restoredMappings[tabIdNum] = data.tabToSession[tabId];
-          }
-        });
+        if (validTabs.length !== originalTabCount) {
+          console.log(`[Session Restore] Session ${sessionId}: Removed ${originalTabCount - validTabs.length} stale tabs (${originalTabCount} -> ${validTabs.length})`);
+          session.tabs = validTabs;
+        }
 
-        sessionStore.tabToSession = restoredMappings;
-        console.log('Restored', Object.keys(restoredMappings).length, 'tab-to-session mappings');
-
-        // Update badges for restored tabs
-        tabs.forEach(tab => {
-          const sessionId = sessionStore.tabToSession[tab.id];
-          if (sessionId && sessionStore.sessions[sessionId]) {
-            const color = sessionStore.sessions[sessionId].color;
-            setSessionBadge(tab.id, color);
-          }
-        });
+        // If no valid tabs remain, mark session for deletion
+        if (validTabs.length === 0) {
+          console.log('[Session Restore] Marking empty session for deletion:', sessionId);
+          sessionsToDelete.push(sessionId);
+        }
       });
+
+      // Step 3: Delete sessions without valid tabs
+      sessionsToDelete.forEach(sessionId => {
+        console.log('[Session Restore] Deleting session:', sessionId);
+        delete loadedSessions[sessionId];
+        delete loadedCookieStore[sessionId];
+      });
+
+      if (sessionsToDelete.length > 0) {
+        console.log('[Session Restore] Deleted', sessionsToDelete.length, 'stale sessions');
+      }
+
+      // Step 4: Apply cleaned data to sessionStore
+      sessionStore.sessions = loadedSessions;
+      sessionStore.cookieStore = loadedCookieStore;
+
+      // Step 5: Persist cleaned-up state immediately if we made changes
+      const madeChanges = staleTabCount > 0 || sessionsToDelete.length > 0;
+      if (madeChanges) {
+        console.log('[Session Restore] Persisting cleaned-up state...');
+        persistSessions(true);
+      }
+
+      // Step 6: Update badges for restored tabs
+      tabs.forEach(tab => {
+        const sessionId = sessionStore.tabToSession[tab.id];
+        if (sessionId && sessionStore.sessions[sessionId]) {
+          const color = sessionStore.sessions[sessionId].color;
+          setSessionBadge(tab.id, color);
+          console.log(`[Session Restore] Restored badge for tab ${tab.id} in session ${sessionId}`);
+        }
+      });
+
+      // Step 7: Log final state
+      const activeCount = getActiveSessionCount();
+      const totalCount = Object.keys(sessionStore.sessions).length;
+
+      console.log('[Session Restore] ✓ Validation complete');
+      console.log('[Session Restore] Active sessions (with tabs):', activeCount);
+      console.log('[Session Restore] Total sessions in storage:', totalCount);
+
+      if (activeCount !== totalCount) {
+        console.warn('[Session Restore] WARNING: Active count', activeCount, '!=', 'Total count', totalCount);
+        console.warn('[Session Restore] This should not happen after cleanup!');
+      }
+    });
+  });
+}
+
+// ============= Session Limits Configuration =============
+
+/**
+ * Session limits by tier
+ * Free: 3 sessions, Premium/Enterprise: Unlimited
+ */
+const SESSION_LIMITS = {
+  free: 3,
+  premium: Infinity,
+  enterprise: Infinity
+};
+
+/**
+ * Get count of sessions that have active tabs
+ * @returns {number} Count of active sessions
+ */
+function getActiveSessionCount() {
+  let count = 0;
+
+  Object.keys(sessionStore.sessions).forEach(sessionId => {
+    const session = sessionStore.sessions[sessionId];
+    if (session.tabs && session.tabs.length > 0) {
+      count++;
     }
   });
+
+  return count;
+}
+
+/**
+ * Check if creating a new session is allowed based on license tier
+ * @returns {Promise<{allowed: boolean, tier: string, current: number, limit: number, reason?: string}>}
+ */
+async function canCreateNewSession() {
+  // Get current tier from license manager
+  let tier = 'free';
+  try {
+    if (typeof licenseManager !== 'undefined' && licenseManager.isInitialized) {
+      tier = licenseManager.getTier();
+    }
+  } catch (error) {
+    console.error('[Session Limits] Error getting tier:', error);
+    tier = 'free'; // Fail safely to free tier
+  }
+
+  // Count only sessions with active tabs
+  const activeSessionCount = getActiveSessionCount();
+  const limit = SESSION_LIMITS[tier];
+
+  console.log('[Session Limits] Current tier:', tier);
+  console.log('[Session Limits] Active sessions (with tabs):', activeSessionCount);
+  console.log('[Session Limits] Total sessions in storage:', Object.keys(sessionStore.sessions).length);
+  console.log('[Session Limits] Limit:', limit);
+
+  const canCreate = activeSessionCount < limit;
+
+  // Format limit for display (use ∞ for Infinity)
+  const limitDisplay = limit === Infinity ? '∞' : limit;
+
+  // IMPORTANT: JSON.stringify converts Infinity to null
+  // Use -1 to represent unlimited (Infinity), which survives JSON serialization
+  const limitForSerialization = limit === Infinity ? -1 : limit;
+
+  return {
+    allowed: canCreate,
+    tier: tier,
+    current: activeSessionCount,
+    limit: limitForSerialization,
+    reason: canCreate ? undefined : `You've reached the ${tier.toUpperCase()} tier limit of ${limitDisplay} concurrent sessions. Upgrade to Premium for unlimited sessions!`
+  };
+}
+
+/**
+ * Get session status for UI display
+ * @returns {Promise<{canCreateNew: boolean, isOverLimit: boolean, activeCount: number, limit: number, tier: string}>}
+ */
+async function getSessionStatus() {
+  const canCreate = await canCreateNewSession();
+  const isOverLimit = canCreate.current > canCreate.limit;
+
+  const result = {
+    canCreateNew: canCreate.allowed,
+    isOverLimit: isOverLimit,
+    activeCount: canCreate.current,
+    // IMPORTANT: JSON.stringify converts Infinity to null
+    // Use -1 to represent unlimited (Infinity), which survives JSON serialization
+    limit: canCreate.limit === Infinity ? -1 : canCreate.limit,
+    tier: canCreate.tier
+  };
+
+  // Debug logging
+  console.log('[getSessionStatus] Returning:', result);
+  console.log('[getSessionStatus] limit value:', result.limit);
+  console.log('[getSessionStatus] limit type:', typeof result.limit);
+  console.log('[getSessionStatus] limit === -1:', result.limit === -1);
+  console.log('[getSessionStatus] limit === null:', result.limit === null);
+  console.log('[getSessionStatus] Original limit:', canCreate.limit);
+  console.log('[getSessionStatus] Was Infinity:', canCreate.limit === Infinity);
+  console.log('[getSessionStatus] JSON serialization test:', JSON.stringify(result));
+
+  return result;
 }
 
 // ============= Session Management =============
@@ -709,89 +895,111 @@ function loadPersistedSessions() {
  * @param {Function} callback - Callback with result object
  */
 function createNewSession(url, callback) {
-  const sessionId = generateSessionId();
-  const color = sessionColor(sessionId);
-
-  // Default to about:blank if no URL provided
-  const targetUrl = url && url.trim() ? url.trim() : 'about:blank';
-
-  console.log('Creating new session with ID:', sessionId, 'URL:', targetUrl);
-
-  // Create session object
-  sessionStore.sessions[sessionId] = {
-    id: sessionId,
-    color: color,
-    createdAt: Date.now(),
-    tabs: []
-  };
-
-  // Initialize cookie store for this session
-  sessionStore.cookieStore[sessionId] = {};
-
-  // Open new tab with specified URL
-  chrome.tabs.create({
-    url: targetUrl,
-    active: true
-  }, (tab) => {
-    if (chrome.runtime.lastError) {
-      console.error('Tab creation error:', chrome.runtime.lastError);
-      delete sessionStore.sessions[sessionId];
-      delete sessionStore.cookieStore[sessionId];
-      callback({ success: false, error: chrome.runtime.lastError.message });
+  // Check session limits before creating
+  canCreateNewSession().then(canCreate => {
+    if (!canCreate.allowed) {
+      console.warn('[Session Limits] Session creation blocked:', canCreate.reason);
+      callback({
+        success: false,
+        error: canCreate.reason,
+        blocked: true,
+        tier: canCreate.tier,
+        current: canCreate.current,
+        limit: canCreate.limit
+      });
       return;
     }
 
-    console.log('Created new session', sessionId, 'with tab', tab.id);
+    // Proceed with session creation
+    const sessionId = generateSessionId();
+    const color = sessionColor(sessionId);
 
-    // Map tab to session
-    sessionStore.tabToSession[tab.id] = sessionId;
-    sessionStore.sessions[sessionId].tabs.push(tab.id);
+    // Default to about:blank if no URL provided
+    const targetUrl = url && url.trim() ? url.trim() : 'about:blank';
 
-    // Set colored badge for this session
-    setSessionBadge(tab.id, color);
+    console.log('[Session Limits] Creating new session (tier:', canCreate.tier, 'count:', canCreate.current + 1, '/', canCreate.limit === Infinity ? '∞' : canCreate.limit + ')');
+    console.log('Creating new session with ID:', sessionId, 'URL:', targetUrl);
 
-    // Clear any existing browser cookies for this tab
-    // This prevents cookie leakage from previous browsing
-    setTimeout(() => {
-      if (tab.url && tab.url !== 'about:blank') {
-        try {
-          const url = new URL(tab.url);
-          chrome.cookies.getAll({ url: tab.url }, (cookies) => {
-            if (!cookies || cookies.length === 0) {
-              console.log(`[${sessionId}] No existing cookies to clear for new session`);
-              return;
-            }
+    // Create session object
+    sessionStore.sessions[sessionId] = {
+      id: sessionId,
+      color: color,
+      createdAt: Date.now(),
+      tabs: []
+    };
 
-            console.log(`[${sessionId}] Clearing ${cookies.length} existing cookies for new session`);
+    // Initialize cookie store for this session
+    sessionStore.cookieStore[sessionId] = {};
 
-            cookies.forEach(cookie => {
-              const cookieUrl = `http${cookie.secure ? 's' : ''}://${cookie.domain}${cookie.path}`;
-              chrome.cookies.remove({
-                url: cookieUrl,
-                name: cookie.name,
-                storeId: cookie.storeId
-              }, (removedCookie) => {
-                if (removedCookie) {
-                  console.log(`[${sessionId}] Cleared existing cookie: ${cookie.name}`);
-                }
+    // Open new tab with specified URL
+    chrome.tabs.create({
+      url: targetUrl,
+      active: true
+    }, (tab) => {
+      if (chrome.runtime.lastError) {
+        console.error('Tab creation error:', chrome.runtime.lastError);
+        delete sessionStore.sessions[sessionId];
+        delete sessionStore.cookieStore[sessionId];
+        callback({ success: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+
+      console.log('Created new session', sessionId, 'with tab', tab.id);
+
+      // Map tab to session
+      sessionStore.tabToSession[tab.id] = sessionId;
+      sessionStore.sessions[sessionId].tabs.push(tab.id);
+
+      // Set colored badge for this session
+      setSessionBadge(tab.id, color);
+
+      // Clear any existing browser cookies for this tab
+      // This prevents cookie leakage from previous browsing
+      setTimeout(() => {
+        if (tab.url && tab.url !== 'about:blank') {
+          try {
+            const url = new URL(tab.url);
+            chrome.cookies.getAll({ url: tab.url }, (cookies) => {
+              if (!cookies || cookies.length === 0) {
+                console.log(`[${sessionId}] No existing cookies to clear for new session`);
+                return;
+              }
+
+              console.log(`[${sessionId}] Clearing ${cookies.length} existing cookies for new session`);
+
+              cookies.forEach(cookie => {
+                const cookieUrl = `http${cookie.secure ? 's' : ''}://${cookie.domain}${cookie.path}`;
+                chrome.cookies.remove({
+                  url: cookieUrl,
+                  name: cookie.name,
+                  storeId: cookie.storeId
+                }, (removedCookie) => {
+                  if (removedCookie) {
+                    console.log(`[${sessionId}] Cleared existing cookie: ${cookie.name}`);
+                  }
+                });
               });
             });
-          });
-        } catch (e) {
-          console.error(`[${sessionId}] Error clearing initial cookies:`, e);
+          } catch (e) {
+            console.error(`[${sessionId}] Error clearing initial cookies:`, e);
+          }
         }
-      }
-    }, 100);
+      }, 100);
 
-    // Persist the session immediately
-    persistSessions(true);
+      // Persist the session immediately
+      persistSessions(true);
 
-    callback({
-      success: true,
-      sessionId: sessionId,
-      tabId: tab.id,
-      color: color
+      callback({
+        success: true,
+        sessionId: sessionId,
+        tabId: tab.id,
+        color: color,
+        tier: canCreate.tier
+      });
     });
+  }).catch(error => {
+    console.error('[Session Limits] Error checking session limits:', error);
+    callback({ success: false, error: 'Failed to check session limits: ' + error.message });
   });
 }
 
@@ -1391,6 +1599,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         } else {
           sendResponse({ success: true });
         }
+      });
+      return true; // Keep channel open for async response
+
+    } else if (message.action === 'canCreateSession') {
+      // Check if session creation is allowed
+      canCreateNewSession().then(result => {
+        sendResponse({ success: true, ...result });
+      }).catch(error => {
+        console.error('[canCreateSession] Error:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+      return true; // Keep channel open for async response
+
+    } else if (message.action === 'getSessionStatus') {
+      // Get session status for UI
+      getSessionStatus().then(status => {
+        sendResponse({ success: true, ...status });
+      }).catch(error => {
+        console.error('[getSessionStatus] Error:', error);
+        sendResponse({ success: false, error: error.message });
       });
       return true; // Keep channel open for async response
 
