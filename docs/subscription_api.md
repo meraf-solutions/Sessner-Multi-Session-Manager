@@ -639,78 +639,21 @@ function detectTier(licenseData) {
 
 ## Device ID Generation
 
-### Algorithm
+### Overview
 
-Device ID is generated using privacy-preserving browser fingerprinting with SHA-256 hashing and random salt:
+Device ID is generated using privacy-preserving browser fingerprinting with SHA-256 hashing and random salt.
 
-```javascript
-/**
- * Generate unique device ID for this browser installation
- * Format: SESSNER_{fingerprint}_{salt}
- */
-async function generateDeviceId() {
-  // 1. Collect browser characteristics (non-invasive)
-  const components = {
-    userAgent: navigator.userAgent,
-    language: navigator.language,
-    platform: navigator.platform,
-    hardwareConcurrency: navigator.hardwareConcurrency || 'unknown',
-    screenResolution: `${screen.width}x${screen.height}`,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    colorDepth: screen.colorDepth
-  };
+**Format**: `SESSNER_{fingerprint}_{salt}`
 
-  // 2. Generate fingerprint hash (SHA-256)
-  const fingerprint = JSON.stringify(components);
-  const hashBuffer = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(fingerprint)
-  );
+**Example**: `SESSNER_a1b2c3d4e5f6_X7Y8Z9W0V1`
 
-  // 3. Convert to hex string
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+**Privacy Guarantees:**
+- Stored locally only (never sent except for license validation)
+- Not reversible to personal data
+- No invasive fingerprinting (no canvas, audio, or WebGL)
+- No cross-site tracking
 
-  // 4. Take first 12 characters of hash
-  const fingerprintId = hashHex.substring(0, 12);
-
-  // 5. Add random salt for uniqueness (10 characters)
-  const salt = generateRandomString(10);
-
-  // 6. Construct device ID
-  const deviceId = `SESSNER_${fingerprintId}_${salt}`;
-
-  return deviceId;
-}
-
-function generateRandomString(length) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-```
-
-### Example Device ID
-
-```
-SESSNER_a1b2c3d4e5f6_X7Y8Z9W0V1
-         ^^^^^^^^^^^^  ^^^^^^^^^^
-         fingerprint      salt
-```
-
-### Privacy Guarantees
-
--  Device ID stored locally only
--  Not reversible to personal data
--  Unique per browser installation
--  No cross-site tracking
--  Used only for license validation
--  No canvas fingerprinting (privacy-invasive technique avoided)
--  No audio fingerprinting
--  No WebGL fingerprinting
+See [docs/technical.md - Device ID Generation](technical.md#2-device-id-generation) for complete algorithm implementation and code examples.
 
 ---
 
@@ -1017,6 +960,85 @@ function isWithinGracePeriod(lastValidated) {
 ---
 
 ## Error Handling
+
+### API Error Responses
+
+The Meraf Solutions API returns errors in this format:
+
+```json
+{
+  "result": "error",
+  "message": "Unable to process request as the license status is not active",
+  "error_code": 60
+}
+```
+
+### Extension Error Handling
+
+The extension converts API errors to user-friendly messages using the `getUserFriendlyErrorMessage()` function in `popup-license.js`.
+
+**Error Code Mappings:**
+
+| Error Code | Technical API Message | User-Friendly Message |
+|------------|----------------------|----------------------|
+| `60` | "Unable to process request as the license status is not active" | "This license key is not active. Please check your license status or contact support." |
+| `61` | "License has expired" | "This license has expired. Please renew your license." |
+| `62` | "Maximum devices reached" | "Device limit reached for this license. Please deactivate a device or upgrade your plan." |
+| `63` | "License key does not exist" or invalid | "This license key is not valid. Please check the key and try again." |
+| `64` | Validation failed (network/server error) | "License validation failed. Please check your internet connection and try again." |
+| `65` | "Maximum domains reached" | "Maximum domains reached for this license. Please remove a domain or upgrade your plan." |
+
+**Implementation:**
+
+See [docs/technical.md - getUserFriendlyErrorMessage()](technical.md#license-system-bug-fixes) for complete implementation details with code examples.
+
+**Security: XSS Prevention**
+
+All error messages are HTML-escaped before display:
+
+```javascript
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Usage:
+statusElement.innerHTML = `<div class="error">${escapeHtml(errorMessage)}</div>`;
+```
+
+### Error Response Flow
+
+```
+API Error → license-manager.js → popup-license.js → getUserFriendlyErrorMessage() → Display to User
+```
+
+**Example:**
+
+```javascript
+// 1. API returns error
+{
+  "result": "error",
+  "message": "Unable to process request as the license status is not active",
+  "error_code": 60
+}
+
+// 2. Extension receives response
+const response = await activateLicense(licenseKey);
+// response = {
+//   success: false,
+//   tier: 'free',
+//   message: 'Unable to process request as the license status is not active',
+//   error_code: 60
+// }
+
+// 3. Convert to user-friendly message
+const userMessage = getUserFriendlyErrorMessage(response.message, response.error_code);
+// userMessage = 'This license key is not active. Please check your license status or contact support.'
+
+// 4. Display to user (HTML-escaped)
+showError(escapeHtml(userMessage));
+```
 
 ### Error Codes and Handling
 

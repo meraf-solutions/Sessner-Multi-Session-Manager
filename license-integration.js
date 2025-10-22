@@ -116,25 +116,24 @@ function handleLicenseMessage(request, sender, sendResponse) {
   // License activation
   if (request.action === 'activateLicense') {
     console.log('[License Integration] Handling activateLicense message');
+    console.log('[License Integration] sendResponse type:', typeof sendResponse);
 
-    // Immediately start the async operation and capture the promise
-    const activationPromise = licenseManager.activateLicense(request.licenseKey, request.useSandbox);
-
-    // Handle the promise resolution
-    activationPromise
+    // Execute async operation and send response
+    // CRITICAL: Wrap in Promise.resolve().then() to ensure proper async handling
+    Promise.resolve(licenseManager.activateLicense(request.licenseKey))
       .then(result => {
         console.log('[License Integration] Activation result:', result);
+        console.log('[License Integration] About to call sendResponse with:', result);
 
-        // CRITICAL: Send response immediately
-        if (sendResponse) {
-          try {
-            sendResponse(result);
-          } catch (err) {
-            console.error('[License Integration] Failed to send response:', err);
-          }
+        // CRITICAL: Use try-catch to detect sendResponse errors
+        try {
+          sendResponse(result);
+          console.log('[License Integration] ✓ sendResponse called successfully');
+        } catch (error) {
+          console.error('[License Integration] ✗ sendResponse error:', error);
         }
 
-        // Show notification after response is sent
+        // Show notification after response is sent (only on success)
         if (result.success) {
           chrome.notifications.create({
             type: 'basic',
@@ -147,39 +146,52 @@ function handleLicenseMessage(request, sender, sendResponse) {
       })
       .catch(error => {
         console.error('[License Integration] Activation error:', error);
-        if (sendResponse) {
-          try {
-            sendResponse({
-              success: false,
-              tier: 'free',
-              message: error.message || error.toString()
-            });
-          } catch (err) {
-            console.error('[License Integration] Failed to send error response:', err);
-          }
+        const errorResponse = {
+          success: false,
+          tier: 'free',
+          message: error.message || error.toString(),
+          error_code: null
+        };
+        console.log('[License Integration] Sending error response:', errorResponse);
+
+        try {
+          sendResponse(errorResponse);
+          console.log('[License Integration] ✓ Error response sent');
+        } catch (err) {
+          console.error('[License Integration] ✗ sendResponse error:', err);
         }
       });
 
-    return true; // Keep message channel open
+    return true; // Keep message channel open for async response
   }
 
   // License validation
   if (request.action === 'validateLicense') {
     console.log('[License Integration] Handling validateLicense message');
 
-    (async () => {
-      try {
-        const result = await licenseManager.validateLicense(request.useSandbox);
+    Promise.resolve(licenseManager.validateLicense())
+      .then(result => {
         console.log('[License Integration] Validation result:', result);
-        sendResponse(result);
-      } catch (error) {
+        try {
+          sendResponse(result);
+          console.log('[License Integration] ✓ Validation response sent');
+        } catch (error) {
+          console.error('[License Integration] ✗ sendResponse error:', error);
+        }
+      })
+      .catch(error => {
         console.error('[License Integration] Validation error:', error);
-        sendResponse({
+        const errorResponse = {
           success: false,
-          message: error.message || error.toString()
-        });
-      }
-    })();
+          message: error.message || error.toString(),
+          error_code: null
+        };
+        try {
+          sendResponse(errorResponse);
+        } catch (err) {
+          console.error('[License Integration] ✗ sendResponse error:', err);
+        }
+      });
 
     return true; // Keep channel open for async response
   }
@@ -188,13 +200,17 @@ function handleLicenseMessage(request, sender, sendResponse) {
   if (request.action === 'deactivateLicense') {
     console.log('[License Integration] Handling deactivateLicense message');
 
-    (async () => {
-      try {
-        const result = await licenseManager.deactivateLicense(request.useSandbox);
+    Promise.resolve(licenseManager.deactivateLicense())
+      .then(result => {
         console.log('[License Integration] Deactivation result:', result);
 
         // Send response first
-        sendResponse(result);
+        try {
+          sendResponse(result);
+          console.log('[License Integration] ✓ Deactivation response sent');
+        } catch (error) {
+          console.error('[License Integration] ✗ sendResponse error:', error);
+        }
 
         // Then show notification
         if (result.success) {
@@ -206,14 +222,20 @@ function handleLicenseMessage(request, sender, sendResponse) {
             priority: 1
           });
         }
-      } catch (error) {
+      })
+      .catch(error => {
         console.error('[License Integration] Deactivation error:', error);
-        sendResponse({
+        const errorResponse = {
           success: false,
-          message: error.message || error.toString()
-        });
-      }
-    })();
+          message: error.message || error.toString(),
+          error_code: null
+        };
+        try {
+          sendResponse(errorResponse);
+        } catch (err) {
+          console.error('[License Integration] ✗ sendResponse error:', err);
+        }
+      });
 
     return true; // Keep channel open for async response
   }

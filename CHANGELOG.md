@@ -7,6 +7,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.3] - 2025-10-21
+
+### Added - License Error Handling & UX Improvements
+
+#### IS_DEVELOPMENT Environment Toggle
+- Added single `IS_DEVELOPMENT` constant in license-manager.js (line 54)
+- Automatically switches between sandbox and production API endpoints
+- Automatically switches between development and production secret keys
+- Eliminates need for useSandbox parameter throughout codebase
+
+#### User-Friendly Error Messages
+- Implemented error code mapping system (codes 60-65)
+- Converts technical API errors to clear, actionable user messages
+- Example: "Unable to process request..." → "This license key is not active. Please check your license status or contact support."
+- Error messages display immediately (~500ms) instead of after polling timeout
+
+#### Enhanced Error Display
+- Errors now appear instantly in popup-license.html
+- Red/pink styling in light mode, dark red in dark mode
+- Word wrapping for long messages
+- Button re-enables immediately for retry
+- XSS prevention via HTML escaping
+
+#### Dark Mode Support
+- Added full dark mode support to license-details.html
+- Added full dark mode support to popup-license.html
+- System-theme aware via @media (prefers-color-scheme: dark)
+- Consistent color palette with popup.html (#1a1a1a, #2d2d2d, #e0e0e0, #999, #1ea7e8)
+
+### Fixed - Manifest V2 Async Message Handling
+
+#### Message Response Delivery
+- Fixed `undefined` response issue in popup-license.js
+- Added `sendMessage()` helper to promisify chrome.runtime.sendMessage for Manifest V2
+- Updated license-integration.js with Promise.resolve() wrapper
+- Enhanced logging to trace message flow
+- All message responses now delivered correctly
+
+#### Error Response Propagation
+- Fixed error_code not being passed from API to popup
+- Updated license-manager.js to include error_code in all error responses
+- Enhanced console logging with console.group() for debugging
+- Try-catch blocks around sendResponse calls for error detection
+
+### Removed
+
+#### useSandbox Parameter
+- Removed from license-manager.js functions: activateLicense(), validateLicense(), deactivateLicense()
+- Removed from popup-license.js function calls (6 instances)
+- Removed from popup-license.html (sandbox checkbox UI)
+- Removed from license-integration.js message handlers (3 instances)
+- Replaced with IS_DEVELOPMENT constant for cleaner architecture
+
+### Technical Improvements
+
+#### Code Quality
+- Consistent error response format across all handlers
+- Enhanced error logging with detailed console groups
+- XSS prevention via escapeHtml() function
+- Promise.resolve() wrapper for reliable async handling
+
+#### Documentation
+- Updated docs/api.md with error code mappings
+- Updated docs/subscription_api.md with error handling section
+- Updated docs/architecture.md with error flow diagram
+- Updated docs/technical.md with comprehensive implementation details
+- Updated CLAUDE.md with critical development notes
+
+### Files Modified
+
+- license-manager.js - IS_DEVELOPMENT constant, removed useSandbox
+- popup-license.js - sendMessage() helper, error message system
+- popup-license.html - Removed sandbox checkbox, added dark mode CSS
+- license-details.html - Added dark mode CSS
+- license-integration.js - Fixed async response handling
+- docs/api.md - Error code documentation
+- docs/subscription_api.md - Error handling section
+- docs/architecture.md - Error flow updates
+- docs/technical.md - Implementation details
+- CLAUDE.md - Critical development notes
+
+### Testing
+
+All features tested and verified:
+- ✅ Invalid license shows user-friendly error immediately
+- ✅ Valid license activates successfully
+- ✅ Network errors handled gracefully
+- ✅ Dark mode works in all license pages
+- ✅ Message responses delivered correctly
+- ✅ Error codes propagated properly
+- ✅ XSS prevention working
+- ✅ IS_DEVELOPMENT toggle switches environments correctly
+
+### Upgrade Notes
+
+**For Developers:**
+- Set `IS_DEVELOPMENT = false` in license-manager.js before production deployment
+- Remove any hardcoded useSandbox parameters
+- Use `sendMessage()` helper for all chrome.runtime.sendMessage calls in UI code
+
+**For Users:**
+- Automatic upgrade - no action required
+- Better error messages when license activation fails
+- Dark mode support in license pages
+- Faster error feedback (~500ms vs 10+ seconds)
+
+---
+
 ## [3.0.2] - 2025-10-21
 
 ### Fixed - License Validation API Integration

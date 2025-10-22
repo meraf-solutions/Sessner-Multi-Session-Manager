@@ -1491,7 +1491,110 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 - **Profiles**: Separate browser windows, heavy overhead, awkward switching
 - **This Extension**: Tabs in same window, lightweight, quick switching
 
-### Critical Notes for License Validation
+## Critical Notes for Development
+
+### License Validation Error Handling (2025-10-21)
+
+1. **IS_DEVELOPMENT Constant** (license-manager.js line 54)
+   - CRITICAL: Set to `false` before production deployment
+   - Controls both API endpoint and secret keys
+   - Single point of configuration - no useSandbox parameter needed
+   ```javascript
+   this.IS_DEVELOPMENT = true;  // ← Change to false for production
+   ```
+
+2. **Manifest V2 Async Handling**
+   - `chrome.runtime.sendMessage()` does NOT return Promise in MV2
+   - MUST use callback pattern or promisify with helper function
+   - popup-license.js has `sendMessage()` helper for this purpose (lines 71-96)
+   - license-integration.js uses `Promise.resolve()` wrapper + `return true`
+
+   **Correct Pattern:**
+   ```javascript
+   // In popup/UI code
+   const response = await sendMessage({ action: 'activateLicense', licenseKey });
+
+   // In background message handler
+   Promise.resolve(licenseManager.activateLicense(request.licenseKey))
+     .then(result => {
+       sendResponse(result);
+     })
+     .catch(error => {
+       sendResponse({ success: false, tier: 'free', message: error.message, error_code: null });
+     });
+   return true; // Keep message channel open
+   ```
+
+3. **Error Code Propagation**
+   - API returns: `{result: "error", message: "...", error_code: 60}`
+   - Extension converts: `{success: false, tier: 'free', message: '...', error_code: 60}`
+   - Popup displays: User-friendly message via `getUserFriendlyErrorMessage()`
+   - Always include `error_code` field in error responses (or null)
+   - See [docs/subscription_api.md - Error Handling](docs/subscription_api.md#error-handling) for complete error code mappings (60-65)
+
+4. **Message Response Pattern**
+   - Always call `sendResponse()` inside Promise.then() and .catch()
+   - Always `return true` to keep message channel open
+   - Wrap async operations in `Promise.resolve()` for consistency
+   - Use try-catch around sendResponse for error detection
+
+   **Example:**
+   ```javascript
+   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+     if (request.action === 'activateLicense') {
+       Promise.resolve(licenseManager.activateLicense(request.licenseKey))
+         .then(result => {
+           try {
+             sendResponse(result);
+           } catch (error) {
+             console.error('sendResponse error:', error);
+           }
+         })
+         .catch(error => {
+           sendResponse({
+             success: false,
+             tier: 'free',
+             message: error.message,
+             error_code: null
+           });
+         });
+       return true; // CRITICAL: Keep channel open
+     }
+   });
+   ```
+
+5. **Error Message Security**
+   - ALWAYS use `escapeHtml()` before displaying user-facing messages
+   - Convert technical API errors to user-friendly messages
+   - Don't expose internal error details to users
+   - Log detailed errors to console for debugging
+
+   **XSS Prevention:**
+   ```javascript
+   function escapeHtml(text) {
+     const div = document.createElement('div');
+     div.textContent = text;
+     return div.innerHTML;
+   }
+
+   // Usage:
+   statusElement.innerHTML = `<div class="error">${escapeHtml(errorMessage)}</div>`;
+   ```
+
+6. **Dark Mode Implementation (2025-10-21)**
+   - license-details.html and popup-license.html now support dark mode
+   - Uses system preference: `@media (prefers-color-scheme: dark)`
+   - Color palette consistent with popup.html
+   - All UI elements properly styled for both modes
+
+   **Color Palette:**
+   - Background: `#1a1a1a`, `#2d2d2d`, `#242424`
+   - Text: `#e0e0e0`, `#999`, `#888`
+   - Borders: `#444`, `#333`
+   - Accent: `#1ea7e8`
+   - Error: `#ff6b6b` on `#3a1e1e`
+
+### License Validation (2025-01-22)
 
 **IMPORTANT - Response Parsing**:
 - Meraf Solutions API returns JSON-encoded strings: `"1"` (with quotes) not `1` (plain)

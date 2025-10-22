@@ -435,8 +435,9 @@ Activates a license key on the current device.
 {
   success: boolean,
   tier: string,        // 'free', 'premium', or 'enterprise'
-  message: string,     // Success/error message
-  error?: string
+  message: string,     // Success/error message (user-friendly if error_code present)
+  error_code?: number, // API error code (60-65) if validation failed, or null
+  error?: string       // Deprecated: Use message instead
 }
 ```
 
@@ -476,7 +477,8 @@ Deactivates the current license on this device.
 {
   success: boolean,
   message: string,
-  error?: string
+  error_code?: number, // API error code if validation failed
+  error?: string       // Deprecated: Use message instead
 }
 ```
 
@@ -1216,6 +1218,25 @@ chrome.browserAction.setBadgeBackgroundColor({
 ---
 
 ## Error Handling
+
+### Error Response Format
+
+All license-related actions (`activateLicense`, `validateLicense`, `deactivateLicense`) return consistent error responses:
+
+```javascript
+{
+  success: false,
+  tier: 'free',
+  message: 'User-friendly error message',  // Converted from technical API error
+  error_code: 60  // Numeric error code from API (or null if not applicable)
+}
+```
+
+**Error Code Mappings:**
+
+The extension automatically converts technical API errors to user-friendly messages based on error codes.
+
+See [docs/subscription_api.md - Error Handling](subscription_api.md#error-handling) for complete error code mappings (60-65) and user-friendly message translations.
 
 ### Common Error Patterns
 

@@ -288,25 +288,23 @@ chrome.tabs.onRemoved.addListener(() => refreshUI());
 
 **Role**: License validation, tier detection, feature gating
 
+**Configuration**:
+- `IS_DEVELOPMENT` constant controls API endpoint and secret keys
+  - **CRITICAL**: Must be set to `false` before production deployment
+  - See [docs/subscription_api.md - IS_DEVELOPMENT](subscription_api.md#is_development-environment-toggle) for details
+
 **Key Methods**:
 - `activateLicense(key)` - Two-step activation (register device → verify license)
 - `validateLicense()` - Periodic validation (every 7 days)
 - `deactivateLicense()` - Unregister device from license
 - `getTier()` - Get current tier (free/premium/enterprise)
 - `hasFeature(name)` - Check feature availability
-- `detectTier(licenseData)` - Determine tier from API response
 
-**Tier Detection Logic**:
-```javascript
-function detectTier(licenseData) {
-  const maxDevices = parseInt(licenseData.max_allowed_devices);
-  const maxDomains = parseInt(licenseData.max_allowed_domains);
-
-  if (maxDevices > 1 && maxDomains > 3) return 'enterprise';
-  if (maxDomains > 3) return 'premium';
-  return 'free';
-}
-```
+**Error Handling**:
+- Consistent error response format with error codes (60-65)
+- User-friendly messages converted from technical API errors
+- See [docs/subscription_api.md - Error Handling](subscription_api.md#error-handling) for complete error code mappings
+- See [docs/technical.md - License System](technical.md#13-license-system-2025-10-21) for implementation details
 
 ---
 

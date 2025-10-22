@@ -1263,6 +1263,285 @@ Object.keys(localStorage).filter(k => k.startsWith('__SID_'));
 
 ## License System Bug Fixes
 
+### 2025-10-21: License Error Handling Improvements
+
+#### Overview
+
+Enhanced the license activation error handling system to provide immediate, user-friendly error messages when license validation fails. This update removed the `useSandbox` parameter in favor of a single `IS_DEVELOPMENT` constant and implemented a comprehensive error message translation system.
+
+#### Changes Made
+
+##### 1. IS_DEVELOPMENT Constant (license-manager.js)
+
+Added single constant to control environment switching:
+
+```javascript
+// Line 54
+this.IS_DEVELOPMENT = true;  // Set to false for production
+
+// Automatically determines:
+this.API_BASE_URL = this.IS_DEVELOPMENT
+  ? 'https://sandbox.merafsolutions.com'
+  : 'https://prod.merafsolutions.com';
+
+this.SECRET_KEY_PREMIUM = this.IS_DEVELOPMENT
+  ? '5p9Qde20Bs507OGqPWV'  // Sandbox key
+  : 'PRODUCTION_KEY_HERE';  // Production key
+```
+
+**Benefits:**
+- Single point of configuration
+- No more `useSandbox` parameter needed
+- Impossible to mix sandbox API with production keys
+- Clear deployment checklist (set to `false` before production)
+
+##### 2. Removed useSandbox Parameter
+
+**Before:**
+```javascript
+await licenseManager.activateLicense(licenseKey, useSandbox);
+await licenseManager.validateLicense(useSandbox);
+await licenseManager.deactivateLicense(useSandbox);
+```
+
+**After:**
+```javascript
+await licenseManager.activateLicense(licenseKey);
+await licenseManager.validateLicense();
+await licenseManager.deactivateLicense();
+```
+
+**Files Modified:**
+- `license-manager.js` - Function signatures updated (3 methods)
+- `popup-license.js` - Function calls updated (6 instances)
+- `popup-license.html` - Removed sandbox checkbox UI
+- `license-integration.js` - Message handlers updated (3 handlers)
+
+##### 3. Fixed Manifest V2 Async Message Handling
+
+**Problem:** `popup-license.js` used `await chrome.runtime.sendMessage()` but Manifest V2 doesn't return Promises natively, causing `undefined` responses.
+
+**Solution:** Added `sendMessage()` helper to promisify the API:
+
+```javascript
+// popup-license.js lines 71-96
+function sendMessage(message) {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        resolve(response);
+      });
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+// Usage
+const response = await sendMessage({ action: 'activateLicense', licenseKey });
+```
+
+**Enhanced license-integration.js** with Promise.resolve() wrapper:
+
+```javascript
+Promise.resolve(licenseManager.activateLicense(request.licenseKey))
+  .then(result => {
+    console.log('[License Integration] About to call sendResponse with:', result);
+    try {
+      sendResponse(result);
+      console.log('[License Integration] ✓ sendResponse called successfully');
+    } catch (error) {
+      console.error('[License Integration] ✗ sendResponse error:', error);
+    }
+  })
+  .catch(error => {
+    sendResponse({
+      success: false,
+      tier: 'free',
+      message: error.message,
+      error_code: null
+    });
+  });
+
+return true; // Keep message channel open
+```
+
+##### 4. User-Friendly Error Messages
+
+**Added getUserFriendlyErrorMessage() function** (popup-license.js lines 531-580):
+
+```javascript
+function getUserFriendlyErrorMessage(apiMessage, errorCode) {
+  // Error code mappings
+  const errorCodeMessages = {
+    60: 'This license key is not active. Please check your license status or contact support.',
+    61: 'This license has expired. Please renew your license.',
+    62: 'Device limit reached for this license. Please deactivate a device or upgrade your plan.',
+    63: 'This license key is not valid. Please check the key and try again.',
+    64: 'License validation failed. Please check your internet connection and try again.',
+    65: 'Maximum domains reached for this license. Please remove a domain or upgrade your plan.'
+  };
+
+  // Return mapped message or convert technical message
+  if (errorCode && errorCodeMessages[errorCode]) {
+    return errorCodeMessages[errorCode];
+  }
+
+  // Fallback technical message conversion
+  const lowerMessage = apiMessage.toLowerCase();
+
+  if (lowerMessage.includes('not active') || lowerMessage.includes('status is not active')) {
+    return 'This license key is not active. Please check your license status or contact support.';
+  }
+
+  if (lowerMessage.includes('expired')) {
+    return 'This license has expired. Please renew your license.';
+  }
+
+  if (lowerMessage.includes('maximum devices') || lowerMessage.includes('device limit')) {
+    return 'Device limit reached for this license. Please deactivate a device or upgrade your plan.';
+  }
+
+  // Return original message if no mapping found
+  return apiMessage;
+}
+```
+
+**Example Conversion:**
+
+| API Message | Error Code | User Sees |
+|-------------|------------|-----------|
+| "Unable to process request as the license status is not active" | 60 | "This license key is not active. Please check your license status or contact support." |
+| "License has expired" | 61 | "This license has expired. Please renew your license." |
+| "Maximum devices reached" | 62 | "Device limit reached for this license. Please deactivate a device or upgrade your plan." |
+
+##### 5. Enhanced Error Display
+
+**Immediate Error Display:**
+- Errors appear within ~500ms (not after 10+ second polling timeout)
+- Red/pink background in light mode (`#fee` background, `#c33` border)
+- Dark red in dark mode (`#3a1e1e` background, `#ff6b6b` border)
+- Word wrapping for long messages
+- Button re-enabled for immediate retry
+
+**XSS Prevention:**
+```javascript
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Usage
+targetElement.innerHTML = `<div class="error">${escapeHtml(message)}</div>`;
+```
+
+##### 6. Dark Mode Implementation
+
+Added complete dark mode support to:
+- `license-details.html` (lines 284-374)
+- `popup-license.html` (lines 310-417)
+
+**Color Palette (consistent with popup.html):**
+- Background: `#1a1a1a`, `#2d2d2d`, `#242424`
+- Text: `#e0e0e0`, `#999`, `#888`
+- Borders: `#444`, `#333`
+- Accent: `#1ea7e8`
+- Error: `#ff6b6b` on `#3a1e1e`
+
+**Media Query:**
+```css
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #1a1a1a;
+    color: #e0e0e0;
+  }
+
+  .card {
+    background: #2d2d2d;
+    border: 1px solid #444;
+  }
+
+  .error {
+    background: #3a1e1e;
+    border: 1px solid #ff6b6b;
+    color: #ff6b6b;
+  }
+}
+```
+
+#### Testing
+
+**Test Scenario 1: Invalid License (Error Code 60)**
+```
+Input: XC3CBDD2G8W0N5JFA5ZCPBW9N2P4W2W403P0B3HF
+Result: "This license key is not active. Please check your license status or contact support."
+Timeline: ~500ms
+```
+
+**Test Scenario 2: Network Error**
+```
+Action: Disconnect internet, try activation
+Result: "Failed to activate license. Please check your connection and try again."
+```
+
+**Test Scenario 3: Valid License**
+```
+Input: Valid Premium key
+Result: Success message, redirect to popup.html
+Timeline: ~1-2 seconds
+```
+
+#### Files Modified
+
+1. **license-manager.js**
+   - Added `IS_DEVELOPMENT` constant (line 54)
+   - Removed `useSandbox` parameters from 3 functions
+   - Enhanced error response with `error_code` propagation
+
+2. **popup-license.js**
+   - Added `sendMessage()` helper (lines 71-96)
+   - Added `getUserFriendlyErrorMessage()` (lines 531-580)
+   - Added `escapeHtml()` for XSS prevention (lines 623-628)
+   - Updated all `chrome.runtime.sendMessage` calls to use `sendMessage()`
+   - Enhanced error handling in activation/validation/deactivation
+
+3. **popup-license.html**
+   - Removed sandbox checkbox UI
+   - Added dark mode CSS (lines 310-417)
+
+4. **license-details.html**
+   - Added dark mode CSS (lines 284-374)
+
+5. **license-integration.js**
+   - Removed `useSandbox` parameters from message handlers
+   - Added `Promise.resolve()` wrapper for consistent async handling
+   - Enhanced logging with try-catch around `sendResponse`
+   - Consistent error response format
+
+6. **docs/subscription_api.md**
+   - Added "Development vs Production Mode" section
+   - Updated endpoint examples
+
+#### Backward Compatibility
+
+All changes are backward compatible:
+- Existing error handling still works
+- Fallback to original messages if `error_code` not provided
+- No breaking changes to public APIs
+
+#### Security Improvements
+
+1. **XSS Prevention**: All user-facing error messages are HTML-escaped
+2. **Error Sanitization**: Technical errors converted to safe user messages
+3. **No Sensitive Data**: Error codes logged to console but not displayed to users
+
+---
+
 ### 2025-01-22: License Validation Response Parsing & Redirect Fix
 
 ### Issue 1: Message Handler Return Values

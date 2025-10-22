@@ -355,7 +355,8 @@ class LicenseManager {
         return {
           success: false,
           tier: 'free',
-          message: registerResponse.message || 'Device registration failed'
+          message: registerResponse.message || 'Device registration failed',
+          error_code: registerResponse.error_code
         };
       }
 
@@ -370,7 +371,8 @@ class LicenseManager {
         return {
           success: false,
           tier: 'free',
-          message: verifyResponse.message || 'License verification failed'
+          message: verifyResponse.message || 'License verification failed',
+          error_code: verifyResponse.error_code
         };
       }
 
