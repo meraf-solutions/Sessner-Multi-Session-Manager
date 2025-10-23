@@ -123,6 +123,301 @@ function calculateDaysRemaining(lastAccessed, tier) {
   return Math.max(0, daysRemaining);
 }
 
+// ============= Color Selection State =============
+
+let selectedColor = null; // Stores user-selected color for new session
+let currentColorTier = 'free'; // Current tier for color selection
+let availableColors = []; // Available colors for current tier
+
+/**
+ * Initialize color selection UI
+ * Fetches available colors and sets up color picker
+ */
+async function initializeColorSelection() {
+  try {
+    const response = await sendMessage({ action: 'getAvailableColors' });
+
+    if (response && response.success) {
+      currentColorTier = response.tier;
+      availableColors = response.colors;
+      const allowCustom = response.allowCustom;
+
+      console.log('[Color Selection] Tier:', currentColorTier, 'Colors:', availableColors.length, 'Custom allowed:', allowCustom);
+
+      // Update color picker UI
+      renderColorPicker(availableColors, allowCustom);
+    }
+  } catch (error) {
+    console.error('[Color Selection] Error fetching colors:', error);
+  }
+}
+
+/**
+ * Render color picker UI
+ * @param {Array<string>} colors - Available color hex codes
+ * @param {boolean} allowCustom - Whether custom color input is allowed
+ */
+function renderColorPicker(colors, allowCustom) {
+  const container = $('#colorPickerContainer');
+  if (!container) return;
+
+  let html = '<div class="color-picker-section">';
+  html += '<div class="color-picker-label">Session Color (optional):</div>';
+  html += '<div class="color-swatches">';
+
+  // Add "Auto" option (no custom color)
+  html += `
+    <div class="color-swatch auto-color ${!selectedColor ? 'selected' : ''}"
+         data-color="auto"
+         title="Auto-assign color">
+      <span class="auto-text">Auto</span>
+    </div>
+  `;
+
+  // Add color swatches
+  colors.forEach(color => {
+    html += `
+      <div class="color-swatch ${selectedColor === color ? 'selected' : ''}"
+           data-color="${color}"
+           style="background-color: ${color};"
+           title="${color}">
+      </div>
+    `;
+  });
+
+  html += '</div>'; // Close color-swatches
+
+  // Add custom color input for enterprise tier
+  if (allowCustom) {
+    html += `
+      <div class="custom-color-input-container">
+        <label for="customColorInput" class="custom-color-label">
+          Or enter custom color (HEX):
+        </label>
+        <div class="custom-color-input-wrapper">
+          <input
+            type="text"
+            id="customColorInput"
+            class="custom-color-input"
+            placeholder="#FF6B6B"
+            maxlength="7"
+            pattern="^#[0-9A-Fa-f]{6}$"
+          />
+          <div id="customColorPreview" class="custom-color-preview"></div>
+        </div>
+        <div class="custom-color-hint">Enterprise feature: Choose any hex color</div>
+      </div>
+    `;
+  }
+
+  html += '</div>'; // Close color-picker-section
+
+  container.innerHTML = html;
+
+  // Attach event listeners
+  attachColorPickerListeners(allowCustom);
+}
+
+/**
+ * Attach event listeners to color picker elements
+ * @param {boolean} allowCustom - Whether custom color input is enabled
+ */
+function attachColorPickerListeners(allowCustom) {
+  // Color swatch selection
+  document.querySelectorAll('.color-swatch').forEach(swatch => {
+    swatch.addEventListener('click', () => {
+      const color = swatch.dataset.color;
+
+      // Remove previous selection
+      document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+
+      // Mark as selected
+      swatch.classList.add('selected');
+
+      // Update selected color (null if "Auto")
+      selectedColor = color === 'auto' ? null : color;
+
+      // Clear custom color input if exists
+      const customInput = $('#customColorInput');
+      if (customInput) {
+        customInput.value = '';
+        $('#customColorPreview').style.backgroundColor = 'transparent';
+      }
+
+      console.log('[Color Selection] Selected:', selectedColor || 'auto');
+    });
+  });
+
+  // Custom color input (enterprise only)
+  if (allowCustom) {
+    const customInput = $('#customColorInput');
+    const preview = $('#customColorPreview');
+
+    if (customInput && preview) {
+      customInput.addEventListener('input', (e) => {
+        const value = e.target.value.trim();
+
+        // Validate hex color format
+        const hexPattern = /^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/;
+
+        if (hexPattern.test(value)) {
+          // Valid color - show preview
+          preview.style.backgroundColor = value;
+          selectedColor = value;
+
+          // Remove selection from swatches
+          document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+
+          console.log('[Color Selection] Custom color:', value);
+        } else {
+          // Invalid - clear preview
+          preview.style.backgroundColor = 'transparent';
+          if (value.length === 0) {
+            selectedColor = null;
+          }
+        }
+      });
+    }
+  }
+}
+
+/**
+ * Show color change modal for existing session
+ * @param {string} sessionId - Session ID to change color for
+ */
+async function showColorChangeModal(sessionId) {
+  // Check if enterprise tier
+  const colorsResponse = await sendMessage({ action: 'getAvailableColors' });
+
+  if (!colorsResponse || !colorsResponse.success) {
+    alert('Failed to load color options');
+    return;
+  }
+
+  if (!colorsResponse.allowCustom) {
+    alert('Custom colors are only available in Enterprise tier. Upgrade to change session colors!');
+    return;
+  }
+
+  const colors = colorsResponse.colors;
+
+  // Create modal HTML
+  let modalHTML = `
+    <div class="color-modal-overlay" id="colorModalOverlay">
+      <div class="color-modal">
+        <div class="color-modal-header">
+          <h3>Change Session Color</h3>
+          <button class="color-modal-close" id="colorModalClose">&times;</button>
+        </div>
+        <div class="color-modal-body">
+          <div class="color-swatches-modal">
+  `;
+
+  // Add color swatches
+  colors.forEach(color => {
+    modalHTML += `
+      <div class="color-swatch-modal"
+           data-color="${color}"
+           style="background-color: ${color};"
+           title="${color}">
+      </div>
+    `;
+  });
+
+  modalHTML += `
+          </div>
+          <div class="custom-color-modal-input">
+            <label for="modalCustomColorInput">Custom HEX Color:</label>
+            <input
+              type="text"
+              id="modalCustomColorInput"
+              placeholder="#FF6B6B"
+              maxlength="7"
+            />
+            <div id="modalCustomColorPreview" class="custom-color-preview"></div>
+          </div>
+        </div>
+        <div class="color-modal-footer">
+          <button id="colorModalCancel" class="btn-secondary">Cancel</button>
+          <button id="colorModalApply" class="btn-primary">Apply Color</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Inject modal into page
+  const modalContainer = document.createElement('div');
+  modalContainer.innerHTML = modalHTML;
+  document.body.appendChild(modalContainer.firstElementChild);
+
+  // Attach modal event listeners
+  let selectedModalColor = null;
+
+  // Swatch selection
+  document.querySelectorAll('.color-swatch-modal').forEach(swatch => {
+    swatch.addEventListener('click', () => {
+      document.querySelectorAll('.color-swatch-modal').forEach(s => s.classList.remove('selected'));
+      swatch.classList.add('selected');
+      selectedModalColor = swatch.dataset.color;
+      $('#modalCustomColorInput').value = '';
+    });
+  });
+
+  // Custom color input
+  $('#modalCustomColorInput').addEventListener('input', (e) => {
+    const value = e.target.value.trim();
+    const hexPattern = /^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/;
+
+    if (hexPattern.test(value)) {
+      $('#modalCustomColorPreview').style.backgroundColor = value;
+      selectedModalColor = value;
+      document.querySelectorAll('.color-swatch-modal').forEach(s => s.classList.remove('selected'));
+    } else {
+      $('#modalCustomColorPreview').style.backgroundColor = 'transparent';
+    }
+  });
+
+  // Close modal
+  const closeModal = () => {
+    $('#colorModalOverlay').remove();
+  };
+
+  $('#colorModalClose').addEventListener('click', closeModal);
+  $('#colorModalCancel').addEventListener('click', closeModal);
+  $('#colorModalOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'colorModalOverlay') {
+      closeModal();
+    }
+  });
+
+  // Apply color
+  $('#colorModalApply').addEventListener('click', async () => {
+    if (!selectedModalColor) {
+      alert('Please select a color');
+      return;
+    }
+
+    try {
+      const response = await sendMessage({
+        action: 'setSessionColor',
+        sessionId: sessionId,
+        color: selectedModalColor
+      });
+
+      if (response && response.success) {
+        console.log('[Color Change] Success:', response.color);
+        closeModal();
+        await refreshSessions(); // Refresh to show new color
+      } else {
+        alert('Failed to change color: ' + (response?.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('[Color Change] Error:', error);
+      alert('Error changing color: ' + error.message);
+    }
+  });
+}
+
 // ============= Session Management =============
 
 /**
@@ -145,10 +440,18 @@ async function createNewSession() {
     const urlInput = $('#sessionUrl');
     const url = urlInput ? urlInput.value.trim() : '';
 
-    const response = await sendMessage({
+    // Prepare message with optional custom color
+    const message = {
       action: 'createNewSession',
       url: url || undefined
-    });
+    };
+
+    // Add custom color if selected (enterprise only)
+    if (selectedColor) {
+      message.customColor = selectedColor;
+    }
+
+    const response = await sendMessage(message);
 
     if (response && response.success) {
       console.log('New session created:', response.data);
@@ -395,6 +698,20 @@ async function refreshSessions() {
         <div class="session-group">
           <div class="session-header-bar">
             <div class="session-color-dot" style="background-color: ${sessionColor}"></div>
+
+            ${status.tier === 'enterprise' ? `
+              <button class="session-settings-icon"
+                      data-session-id="${sessionId}"
+                      title="Session settings"
+                      aria-label="Open session settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3"></circle>
+                  <path d="M12 1v6m0 6v6M1 12h6m6 0h6"></path>
+                  <path d="M4.22 4.22l4.24 4.24m5.66 5.66l4.24 4.24M19.78 4.22l-4.24 4.24m-5.66 5.66l-4.24 4.24"></path>
+                </svg>
+              </button>
+            ` : ''}
+
             <div class="session-id" style="display: flex; flex-direction: column; gap: 2px;">
               <span>${truncate(sessionId, 30)}</span>
               <span style="font-size: 10px; font-weight: normal; color: #999;">
@@ -435,8 +752,12 @@ async function refreshSessions() {
 
     $('#sessionsList').innerHTML = html;
 
-    // Attach event listeners to tab items
+    // Attach event listeners to tab items and session settings
     attachTabListeners();
+    attachSessionSettingsListeners();
+
+    // Update auto-restore UI after sessions are rendered
+    await updateAutoRestoreUI();
 
   } catch (error) {
     console.error('Error refreshing sessions:', error);
@@ -465,6 +786,22 @@ function attachTabListeners() {
 
       const tabId = parseInt(item.dataset.tabId);
       await switchToTab(tabId);
+    });
+  });
+}
+
+/**
+ * Attach event listeners to session settings icons (Enterprise only)
+ */
+function attachSessionSettingsListeners() {
+  document.querySelectorAll('.session-settings-icon').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const sessionId = btn.dataset.sessionId;
+
+      console.log('[Session Settings] Opening for session:', sessionId);
+      await showColorChangeModal(sessionId);
     });
   });
 }
@@ -602,6 +939,104 @@ function formatDate(dateString) {
   }
 }
 
+// ============= Auto-Restore UI (Enterprise) =============
+
+/**
+ * Initialize auto-restore UI (call in refreshSessions)
+ */
+async function updateAutoRestoreUI() {
+  const section = $('#autoRestoreSection');
+  if (!section) return;
+
+  try {
+    const response = await sendMessage({ action: 'getLicenseStatus' });
+    const tier = response?.licenseData?.tier || 'free';
+
+    console.log('[Auto-Restore UI] Tier detected:', tier);
+
+    if (tier === 'enterprise') {
+      section.style.display = 'block';
+
+      // Load saved preference
+      const prefs = await sendMessage({ action: 'getAutoRestorePreference' });
+      const toggle = $('#autoRestoreToggle');
+      if (toggle) {
+        toggle.checked = prefs?.enabled || false;
+        console.log('[Auto-Restore UI] Toggle state:', toggle.checked);
+
+        // Show/hide notice based on preference
+        const notice = $('#autoRestoreNotice');
+        const dontShowAgain = prefs?.dontShowNotice || false;
+        if (notice) {
+          notice.style.display = (toggle.checked && !dontShowAgain) ? 'flex' : 'none';
+          console.log('[Auto-Restore UI] Notice display:', notice.style.display);
+        }
+      }
+    } else {
+      section.style.display = 'none';
+      console.log('[Auto-Restore UI] Section hidden (not Enterprise tier)');
+    }
+  } catch (error) {
+    console.error('[Auto-Restore UI] Error updating UI:', error);
+    section.style.display = 'none';
+  }
+}
+
+/**
+ * Attach auto-restore event listeners
+ */
+function attachAutoRestoreListeners() {
+  const toggle = $('#autoRestoreToggle');
+  if (toggle) {
+    toggle.addEventListener('change', async (e) => {
+      const enabled = e.target.checked;
+
+      console.log('[Auto-Restore] Toggle changed:', enabled);
+
+      await sendMessage({
+        action: 'setAutoRestorePreference',
+        enabled: enabled
+      });
+
+      // Show/hide notice
+      const prefs = await sendMessage({ action: 'getAutoRestorePreference' });
+      const notice = $('#autoRestoreNotice');
+      const dontShowAgain = prefs?.dontShowNotice || false;
+
+      if (notice) {
+        notice.style.display = (enabled && !dontShowAgain) ? 'flex' : 'none';
+        console.log('[Auto-Restore] Notice updated, display:', notice.style.display);
+      }
+    });
+  }
+
+  const openSettings = $('#openEdgeSettings');
+  if (openSettings) {
+    openSettings.addEventListener('click', () => {
+      console.log('[Auto-Restore] Opening Edge settings');
+      chrome.tabs.create({ url: 'edge://settings/onStartup' });
+    });
+  }
+
+  const dontShowAgain = $('#dontShowAgain');
+  if (dontShowAgain) {
+    dontShowAgain.addEventListener('click', async () => {
+      console.log('[Auto-Restore] "Don\'t show again" clicked');
+
+      await sendMessage({
+        action: 'setAutoRestorePreference',
+        dontShowNotice: true
+      });
+
+      const notice = $('#autoRestoreNotice');
+      if (notice) {
+        notice.style.display = 'none';
+        console.log('[Auto-Restore] Notice hidden permanently');
+      }
+    });
+  }
+}
+
 // ============= Event Listeners =============
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -610,6 +1045,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Load initial data
   await refreshSessions();
   await refreshLicenseStatus();
+  await initializeColorSelection(); // Initialize color picker
+  await updateAutoRestoreUI(); // Initialize auto-restore UI
+  attachAutoRestoreListeners(); // Attach auto-restore event listeners
 
   // New Session button
   $('#newSessionBtn').addEventListener('click', async () => {

@@ -392,8 +392,545 @@
       font-weight: 600;
     }
 
+    /* ========== Color Picker CSS Variables ========== */
+    :root {
+      /* Light mode (default) */
+      --picker-bg: #f9f9f9;
+      --picker-text: #333333;
+      --picker-border: #e0e0e0;
+      --picker-hover: #f5f5f5;
+      --swatch-border: transparent;
+      --swatch-border-hover: #ccc;
+      --input-bg: #ffffff;
+      --input-text: #333333;
+      --input-border: #e0e0e0;
+      --input-border-focus: #1ea7e8;
+      --modal-overlay: rgba(0, 0, 0, 0.5);
+      --modal-bg: #ffffff;
+      --modal-text: #333333;
+      --modal-close-color: #999999;
+      --modal-close-hover: #333333;
+      --label-text: #666666;
+      --hint-text: #999999;
+      --divider-color: #e0e0e0;
+      --btn-secondary-bg: #ffffff;
+      --btn-secondary-text: #666666;
+      --btn-secondary-border: #e0e0e0;
+      --btn-secondary-hover-bg: #f5f5f5;
+      --btn-secondary-hover-border: #cccccc;
+      --section-header-bg: #242424;
+    }
+
+    /* ========== Color Picker Styles ========== */
+
+    .color-picker-wrapper {
+      margin-bottom: 16px;
+    }
+
+    .color-picker-section {
+      background: var(--picker-bg);
+      border-radius: 8px;
+      padding: 12px;
+      border: 1px solid var(--picker-border);
+    }
+
+    .color-picker-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--label-text);
+      margin-bottom: 8px;
+    }
+
+    .color-swatches {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .color-swatch {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 2px solid var(--swatch-border);
+      position: relative;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .color-swatch:hover {
+      transform: scale(1.15);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      border-color: var(--swatch-border-hover);
+    }
+
+    .color-swatch.selected {
+      border-color: #1ea7e8;
+      box-shadow: 0 0 0 3px rgba(30, 167, 232, 0.3);
+      transform: scale(1.15);
+    }
+
+    .color-swatch.auto-color {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .color-swatch .auto-text {
+      font-size: 10px;
+      font-weight: 700;
+      color: white;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    }
+
+    .custom-color-input-container {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--divider-color);
+    }
+
+    .custom-color-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--label-text);
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .custom-color-input-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .custom-color-input {
+      flex: 1;
+      padding: 8px;
+      border: 2px solid var(--input-border);
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: 'Courier New', monospace;
+      text-transform: uppercase;
+      background: var(--input-bg);
+      color: var(--input-text);
+    }
+
+    .custom-color-input:focus {
+      outline: none;
+      border-color: var(--input-border-focus);
+    }
+
+    .custom-color-preview {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      border: 2px solid var(--input-border);
+      background: transparent;
+      box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .custom-color-hint {
+      font-size: 10px;
+      color: var(--hint-text);
+      margin-top: 4px;
+      font-style: italic;
+    }
+
+    /* Color Change Modal */
+    .color-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--modal-overlay);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    }
+
+    .color-modal {
+      background: var(--modal-bg);
+      border-radius: 12px;
+      padding: 20px;
+      width: 350px;
+      max-height: 500px;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+
+    .color-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .color-modal-header h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--modal-text);
+      margin: 0;
+    }
+
+    .color-modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      color: var(--modal-close-color);
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+      width: 24px;
+      height: 24px;
+    }
+
+    .color-modal-close:hover {
+      color: var(--modal-close-hover);
+    }
+
+    .color-modal-body {
+      margin-bottom: 16px;
+    }
+
+    .color-swatches-modal {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .color-swatch-modal {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 3px solid transparent;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .color-swatch-modal:hover {
+      transform: scale(1.1);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+
+    .color-swatch-modal.selected {
+      border-color: #1ea7e8;
+      box-shadow: 0 0 0 3px rgba(30, 167, 232, 0.3);
+      transform: scale(1.1);
+    }
+
+    .custom-color-modal-input {
+      padding-top: 16px;
+      border-top: 1px solid var(--divider-color);
+    }
+
+    .custom-color-modal-input label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--label-text);
+      margin-bottom: 8px;
+    }
+
+    .custom-color-modal-input input {
+      width: 100%;
+      padding: 10px;
+      border: 2px solid var(--input-border);
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: 'Courier New', monospace;
+      text-transform: uppercase;
+      box-sizing: border-box;
+      margin-bottom: 8px;
+      background: var(--input-bg);
+      color: var(--input-text);
+    }
+
+    .custom-color-modal-input input:focus {
+      outline: none;
+      border-color: var(--input-border-focus);
+    }
+
+    .color-modal-footer {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    .btn-secondary {
+      padding: 10px 20px;
+      border: 2px solid var(--btn-secondary-border);
+      border-radius: 6px;
+      background: var(--btn-secondary-bg);
+      color: var(--btn-secondary-text);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-secondary:hover {
+      background: var(--btn-secondary-hover-bg);
+      border-color: var(--btn-secondary-hover-border);
+    }
+
+    .btn-primary {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      background: linear-gradient(135deg, #1ea7e8 0%, #0066cc 100%);
+      color: white;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(30, 167, 232, 0.4);
+    }
+
+    /* Session Settings Icon (Enterprise) */
+    .session-settings-icon {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 6px;
+      margin-left: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      border-radius: 4px;
+      opacity: 0.6;
+    }
+
+    .session-settings-icon:hover {
+      opacity: 1;
+      background-color: rgba(0, 0, 0, 0.05);
+      transform: scale(1.1);
+    }
+
+    .session-settings-icon:active {
+      transform: scale(0.95);
+    }
+
+    .session-settings-icon svg {
+      display: block;
+      color: var(--picker-text, #333);
+    }
+
+    /* Auto-Restore Section (Enterprise) */
+    .auto-restore-section {
+      padding: 16px 20px;
+      background: var(--picker-bg, #f9f9f9);
+      border-top: 1px solid var(--picker-border, #e0e0e0);
+      margin-top: auto;
+    }
+
+    .auto-restore-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .auto-restore-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--picker-text, #333);
+    }
+
+    .auto-restore-label strong {
+      font-weight: 600;
+    }
+
+    .help-icon {
+      font-size: 14px;
+      opacity: 0.7;
+      cursor: help;
+    }
+
+    /* iOS-Style Toggle Switch */
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 26px;
+      flex-shrink: 0;
+    }
+
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: 0.3s;
+      border-radius: 26px;
+    }
+
+    .toggle-slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: 0.3s;
+      border-radius: 50%;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    input:checked + .toggle-slider {
+      background: linear-gradient(135deg, #1ea7e8 0%, #0066cc 100%);
+    }
+
+    input:checked + .toggle-slider:before {
+      transform: translateX(24px);
+    }
+
+    input:focus + .toggle-slider {
+      box-shadow: 0 0 0 3px rgba(30, 167, 232, 0.2);
+    }
+
+    /* Auto-Restore Notice */
+    .auto-restore-notice {
+      margin-top: 12px;
+      padding: 12px;
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 6px;
+      display: flex;
+      gap: 10px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .notice-icon {
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+
+    .notice-content {
+      flex: 1;
+    }
+
+    .notice-content strong {
+      display: block;
+      margin-bottom: 6px;
+      color: #856404;
+    }
+
+    .notice-content p {
+      margin: 8px 0;
+      color: #856404;
+      text-align: left;
+    }
+
+    .notice-content ol {
+      margin: 8px 0;
+      padding-left: 20px;
+      color: #856404;
+      text-align: left;
+      list-style-position: outside;
+    }
+
+    .notice-content ol li {
+      text-align: left;
+      margin-bottom: 4px;
+    }
+
+    .notice-content code {
+      background: rgba(0, 0, 0, 0.1);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+    }
+
+    .notice-actions {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .btn-link {
+      background: none;
+      border: none;
+      color: #0066cc;
+      text-decoration: underline;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 0;
+      font-weight: 600;
+    }
+
+    .btn-link:hover {
+      color: #004499;
+    }
+
+    .btn-link-secondary {
+      background: none;
+      border: none;
+      color: #666;
+      text-decoration: underline;
+      cursor: pointer;
+      font-size: 12px;
+      padding: 0;
+    }
+
+    .btn-link-secondary:hover {
+      color: #333;
+    }
+
     /* Dark Mode Support */
     @media (prefers-color-scheme: dark) {
+      :root {
+        /* Dark mode color picker variables */
+        --picker-bg: #2d2d2d;
+        --picker-text: #e0e0e0;
+        --picker-border: #444444;
+        --picker-hover: #3a3a3a;
+        --swatch-border: transparent;
+        --swatch-border-hover: #555555;
+        --input-bg: #1e1e1e;
+        --input-text: #e0e0e0;
+        --input-border: #444444;
+        --input-border-focus: #1ea7e8;
+        --modal-overlay: rgba(0, 0, 0, 0.7);
+        --modal-bg: #2d2d2d;
+        --modal-text: #e0e0e0;
+        --modal-close-color: #aaaaaa;
+        --modal-close-hover: #e0e0e0;
+        --label-text: #aaaaaa;
+        --hint-text: #888888;
+        --divider-color: #444444;
+        --btn-secondary-bg: #2d2d2d;
+        --btn-secondary-text: #aaaaaa;
+        --btn-secondary-border: #444444;
+        --btn-secondary-hover-bg: #3a3a3a;
+        --btn-secondary-hover-border: #555555;
+        --section-header-bg: #242424;
+      }
+
       body {
         background: #1a1a1a;
       }
@@ -514,6 +1051,29 @@
       .license-details {
         color: #888;
       }
+
+      .session-settings-icon:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+      }
+
+      .auto-restore-notice {
+        background: #3a3a2a;
+        border-color: #998800;
+      }
+
+      .notice-content strong,
+      .notice-content p,
+      .notice-content ol {
+        color: #ffeb99;
+      }
+
+      .notice-content code {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .toggle-slider {
+        background-color: #555;
+      }
     }
   </style>
 </head>
@@ -536,6 +1096,10 @@
         placeholder="Enter URL (optional, e.g., https://google.com)"
         style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 6px; font-size: 14px; margin-bottom: 12px; box-sizing: border-box;"
       />
+
+      <!-- Color Picker Container -->
+      <div id="colorPickerContainer" class="color-picker-wrapper"></div>
+
       <button id="newSessionBtn" class="new-session-btn" title="Create a new isolated session">
         + New Session
       </button>
@@ -564,6 +1128,43 @@
         <div class="license-details-item">
           <span class="license-details-label">Status:</span>
           <span>Limited to 3 sessions</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Auto-Restore Section (Enterprise Only) -->
+    <div id="autoRestoreSection" class="auto-restore-section" style="display: none;">
+      <div class="auto-restore-container">
+        <div class="auto-restore-label">
+          <strong>Auto-Restore Sessions on Startup</strong>
+          <span class="help-icon" title="Automatically restore your sessions when browser restarts. Requires Edge to be configured to restore tabs.">ℹ️</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="autoRestoreToggle">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <!-- Notice shown when toggle is enabled -->
+      <div id="autoRestoreNotice" class="auto-restore-notice" style="display: none;">
+        <div class="notice-icon">⚠️</div>
+        <div class="notice-content">
+          <strong>Feature In Development:</strong> Auto-restore functionality is currently being built.
+          <p style="margin-top: 8px; margin-bottom: 4px;">Once complete, this feature will:</p>
+          <ol>
+            <li>Save your session tabs and URLs</li>
+            <li>Detect when browser restarts</li>
+            <li>Automatically restore sessions to tabs</li>
+          </ol>
+          <p style="margin-top: 8px; margin-bottom: 4px;"><strong>Required Setup:</strong></p>
+          <ol start="4">
+            <li>Go to: <code>edge://settings/onStartup</code></li>
+            <li>Select: <strong>"Open tabs from the previous session"</strong></li>
+          </ol>
+          <div class="notice-actions">
+            <button id="openEdgeSettings" class="btn-link">Open Edge Settings</button>
+            <button id="dontShowAgain" class="btn-link-secondary">Don't Show Again</button>
+          </div>
         </div>
       </div>
     </div>

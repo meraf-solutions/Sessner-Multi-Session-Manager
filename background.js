@@ -32,20 +32,167 @@ function generateSessionId() {
   return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
+// ============= Tier-Based Color Palettes =============
+
 /**
- * Generate color for session based on ID
- * @param {string} sessionId
- * @returns {string}
+ * Color palettes by tier
+ * Free: 6 colors (basic high-contrast palette)
+ * Premium: 12 colors (expanded palette)
+ * Enterprise: 20+ colors (comprehensive palette) + custom color support
  */
-function sessionColor(sessionId) {
-  const colors = [
+const COLOR_PALETTES = {
+  free: [
+    '#FF6B6B', // Red
+    '#4ECDC4', // Teal
+    '#45B7D1', // Blue
+    '#FFA07A', // Orange
+    '#98D8C8', // Mint
+    '#F7DC6F'  // Yellow
+  ],
+  premium: [
+    '#FF6B6B', // Red
+    '#4ECDC4', // Teal
+    '#45B7D1', // Blue
+    '#FFA07A', // Orange
+    '#98D8C8', // Mint
+    '#F7DC6F', // Yellow
+    '#BB8FCE', // Purple
+    '#85C1E2', // Light Blue
+    '#F06292', // Pink
+    '#64B5F6', // Sky Blue
+    '#81C784', // Green
+    '#FFD54F'  // Amber
+  ],
+  enterprise: [
+    // All premium colors
     '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A',
     '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2',
-    '#F06292', '#64B5F6', '#81C784', '#FFD54F'
-  ];
+    '#F06292', '#64B5F6', '#81C784', '#FFD54F',
+    // Extended enterprise colors
+    '#E91E63', // Deep Pink
+    '#9C27B0', // Deep Purple
+    '#673AB7', // Indigo
+    '#3F51B5', // Blue
+    '#2196F3', // Light Blue
+    '#00BCD4', // Cyan
+    '#009688', // Teal
+    '#4CAF50', // Green
+    '#8BC34A', // Light Green
+    '#CDDC39', // Lime
+    '#FFEB3B', // Yellow
+    '#FFC107', // Amber
+    '#FF9800', // Orange
+    '#FF5722', // Deep Orange
+    '#795548', // Brown
+    '#607D8B'  // Blue Grey
+  ]
+};
+
+/**
+ * Get color palette for a specific tier
+ * @param {string} tier - License tier ('free', 'premium', 'enterprise')
+ * @returns {Array<string>} Array of color hex codes
+ */
+function getColorPaletteForTier(tier) {
+  return COLOR_PALETTES[tier] || COLOR_PALETTES.free;
+}
+
+/**
+ * Generate color for session based on ID and tier
+ * @param {string} sessionId - The session ID
+ * @param {string} tier - License tier ('free', 'premium', 'enterprise')
+ * @param {string} customColor - Optional custom color (enterprise only)
+ * @returns {string} Hex color code
+ */
+function sessionColor(sessionId, tier = null, customColor = null) {
+  // If custom color provided and valid (enterprise only), use it
+  if (customColor && isValidHexColor(customColor)) {
+    return customColor;
+  }
+
+  // Get tier from license manager if not provided
+  if (!tier) {
+    try {
+      if (typeof licenseManager !== 'undefined' && licenseManager.isInitialized) {
+        tier = licenseManager.getTier();
+      } else {
+        tier = 'free'; // Default to free tier
+      }
+    } catch (error) {
+      console.error('[Session Color] Error getting tier:', error);
+      tier = 'free';
+    }
+  }
+
+  // Get color palette for tier
+  const colors = getColorPaletteForTier(tier);
+
+  // Hash session ID to select color from palette
   const hash = sessionId.split('').reduce((acc, char) =>
     acc + char.charCodeAt(0), 0);
+
   return colors[hash % colors.length];
+}
+
+/**
+ * Validate hex color format
+ * @param {string} color - Color hex code
+ * @returns {boolean} True if valid hex color
+ */
+function isValidHexColor(color) {
+  if (!color || typeof color !== 'string') {
+    return false;
+  }
+
+  // Remove whitespace
+  color = color.trim();
+
+  // Check format: #RRGGBB or #RGB
+  const hexPattern = /^#([0-9A-Fa-f]{6}|[0-9A-Fa-f]{3})$/;
+  return hexPattern.test(color);
+}
+
+/**
+ * Normalize hex color to 6-digit format
+ * Converts #RGB to #RRGGBB
+ * @param {string} color - Color hex code
+ * @returns {string} Normalized hex color
+ */
+function normalizeHexColor(color) {
+  if (!color) return null;
+
+  color = color.trim().toUpperCase();
+
+  // If 3-digit hex (#RGB), expand to 6-digit (#RRGGBB)
+  if (color.length === 4) {
+    return '#' + color[1] + color[1] + color[2] + color[2] + color[3] + color[3];
+  }
+
+  return color;
+}
+
+/**
+ * Check color contrast ratio for badge visibility
+ * Warns if contrast is too low against common backgrounds
+ * @param {string} color - Hex color code
+ * @returns {boolean} True if sufficient contrast
+ */
+function hasGoodContrast(color) {
+  if (!color) return false;
+
+  // Convert hex to RGB
+  const hex = color.replace('#', '');
+  const r = parseInt(hex.substr(0, 2), 16);
+  const g = parseInt(hex.substr(2, 2), 16);
+  const b = parseInt(hex.substr(4, 2), 16);
+
+  // Calculate relative luminance (WCAG formula)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+  // Check if color is too light (poor contrast on light backgrounds)
+  // or too dark (poor contrast on dark backgrounds)
+  // Good colors should be in middle range (0.2 - 0.8)
+  return luminance >= 0.15 && luminance <= 0.85;
 }
 
 /**
@@ -1020,8 +1167,9 @@ async function getSessionStatus() {
  * Create a new session and open a new tab
  * @param {string} url - Optional URL to open (defaults to 'about:blank')
  * @param {Function} callback - Callback with result object
+ * @param {string} customColor - Optional custom color (enterprise only)
  */
-function createNewSession(url, callback) {
+function createNewSession(url, callback, customColor = null) {
   // Check session limits before creating
   canCreateNewSession().then(canCreate => {
     if (!canCreate.allowed) {
@@ -1037,9 +1185,46 @@ function createNewSession(url, callback) {
       return;
     }
 
+    // Get current tier
+    const tier = canCreate.tier;
+
+    // Validate custom color if provided
+    let validatedCustomColor = null;
+    if (customColor) {
+      // Only allow custom colors for enterprise tier
+      if (tier !== 'enterprise') {
+        console.warn('[Session Color] Custom color not allowed for tier:', tier);
+        callback({
+          success: false,
+          error: 'Custom colors are only available in Enterprise tier',
+          tier: tier
+        });
+        return;
+      }
+
+      // Validate and normalize color
+      if (isValidHexColor(customColor)) {
+        validatedCustomColor = normalizeHexColor(customColor);
+
+        // Check contrast
+        if (!hasGoodContrast(validatedCustomColor)) {
+          console.warn('[Session Color] Poor contrast for color:', validatedCustomColor);
+          // Don't block, just warn
+        }
+      } else {
+        console.warn('[Session Color] Invalid hex color format:', customColor);
+        callback({
+          success: false,
+          error: 'Invalid color format. Use hex format like #FF6B6B',
+          tier: tier
+        });
+        return;
+      }
+    }
+
     // Proceed with session creation
     const sessionId = generateSessionId();
-    const color = sessionColor(sessionId);
+    const color = sessionColor(sessionId, tier, validatedCustomColor);
     const timestamp = Date.now();
 
     // Default to about:blank if no URL provided
@@ -1052,6 +1237,7 @@ function createNewSession(url, callback) {
     sessionStore.sessions[sessionId] = {
       id: sessionId,
       color: color,
+      customColor: validatedCustomColor, // Store custom color if provided (enterprise only)
       createdAt: timestamp,
       lastAccessed: timestamp, // Initialize lastAccessed to creation time
       tabs: [],
@@ -1560,15 +1746,16 @@ setInterval(() => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   try {
     if (message.action === 'createNewSession') {
-      // Create new session with optional URL and callback
+      // Create new session with optional URL, custom color, and callback
       const url = message.url || 'about:blank';
+      const customColor = message.customColor || null;
       createNewSession(url, (result) => {
         if (result.success) {
           sendResponse({ success: true, data: result });
         } else {
-          sendResponse({ success: false, error: result.error });
+          sendResponse({ success: false, error: result.error, blocked: result.blocked, tier: result.tier });
         }
-      });
+      }, customColor);
       return true; // Keep channel open for async response
 
     } else if (message.action === 'getActiveSessions') {
@@ -1777,6 +1964,187 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       }
       return false; // Synchronous response
+
+    } else if (message.action === 'getAvailableColors') {
+      // Get available colors for current tier
+      let tier = 'free';
+      try {
+        if (typeof licenseManager !== 'undefined' && licenseManager.isInitialized) {
+          tier = licenseManager.getTier();
+        }
+      } catch (error) {
+        console.error('[getAvailableColors] Error getting tier:', error);
+      }
+
+      const colors = getColorPaletteForTier(tier);
+      const allowCustom = tier === 'enterprise';
+
+      sendResponse({
+        success: true,
+        tier: tier,
+        colors: colors,
+        allowCustom: allowCustom
+      });
+      return false; // Synchronous response
+
+    } else if (message.action === 'setSessionColor') {
+      // Set custom color for session (enterprise only)
+      const sessionId = message.sessionId;
+      const newColor = message.color;
+
+      if (!sessionId) {
+        sendResponse({ success: false, error: 'No session ID provided' });
+        return false;
+      }
+
+      if (!newColor) {
+        sendResponse({ success: false, error: 'No color provided' });
+        return false;
+      }
+
+      // Check tier
+      let tier = 'free';
+      try {
+        if (typeof licenseManager !== 'undefined' && licenseManager.isInitialized) {
+          tier = licenseManager.getTier();
+        }
+      } catch (error) {
+        console.error('[setSessionColor] Error getting tier:', error);
+      }
+
+      if (tier !== 'enterprise') {
+        sendResponse({
+          success: false,
+          error: 'Custom colors are only available in Enterprise tier',
+          tier: tier
+        });
+        return false;
+      }
+
+      // Validate color
+      if (!isValidHexColor(newColor)) {
+        sendResponse({
+          success: false,
+          error: 'Invalid color format. Use hex format like #FF6B6B'
+        });
+        return false;
+      }
+
+      const normalizedColor = normalizeHexColor(newColor);
+
+      // Check contrast
+      if (!hasGoodContrast(normalizedColor)) {
+        console.warn('[setSessionColor] Poor contrast for color:', normalizedColor);
+        // Don't block, just warn
+      }
+
+      // Check if session exists
+      const session = sessionStore.sessions[sessionId];
+      if (!session) {
+        sendResponse({ success: false, error: 'Session not found' });
+        return false;
+      }
+
+      // Update session color
+      session.color = normalizedColor;
+      session.customColor = normalizedColor;
+
+      // Update badge for all tabs in this session
+      if (session.tabs && session.tabs.length > 0) {
+        session.tabs.forEach(tabId => {
+          setSessionBadge(tabId, normalizedColor);
+          console.log(`[setSessionColor] Updated badge for tab ${tabId} to ${normalizedColor}`);
+
+          // Also update favicon badge
+          chrome.tabs.sendMessage(tabId, {
+            action: 'sessionColorChanged',
+            color: normalizedColor
+          }, (response) => {
+            if (chrome.runtime.lastError) {
+              // Tab might not have content script loaded yet, that's OK
+              console.log(`[setSessionColor] Could not update favicon for tab ${tabId}:`, chrome.runtime.lastError.message);
+            } else {
+              console.log(`[setSessionColor] Updated favicon for tab ${tabId}`);
+            }
+          });
+        });
+      }
+
+      // Persist changes
+      persistSessions(true);
+
+      console.log(`[setSessionColor] Session ${sessionId} color changed to ${normalizedColor}`);
+      sendResponse({ success: true, color: normalizedColor });
+      return false; // Synchronous response
+
+    } else if (message.action === 'getAutoRestorePreference') {
+      // Get auto-restore preference (Enterprise only)
+      (async () => {
+        try {
+          const result = await new Promise((resolve) => {
+            chrome.storage.local.get(['autoRestorePreference'], (data) => {
+              resolve(data);
+            });
+          });
+
+          const prefs = result.autoRestorePreference || {};
+          console.log('[Auto-Restore] Get preference:', prefs);
+
+          sendResponse({
+            success: true,
+            enabled: prefs.enabled || false,
+            dontShowNotice: prefs.dontShowNotice || false
+          });
+        } catch (error) {
+          console.error('[Auto-Restore] Error getting preference:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+      })();
+      return true; // Keep channel open for async response
+
+    } else if (message.action === 'setAutoRestorePreference') {
+      // Set auto-restore preference (Enterprise only)
+      (async () => {
+        try {
+          // Get current preferences
+          const currentPrefs = await new Promise((resolve) => {
+            chrome.storage.local.get(['autoRestorePreference'], (data) => {
+              resolve(data);
+            });
+          });
+
+          const prefs = currentPrefs.autoRestorePreference || {};
+
+          // Update preferences
+          if (message.hasOwnProperty('enabled')) {
+            prefs.enabled = message.enabled;
+            console.log('[Auto-Restore] Preference set to:', message.enabled);
+          }
+
+          if (message.hasOwnProperty('dontShowNotice')) {
+            prefs.dontShowNotice = message.dontShowNotice;
+            console.log('[Auto-Restore] "Don\'t show notice" set to:', message.dontShowNotice);
+          }
+
+          // Save to storage
+          await new Promise((resolve, reject) => {
+            chrome.storage.local.set({ autoRestorePreference: prefs }, () => {
+              if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+              } else {
+                resolve();
+              }
+            });
+          });
+
+          console.log('[Auto-Restore] Preferences saved:', prefs);
+          sendResponse({ success: true, preference: prefs });
+        } catch (error) {
+          console.error('[Auto-Restore] Error setting preference:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+      })();
+      return true; // Keep channel open for async response
 
     } else {
       // Try license message handlers

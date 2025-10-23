@@ -223,6 +223,19 @@
     }
   }
 
+  // Listen for session color changes
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'sessionColorChanged' && message.color) {
+      console.log('[Favicon] Session color changed to:', message.color);
+      sessionColor = message.color;
+
+      // Reapply favicon with new color
+      applyBadgedFavicon();
+
+      sendResponse({ success: true });
+    }
+  });
+
   // Start initialization
   console.log('[Favicon] Starting initialization...');
   initWithRetry();
