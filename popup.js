@@ -1037,10 +1037,145 @@ function attachAutoRestoreListeners() {
   }
 }
 
+// ============= Initialization State Management =============
+
+/**
+ * Update loading UI based on initialization state
+ * @param {string} state - Initialization state
+ * @param {Object} data - Additional state data
+ */
+function updateLoadingUI(state, data = {}) {
+  const overlay = $('#loadingOverlay');
+  const subtext = $('#loadingSubtext');
+
+  if (!overlay || !subtext) return;
+
+  const stateMessages = {
+    LOADING: 'Starting up...',
+    LICENSE_INIT: 'Initializing license system...',
+    LICENSE_READY: 'License ready',
+    AUTO_RESTORE_CHECK: 'Checking auto-restore settings...',
+    SESSION_LOAD: 'Loading sessions...',
+    CLEANUP: 'Running cleanup...',
+    READY: 'Ready',
+    ERROR: 'Initialization error'
+  };
+
+  subtext.textContent = stateMessages[state] || 'Initializing...';
+
+  if (state === 'READY') {
+    // Hide loading overlay
+    overlay.style.display = 'none';
+    console.log('[Popup] Initialization complete, showing UI');
+  } else if (state === 'ERROR') {
+    // Show error in overlay
+    subtext.textContent = 'Error: ' + (data.error || 'Unknown error');
+    subtext.style.color = '#ff6b6b';
+  } else {
+    // Show loading overlay
+    overlay.style.display = 'flex';
+  }
+}
+
+/**
+ * Wait for initialization to complete
+ */
+async function waitForInitialization() {
+  console.log('[Popup] Waiting for extension initialization...');
+
+  const overlay = $('#loadingOverlay');
+  if (overlay) {
+    overlay.style.display = 'flex';
+  }
+
+  try {
+    // Check initialization state
+    const stateResponse = await sendMessage({ action: 'getInitializationState' });
+
+    if (stateResponse && stateResponse.success) {
+      console.log('[Popup] Current state:', stateResponse.state);
+
+      if (stateResponse.isReady) {
+        console.log('[Popup] Extension already ready');
+        updateLoadingUI('READY');
+        return true;
+      }
+
+      if (stateResponse.state === 'ERROR') {
+        console.error('[Popup] Initialization error:', stateResponse.error);
+        updateLoadingUI('ERROR', { error: stateResponse.error });
+        return false;
+      }
+
+      // Update UI with current state
+      updateLoadingUI(stateResponse.state);
+    }
+
+    // Wait for READY state (max 30 seconds)
+    const timeout = 30000;
+    const startTime = Date.now();
+
+    return new Promise((resolve) => {
+      const checkInterval = setInterval(async () => {
+        const elapsed = Date.now() - startTime;
+
+        if (elapsed > timeout) {
+          console.error('[Popup] Initialization timeout');
+          clearInterval(checkInterval);
+          updateLoadingUI('ERROR', { error: 'Initialization timeout' });
+          resolve(false);
+          return;
+        }
+
+        const stateResponse = await sendMessage({ action: 'getInitializationState' });
+
+        if (stateResponse && stateResponse.success) {
+          if (stateResponse.isReady) {
+            console.log('[Popup] Extension ready');
+            clearInterval(checkInterval);
+            updateLoadingUI('READY');
+            resolve(true);
+          } else if (stateResponse.state === 'ERROR') {
+            console.error('[Popup] Initialization error:', stateResponse.error);
+            clearInterval(checkInterval);
+            updateLoadingUI('ERROR', { error: stateResponse.error });
+            resolve(false);
+          } else {
+            // Update UI with current state
+            updateLoadingUI(stateResponse.state, stateResponse.data);
+          }
+        }
+      }, 100); // Check every 100ms
+    });
+  } catch (error) {
+    console.error('[Popup] Error waiting for initialization:', error);
+    updateLoadingUI('ERROR', { error: error.message });
+    return false;
+  }
+}
+
+/**
+ * Listen for initialization state changes from background
+ */
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'initializationStateChanged') {
+    console.log('[Popup] Initialization state changed:', message.state);
+    updateLoadingUI(message.state, message.data);
+  }
+});
+
 // ============= Event Listeners =============
 
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('Popup loaded');
+
+  // Wait for initialization to complete
+  const ready = await waitForInitialization();
+
+  if (!ready) {
+    console.error('[Popup] Extension not ready, some features may not work');
+    // Still try to load UI, but with degraded functionality
+  }
 
   // Load initial data
   await refreshSessions();

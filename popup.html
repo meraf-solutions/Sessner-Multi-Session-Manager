@@ -292,6 +292,48 @@
       font-size: 13px;
     }
 
+    /* Loading Overlay */
+    .loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.95);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+
+    .loading-spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid #e0e0e0;
+      border-top: 4px solid #1ea7e8;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .loading-text {
+      margin-top: 20px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .loading-subtext {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #666;
+    }
+
     /* Scrollbar styling */
     .sessions-list::-webkit-scrollbar {
       width: 8px;
@@ -1074,6 +1116,23 @@
       .toggle-slider {
         background-color: #555;
       }
+
+      .loading-overlay {
+        background: rgba(26, 26, 26, 0.95);
+      }
+
+      .loading-spinner {
+        border-color: #444;
+        border-top-color: #1ea7e8;
+      }
+
+      .loading-text {
+        color: #e0e0e0;
+      }
+
+      .loading-subtext {
+        color: #999;
+      }
     }
   </style>
 </head>
@@ -1086,6 +1145,13 @@
   </div>
 
   <div class="content">
+    <!-- Loading Overlay (shown during initialization) -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">Loading...</div>
+      <div class="loading-subtext" id="loadingSubtext">Initializing extension</div>
+    </div>
+
     <!-- Session Limit Warning Container -->
     <div id="sessionLimitWarning" style="display: none;"></div>
 

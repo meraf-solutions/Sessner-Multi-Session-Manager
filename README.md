@@ -1,6 +1,6 @@
 # 🌐 Sessner – Multi-Session Manager
 
-**Version 3.0.1** - The simple way to manage multiple accounts on any website
+**Version 3.0.2** - The simple way to manage multiple accounts on any website
 
 ---
 
@@ -48,12 +48,15 @@ When a website opens a popup window (for reports, OAuth login, payment processin
 - File downloads use the right account
 - No session confusion or errors
 
-### 💾 Persistent Sessions
+### 💾 Persistent Sessions (Updated 2025-10-25)
 
-- Sessions survive browser restarts
+- **Sessions survive browser restarts** (now with improved reliability!)
+- Automatic tab restoration using URL-based matching
+- Sessions reconnect within 2-4 seconds of browser startup
+- Session badges and colors automatically restored
+- Intelligent retry logic handles slow system startups
 - No need to recreate sessions every time
 - Automatic cleanup when tabs close
-- Reliable and stable
 
 ### 🚀 Simple Workflow
 
@@ -270,13 +273,30 @@ Each session is assigned a unique color from a palette of 12 distinct colors:
 
 ### Issue: Sessions Not Working After Browser Restart
 
-**Possible Causes:**
-- Edge cleared browsing data on exit
-- Extension was disabled
+**Update (2025-10-25)**: This issue has been fixed! Sessions now automatically restore after browser restart.
+
+**How It Works:**
+- Extension waits 2-4 seconds for Edge to restore tabs
+- Uses URL-based matching to reconnect sessions to tabs
+- Session badges and colors automatically reappear
+
+**If Sessions Still Don't Restore:**
+1. Ensure "On startup" in Edge is set to **"Open tabs from previous session"**
+2. Wait 10-15 seconds after browser restart for full restoration
+3. Check background console for restoration logs:
+   - Open `edge://extensions/` → Developer mode ON
+   - Find "Sessner" → Click "background page"
+   - Look for `[Session Restore] URL-based matching: X tabs restored`
+
+**Possible Causes of Restoration Failure:**
+- Edge "Clear browsing data on close" is enabled (deletes extension storage)
+- Extension was disabled at `edge://extensions/`
+- Tabs closed manually before browser restart (expected behavior)
 
 **Solution:**
-1. Check Edge settings: Ensure "Clear browsing data on close" doesn't include cookies
-2. Verify extension is still enabled at `edge://extensions/`
+1. Verify Edge settings: Ensure "Clear browsing data on close" is OFF
+2. Verify extension is enabled at `edge://extensions/`
+3. Check that tabs were open when browser was closed
 
 ### Issue: Can't Create New Session
 
@@ -540,7 +560,16 @@ This extension is open source! The code is documented and structured for readabi
 
 ## 🚀 Version History
 
-### Version 3.0.1 (Current - 2025-10-16)
+### Version 3.0.2 (Current - 2025-10-25)
+- **Critical Fix**: Resolved browser restart session deletion bug
+- **Reliability**: Implemented 2-second delay + retry logic for tab restoration
+- **Improvement**: URL-based tab matching (domain + path) instead of tab IDs
+- **Improvement**: Intelligent startup grace period prevents premature session cleanup
+- **Performance**: Delayed validation (10 seconds) for truly orphaned sessions
+- **UX**: Sessions now reliably restore within 2-4 seconds of browser startup
+- **Testing**: Confirmed working on Microsoft Edge with "Open tabs from previous session"
+
+### Version 3.0.1 (2025-10-16)
 - **Performance**: Simplified favicon badge system to prevent infinite loops
 - **Performance**: Eliminated continuous MutationObserver monitoring
 - **Performance**: Reduced code complexity by 43% (removed ~170 lines)
@@ -616,6 +645,6 @@ You're all set! Start creating isolated sessions and enjoy the freedom of managi
 
 ---
 
-**Sessner – Multi-Session Manager v3.0.1**
+**Sessner – Multi-Session Manager v3.0.2**
 **Made for Microsoft Edge**
 **100% Local, 100% Private**

@@ -1,7 +1,7 @@
 # System Architecture
 ## Sessner – Multi-Session Manager
 
-**Last Updated:** 2025-10-21
+**Last Updated:** 2025-10-25
 **Extension Version:** 3.0
 **Architecture Pattern:** SessionBox-Style Isolation
 
@@ -891,15 +891,43 @@ User closes tab → onRemoved fires → Look up session → Remove from mapping
 
 ### 5. Browser Restart Persistence
 
+**Critical Fix (2025-10-25)**: Tab Restoration Race Condition
+
+**Problem**: Microsoft Edge assigns NEW tab IDs on browser restart, causing race condition where extension loads before tabs are restored.
+
+**Updated Flow**:
 ```
 Browser starts → Extension loads → chrome.runtime.onStartup fires
-→ Load from chrome.storage.local → Validate tab mappings → Restore badges
+→ Load from chrome.storage.local (with skipCleanup=true)
+→ Wait 2 seconds for Edge to restore tabs
+→ Retry tab query up to 3 times (1-second intervals)
+→ URL-based matching (domain + path, ignore query params)
+→ Restore session-to-tab mappings by URL
+→ Restore badges and favicon colors
+→ Delayed validation (10 seconds) cleans up truly orphaned sessions
 ```
 
 **State Changes**:
 - `sessionStore = data.sessionStore` (from storage)
-- Invalid tab mappings cleaned up
-- Only existing tabs get badges
+- Tab URLs stored in `tabMetadata` for matching
+- **URL-based matching** instead of tab ID matching
+- **Startup grace period** prevents premature session deletion
+- Sessions validated AFTER browser restores tabs
+- Only truly orphaned sessions cleaned up
+
+**Timing Strategy**:
+1. **T+0ms**: Extension loads, session data loaded
+2. **T+2000ms**: First tab query attempt (Edge may have restored tabs)
+3. **T+3000ms**: Second retry (if first attempt found 0 tabs)
+4. **T+4000ms**: Third retry (if second attempt found 0 tabs)
+5. **T+10000ms**: Delayed validation cleans up orphaned sessions
+
+**Evidence from Testing**:
+```
+[Session Restore] Tab query attempt 1: Found 0 tabs  ← Edge hasn't restored yet
+[Session Restore] Tab query attempt 2: Found 3 tabs  ← Success after 1 second
+[Session Restore] URL-based matching: 2 tabs restored
+```
 
 ---
 

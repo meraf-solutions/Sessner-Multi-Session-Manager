@@ -3,6 +3,230 @@
  * Handles session management, cookie isolation, and request interception
  */
 
+// ============= CRITICAL: Edge Wake-Up Mechanism =============
+/**
+ * Edge browser has a critical bug where persistent background pages don't load
+ * on browser startup if no tabs were open when browser closed.
+ *
+ * This storage change listener triggers initialization when:
+ * - Edge restores previous session (reads storage)
+ * - Any extension writes to storage on startup
+ * - Fallback alarm writes to storage
+ */
+let storageWakeUpHandled = false;
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (!storageWakeUpHandled && areaName === 'local') {
+    storageWakeUpHandled = true;
+    console.log('[Edge Wake-Up] ========================================');
+    console.log('[Edge Wake-Up] Storage change detected - forcing initialization');
+    console.log('[Edge Wake-Up] Changed keys:', Object.keys(changes));
+    console.log('[Edge Wake-Up] ========================================');
+
+    // Small delay to ensure background script is fully loaded
+    setTimeout(() => {
+      // Check if initialization already started
+      if (typeof initializationManager !== 'undefined') {
+        const currentState = initializationManager.currentState;
+        console.log('[Edge Wake-Up] Current state:', currentState);
+
+        // Only initialize if not already ready or in progress
+        if (currentState === 'LOADING' || currentState === 'ERROR') {
+          console.log('[Edge Wake-Up] Triggering initialization...');
+          initializationManager.initialize().catch(error => {
+            console.error('[Edge Wake-Up] Failed to initialize:', error);
+          });
+        } else {
+          console.log('[Edge Wake-Up] Initialization already in progress or complete');
+        }
+      } else {
+        console.warn('[Edge Wake-Up] initializationManager not yet defined, will retry via alarm');
+      }
+    }, 100);
+  }
+});
+
+console.log('[Edge Wake-Up] ✓ Storage change listener installed');
+
+// ============= Initialization Manager =============
+
+/**
+ * Manages phased initialization to prevent race conditions
+ * Ensures license manager initializes BEFORE any session operations
+ */
+const initializationManager = {
+  // Initialization states
+  STATES: {
+    LOADING: 'LOADING',
+    LICENSE_INIT: 'LICENSE_INIT',
+    LICENSE_READY: 'LICENSE_READY',
+    AUTO_RESTORE_CHECK: 'AUTO_RESTORE_CHECK',
+    SESSION_LOAD: 'SESSION_LOAD',
+    CLEANUP: 'CLEANUP',
+    READY: 'READY',
+    ERROR: 'ERROR'
+  },
+
+  currentState: 'LOADING',
+  initializationError: null,
+  startTime: Date.now(),
+
+  /**
+   * Set initialization state and broadcast to popup
+   * @param {string} state - New state
+   * @param {Object} data - Additional data to broadcast
+   */
+  setState(state, data = {}) {
+    this.currentState = state;
+    const elapsed = Date.now() - this.startTime;
+
+    console.log(`[INIT] State changed: ${state} (${elapsed}ms elapsed)`);
+
+    // Broadcast state to all popup windows
+    chrome.runtime.sendMessage({
+      action: 'initializationStateChanged',
+      state: state,
+      data: data,
+      elapsed: elapsed
+    }, () => {
+      // Ignore errors (no popup may be listening)
+      if (chrome.runtime.lastError) {
+        // Silent ignore
+      }
+    });
+  },
+
+  /**
+   * Get current initialization state
+   * @returns {{state: string, isReady: boolean, error: string|null}}
+   */
+  getState() {
+    return {
+      state: this.currentState,
+      isReady: this.currentState === this.STATES.READY,
+      error: this.initializationError
+    };
+  },
+
+  /**
+   * Wait for initialization to complete
+   * @param {number} timeout - Max wait time in ms (default: 30000)
+   * @returns {Promise<boolean>} True if ready, false if timeout
+   */
+  async waitForReady(timeout = 30000) {
+    const startTime = Date.now();
+
+    while (this.currentState !== this.STATES.READY && this.currentState !== this.STATES.ERROR) {
+      if (Date.now() - startTime > timeout) {
+        console.error('[INIT] Timeout waiting for initialization');
+        return false;
+      }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    return this.currentState === this.STATES.READY;
+  },
+
+  /**
+   * Run complete initialization sequence
+   */
+  async initialize() {
+    try {
+      console.log('[INIT] ========================================');
+      console.log('[INIT] Starting extension initialization...');
+      console.log('[INIT] ========================================');
+
+      // Phase 0: Storage Persistence Manager Initialization
+      console.log('[INIT] Phase 0: Initializing storage persistence manager...');
+
+      if (typeof storagePersistenceManager !== 'undefined') {
+        try {
+          await storagePersistenceManager.initialize();
+          console.log('[STORAGE] ✓ Storage persistence manager ready');
+        } catch (error) {
+          console.error('[STORAGE] ⚠️ Storage persistence manager failed, using fallback:', error);
+          // Continue with fallback - not critical for startup
+        }
+      } else {
+        console.warn('[STORAGE] ⚠️ Storage persistence manager not loaded, using fallback');
+      }
+
+      // Phase 1: License Manager Initialization
+      this.setState(this.STATES.LICENSE_INIT);
+      console.log('[INIT] Phase 1: Initializing license manager...');
+
+      if (typeof licenseManager === 'undefined') {
+        throw new Error('License manager not loaded');
+      }
+
+      await licenseManager.initialize();
+
+      const tier = licenseManager.getTier();
+      const features = licenseManager.getFeatures();
+
+      console.log('[LICENSE] ✓ License manager ready');
+      console.log('[LICENSE] Tier:', tier);
+      console.log('[LICENSE] Features:', JSON.stringify(features, null, 2));
+
+      this.setState(this.STATES.LICENSE_READY, { tier, features });
+
+      // Phase 2: Auto-Restore Check (Enterprise only)
+      this.setState(this.STATES.AUTO_RESTORE_CHECK);
+      console.log('[INIT] Phase 2: Checking auto-restore settings...');
+
+      if (tier === 'enterprise') {
+        // Check if auto-restore is enabled
+        const prefs = await new Promise(resolve => {
+          chrome.storage.local.get(['autoRestorePreference'], data => {
+            resolve(data.autoRestorePreference || {});
+          });
+        });
+
+        console.log('[AUTO-RESTORE] Preferences loaded:', JSON.stringify(prefs));
+
+        if (prefs.enabled) {
+          console.log('[AUTO-RESTORE] ✓ Auto-restore enabled');
+          // TODO: Implement auto-restore logic (Feature #02)
+          console.log('[AUTO-RESTORE] Auto-restore implementation coming in Feature #02');
+        } else {
+          console.log('[AUTO-RESTORE] Auto-restore disabled');
+        }
+      } else {
+        console.log('[AUTO-RESTORE] Not Enterprise tier, skipping auto-restore check');
+      }
+
+      // Phase 3: Load Persisted Sessions
+      this.setState(this.STATES.SESSION_LOAD);
+      console.log('[INIT] Phase 3: Loading persisted sessions...');
+
+      loadPersistedSessions();
+
+      console.log('[INIT] ✓ Sessions loaded successfully');
+
+      // Phase 4: Run Cleanup (only after license ready!)
+      this.setState(this.STATES.CLEANUP);
+      console.log('[INIT] Phase 4: Running session cleanup...');
+
+      await cleanupExpiredSessions();
+
+      console.log('[INIT] ✓ Cleanup complete');
+
+      // Phase 5: Ready
+      this.setState(this.STATES.READY, { tier, features });
+      console.log('[INIT] ========================================');
+      console.log('[INIT] ✓ Initialization complete - extension ready');
+      console.log('[INIT] Total time:', Date.now() - this.startTime, 'ms');
+      console.log('[INIT] ========================================');
+
+    } catch (error) {
+      console.error('[INIT] ✗ Initialization error:', error);
+      this.initializationError = error.message || error.toString();
+      this.setState(this.STATES.ERROR, { error: this.initializationError });
+      throw error;
+    }
+  }
+};
+
 // ============= State Management =============
 
 // In-memory storage for session data
@@ -748,7 +972,57 @@ function getCookiesForSession(sessionId, domain, path) {
 let persistTimer = null;
 
 /**
+ * Collect tab metadata (URLs) for session restoration
+ * CRITICAL: Edge assigns NEW tab IDs on browser restart
+ * Solution: Store tab URLs and match by URL on restoration
+ * @returns {Promise<Object>} Map of tabId -> { url, sessionId, title }
+ */
+async function collectTabMetadata() {
+  return new Promise((resolve) => {
+    const metadata = {};
+
+    chrome.tabs.query({}, (tabs) => {
+      if (chrome.runtime.lastError) {
+        console.error('[Tab Metadata] Failed to query tabs:', chrome.runtime.lastError);
+        resolve(metadata);
+        return;
+      }
+
+      let processed = 0;
+      const total = tabs.length;
+
+      if (total === 0) {
+        resolve(metadata);
+        return;
+      }
+
+      tabs.forEach(tab => {
+        const sessionId = sessionStore.tabToSession[tab.id];
+
+        if (sessionId && sessionStore.sessions[sessionId]) {
+          metadata[tab.id] = {
+            url: tab.url,
+            sessionId: sessionId,
+            title: tab.title || 'Untitled',
+            index: tab.index,
+            pinned: tab.pinned || false,
+            windowId: tab.windowId
+          };
+        }
+
+        processed++;
+        if (processed === total) {
+          console.log(`[Tab Metadata] Collected metadata for ${Object.keys(metadata).length} session tabs`);
+          resolve(metadata);
+        }
+      });
+    });
+  });
+}
+
+/**
  * Save sessions and cookies to persistent storage (debounced)
+ * Uses multi-layer storage persistence (chrome.storage.local + IndexedDB + sync)
  * @param {boolean} immediate - If true, persist immediately without debouncing
  */
 function persistSessions(immediate = false) {
@@ -759,17 +1033,44 @@ function persistSessions(immediate = false) {
       persistTimer = null;
     }
 
-    // Persist immediately
-    chrome.storage.local.set({
-      sessions: sessionStore.sessions,
-      cookieStore: sessionStore.cookieStore,
-      tabToSession: sessionStore.tabToSession
-    }, () => {
-      if (chrome.runtime.lastError) {
-        console.error('Failed to persist sessions:', chrome.runtime.lastError);
+    // Collect tab metadata (URLs for restoration)
+    collectTabMetadata().then(async tabMetadata => {
+      // Persist immediately to all layers
+      const data = {
+        sessions: sessionStore.sessions,
+        cookieStore: sessionStore.cookieStore,
+        tabToSession: sessionStore.tabToSession,
+        tabMetadata: tabMetadata  // NEW: Tab URLs for restoration
+      };
+
+      // Use storage persistence manager if initialized
+      if (typeof storagePersistenceManager !== 'undefined' && storagePersistenceManager.isInitialized) {
+        try {
+          await storagePersistenceManager.saveData(data);
+
+          // CRITICAL FIX: Add flush delay to ensure IndexedDB commits to disk
+          // This is especially important for Edge when browser closes immediately
+          await new Promise(resolve => setTimeout(resolve, 100));
+          console.log('[Persist] ✓ Data flushed to disk (100ms flush delay completed)');
+
+        } catch (error) {
+          console.error('[Persist] Multi-layer save error:', error);
+          // Fallback to basic chrome.storage.local
+          fallbackPersist(data, 'immediate');
+        }
       } else {
-        console.log('Sessions persisted to storage (immediate)');
+        // Fallback if persistence manager not ready
+        fallbackPersist(data, 'immediate');
       }
+    }).catch(error => {
+      console.error('[Persist] Failed to collect tab metadata:', error);
+      // Persist without metadata as fallback
+      const data = {
+        sessions: sessionStore.sessions,
+        cookieStore: sessionStore.cookieStore,
+        tabToSession: sessionStore.tabToSession
+      };
+      fallbackPersist(data, 'immediate');
     });
   } else {
     // Debounce persistence to avoid excessive writes during rapid cookie updates
@@ -778,173 +1079,323 @@ function persistSessions(immediate = false) {
     }
 
     persistTimer = setTimeout(() => {
-      chrome.storage.local.set({
-        sessions: sessionStore.sessions,
-        cookieStore: sessionStore.cookieStore,
-        tabToSession: sessionStore.tabToSession
-      }, () => {
-        if (chrome.runtime.lastError) {
-          console.error('Failed to persist sessions:', chrome.runtime.lastError);
+      // Collect tab metadata (URLs for restoration)
+      collectTabMetadata().then(tabMetadata => {
+        const data = {
+          sessions: sessionStore.sessions,
+          cookieStore: sessionStore.cookieStore,
+          tabToSession: sessionStore.tabToSession,
+          tabMetadata: tabMetadata  // NEW: Tab URLs for restoration
+        };
+
+        // Use storage persistence manager if initialized
+        if (typeof storagePersistenceManager !== 'undefined' && storagePersistenceManager.isInitialized) {
+          storagePersistenceManager.saveData(data).catch(error => {
+            console.error('[Persist] Multi-layer save error:', error);
+            // Fallback to basic chrome.storage.local
+            fallbackPersist(data, 'debounced');
+          });
         } else {
-          console.log('Sessions persisted to storage (debounced)');
+          // Fallback if persistence manager not ready
+          fallbackPersist(data, 'debounced');
         }
+
+        persistTimer = null;
+      }).catch(error => {
+        console.error('[Persist] Failed to collect tab metadata:', error);
+        // Persist without metadata as fallback
+        const data = {
+          sessions: sessionStore.sessions,
+          cookieStore: sessionStore.cookieStore,
+          tabToSession: sessionStore.tabToSession
+        };
+        fallbackPersist(data, 'debounced');
+        persistTimer = null;
       });
-      persistTimer = null;
     }, 1000); // Wait 1 second before persisting
   }
 }
 
 /**
- * Load persisted sessions from storage
+ * Fallback persistence using only chrome.storage.local
+ * @param {Object} data - Data to persist
+ * @param {string} mode - 'immediate' or 'debounced'
  */
-function loadPersistedSessions() {
-  console.log('[Session Restore] Loading persisted sessions...');
-
-  chrome.storage.local.get(['sessions', 'cookieStore', 'tabToSession'], (data) => {
+function fallbackPersist(data, mode) {
+  chrome.storage.local.set({
+    sessions: data.sessions || {},
+    cookieStore: data.cookieStore || {},
+    tabToSession: data.tabToSession || {},
+    tabMetadata: data.tabMetadata || {},  // NEW: Include tab metadata
+    _lastSaved: Date.now()
+  }, () => {
     if (chrome.runtime.lastError) {
-      console.error('[Session Restore] Failed to load sessions:', chrome.runtime.lastError);
-      return;
+      console.error('[Persist] Failed to persist sessions:', chrome.runtime.lastError);
+    } else {
+      console.log(`[Persist] Sessions persisted to storage (${mode}) [FALLBACK]`);
+    }
+  });
+}
+
+/**
+ * Load persisted sessions from storage (multi-layer)
+ */
+async function loadPersistedSessions() {
+  console.log('[Session Restore] Loading persisted sessions from all storage layers...');
+
+  let data = null;
+
+  // Try multi-layer storage if available
+  if (typeof storagePersistenceManager !== 'undefined' && storagePersistenceManager.isInitialized) {
+    try {
+      data = await storagePersistenceManager.loadData();
+      console.log('[Session Restore] Loaded from storage layer:', data.source);
+      console.log('[Session Restore] Data timestamp:', data.timestamp ? new Date(data.timestamp).toISOString() : 'unknown');
+    } catch (error) {
+      console.error('[Session Restore] Multi-layer load error:', error);
+      // Fall through to fallback
+    }
+  }
+
+  // Fallback to basic chrome.storage.local
+  if (!data || data.source === 'none') {
+    console.log('[Session Restore] Using fallback chrome.storage.local...');
+    data = await new Promise((resolve) => {
+      chrome.storage.local.get(['sessions', 'cookieStore', 'tabToSession', 'tabMetadata'], (result) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Session Restore] Failed to load sessions:', chrome.runtime.lastError);
+          resolve({ sessions: {}, cookieStore: {}, tabToSession: {}, tabMetadata: {}, source: 'none' });
+        } else {
+          resolve({
+            sessions: result.sessions || {},
+            cookieStore: result.cookieStore || {},
+            tabToSession: result.tabToSession || {},
+            tabMetadata: result.tabMetadata || {},  // NEW: Include tab metadata
+            source: 'local-fallback'
+          });
+        }
+      });
+    });
+  }
+
+  // Initialize with empty objects if no data
+  if (!data.sessions || Object.keys(data.sessions).length === 0) {
+    sessionStore.sessions = {};
+    sessionStore.cookieStore = {};
+    sessionStore.tabToSession = {};
+    console.log('[Session Restore] No persisted data found, starting fresh');
+    console.log('[Session Restore] Active sessions (with tabs): 0');
+    console.log('[Session Restore] Total sessions in storage: 0');
+    return;
+  }
+
+  // Load sessions and cookieStore temporarily
+  const loadedSessions = data.sessions || {};
+  const loadedCookieStore = data.cookieStore || {};
+  const loadedTabToSession = data.tabToSession || {};
+
+  console.log('[Session Restore] Loaded from storage:', Object.keys(loadedSessions).length, 'sessions');
+  console.log('[Session Restore] Loaded from storage:', Object.keys(loadedTabToSession).length, 'tab mappings');
+
+  // Ensure all sessions have lastAccessed field (for backward compatibility)
+  Object.keys(loadedSessions).forEach(sessionId => {
+    const session = loadedSessions[sessionId];
+    if (!session.lastAccessed) {
+      // Set to createdAt or current time as fallback
+      session.lastAccessed = session.createdAt || Date.now();
+      console.log('[Session Restore] Added lastAccessed to session:', sessionId);
     }
 
-    // Initialize with empty objects if no data
-    if (!data.sessions || Object.keys(data.sessions).length === 0) {
-      sessionStore.sessions = {};
-      sessionStore.cookieStore = {};
-      sessionStore.tabToSession = {};
-      console.log('[Session Restore] No persisted data found, starting fresh');
-      console.log('[Session Restore] Active sessions (with tabs): 0');
-      console.log('[Session Restore] Total sessions in storage: 0');
-      return;
+    // Remove _isCreating flag if present (shouldn't persist across restarts)
+    if (session._isCreating) {
+      delete session._isCreating;
+      console.log('[Session Restore] Removed stale _isCreating flag from session:', sessionId);
+    }
+  });
+
+  // CRITICAL FIX: Add delay to allow Edge to restore tabs before validation
+  // Edge may take 1-3 seconds to restore tabs after browser restart
+  console.log('[Session Restore] Waiting for Edge to restore tabs...');
+
+  setTimeout(async () => {
+    // Retry logic: Try up to 3 times to get restored tabs
+    let tabs = [];
+    let attempt = 0;
+    const maxAttempts = 3;
+
+    while (attempt < maxAttempts) {
+      tabs = await new Promise((resolve) => {
+        chrome.tabs.query({}, (result) => {
+          if (chrome.runtime.lastError) {
+            console.error('[Session Restore] Failed to query tabs:', chrome.runtime.lastError);
+            resolve([]);
+          } else {
+            resolve(result || []);
+          }
+        });
+      });
+
+      console.log(`[Session Restore] Tab query attempt ${attempt + 1}: Found ${tabs.length} tabs`);
+
+      // If we found tabs, break out of retry loop
+      if (tabs.length > 0) {
+        break;
+      }
+
+      // If no tabs found, wait and retry
+      if (attempt < maxAttempts - 1) {
+        console.log(`[Session Restore] No tabs found, waiting 1 second before retry...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      attempt++;
     }
 
-    // Load sessions and cookieStore temporarily
-    const loadedSessions = data.sessions || {};
-    const loadedCookieStore = data.cookieStore || {};
-    const loadedTabToSession = data.tabToSession || {};
+    if (tabs.length === 0) {
+      console.warn('[Session Restore] No tabs found after 3 attempts - proceeding with empty tab list');
+      // Don't return early - continue with restoration logic
+      // This allows sessions to be loaded even if tabs aren't ready yet
+    }
 
-    console.log('[Session Restore] Loaded from storage:', Object.keys(loadedSessions).length, 'sessions');
-    console.log('[Session Restore] Loaded from storage:', Object.keys(loadedTabToSession).length, 'tab mappings');
+    const existingTabIds = new Set(tabs.map(t => t.id));
+    console.log('[Session Restore] Found', existingTabIds.size, 'existing tabs in browser');
 
-    // Ensure all sessions have lastAccessed field (for backward compatibility)
+    // CRITICAL FIX: Use URL-based matching for tab restoration
+    // Edge assigns NEW tab IDs on restart, so old ID mappings are invalid
+    const loadedTabMetadata = data.tabMetadata || {};
+    const restoredMappings = {};
+    let urlMatchCount = 0;
+    let idMatchCount = 0;
+
+    console.log('[Session Restore] Tab metadata entries:', Object.keys(loadedTabMetadata).length);
+
+    // Step 1: Try URL-based matching first (primary method)
+    if (Object.keys(loadedTabMetadata).length > 0) {
+      console.log('[Session Restore] Using URL-based tab matching...');
+
+      tabs.forEach(tab => {
+        // Skip chrome:// and edge:// URLs (internal browser pages)
+        if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('edge://') || tab.url.startsWith('about:')) {
+          return;
+        }
+
+        // Find matching URL in saved metadata
+        const savedTabEntry = Object.values(loadedTabMetadata).find(
+          saved => saved.url === tab.url
+        );
+
+        if (savedTabEntry && loadedSessions[savedTabEntry.sessionId]) {
+          // Restore session mapping with NEW tab ID
+          restoredMappings[tab.id] = savedTabEntry.sessionId;
+          urlMatchCount++;
+          console.log(`[Session Restore] ✓ URL match: Tab ${tab.id} (${tab.url}) -> session ${savedTabEntry.sessionId}`);
+
+          // Update session's tab list with NEW tab ID
+          if (!loadedSessions[savedTabEntry.sessionId].tabs) {
+            loadedSessions[savedTabEntry.sessionId].tabs = [];
+          }
+          if (!loadedSessions[savedTabEntry.sessionId].tabs.includes(tab.id)) {
+            loadedSessions[savedTabEntry.sessionId].tabs.push(tab.id);
+          }
+        }
+      });
+
+      console.log(`[Session Restore] URL-based matching: ${urlMatchCount} tabs restored`);
+    }
+
+    // Step 2: Fallback to ID-based matching for any remaining tabs
+    // This handles tabs that existed before URL-based matching was implemented
+    Object.keys(loadedTabToSession).forEach(tabIdStr => {
+      const tabId = parseInt(tabIdStr);
+      if (existingTabIds.has(tabId) && !restoredMappings[tabId]) {
+        restoredMappings[tabId] = loadedTabToSession[tabIdStr];
+        idMatchCount++;
+        console.log('[Session Restore] ✓ ID match: Tab', tabId, '-> session', loadedTabToSession[tabIdStr]);
+      }
+    });
+
+    if (idMatchCount > 0) {
+      console.log(`[Session Restore] ID-based matching: ${idMatchCount} tabs restored (legacy)`);
+    }
+
+    sessionStore.tabToSession = restoredMappings;
+    console.log('[Session Restore] Total restored:', Object.keys(restoredMappings).length, 'tab mappings');
+
+    // Step 2: Clean up sessions - validate tab lists and remove empty sessions
+    const sessionsToDelete = [];
+    let staleTabCount = 0;
+
     Object.keys(loadedSessions).forEach(sessionId => {
       const session = loadedSessions[sessionId];
-      if (!session.lastAccessed) {
-        // Set to createdAt or current time as fallback
-        session.lastAccessed = session.createdAt || Date.now();
-        console.log('[Session Restore] Added lastAccessed to session:', sessionId);
+
+      // Ensure session has tabs array
+      if (!session.tabs) {
+        session.tabs = [];
       }
 
-      // Remove _isCreating flag if present (shouldn't persist across restarts)
-      if (session._isCreating) {
-        delete session._isCreating;
-        console.log('[Session Restore] Removed stale _isCreating flag from session:', sessionId);
+      // Filter out non-existent tabs from session.tabs array
+      const originalTabCount = session.tabs.length;
+      const validTabs = session.tabs.filter(tabId => existingTabIds.has(tabId));
+
+      if (validTabs.length !== originalTabCount) {
+        const removedCount = originalTabCount - validTabs.length;
+        staleTabCount += removedCount;
+        console.log(`[Session Restore] Session ${sessionId}: Removed ${removedCount} stale tabs (${originalTabCount} -> ${validTabs.length})`);
+        session.tabs = validTabs;
+      }
+
+      // If no valid tabs remain, mark session for deletion
+      if (validTabs.length === 0) {
+        console.log('[Session Restore] Marking empty session for deletion:', sessionId);
+        sessionsToDelete.push(sessionId);
+      }
+    });
+
+    // Step 3: Delete sessions without valid tabs
+    sessionsToDelete.forEach(sessionId => {
+      console.log('[Session Restore] Deleting session:', sessionId);
+      delete loadedSessions[sessionId];
+      delete loadedCookieStore[sessionId];
+    });
+
+    if (sessionsToDelete.length > 0) {
+      console.log('[Session Restore] Deleted', sessionsToDelete.length, 'stale sessions');
+    }
+
+    // Step 4: Apply cleaned data to sessionStore
+    sessionStore.sessions = loadedSessions;
+    sessionStore.cookieStore = loadedCookieStore;
+
+    // Step 5: Persist cleaned-up state immediately if we made changes
+    const madeChanges = staleTabCount > 0 || sessionsToDelete.length > 0;
+    if (madeChanges) {
+      console.log('[Session Restore] Persisting cleaned-up state...');
+      persistSessions(true);
+    }
+
+    // Step 6: Update badges for restored tabs
+    tabs.forEach(tab => {
+      const sessionId = sessionStore.tabToSession[tab.id];
+      if (sessionId && sessionStore.sessions[sessionId]) {
+        const color = sessionStore.sessions[sessionId].color;
+        setSessionBadge(tab.id, color);
+        console.log(`[Session Restore] Restored badge for tab ${tab.id} in session ${sessionId}`);
       }
     });
 
-    // Validate sessions and clean up stale data
-    chrome.tabs.query({}, (tabs) => {
-      if (chrome.runtime.lastError) {
-        console.error('[Session Restore] Failed to query tabs:', chrome.runtime.lastError);
-        return;
-      }
+    // Step 7: Log final state
+    const activeCount = getActiveSessionCount();
+    const totalCount = Object.keys(sessionStore.sessions).length;
 
-      const existingTabIds = new Set(tabs.map(t => t.id));
-      console.log('[Session Restore] Found', existingTabIds.size, 'existing tabs in browser');
+    console.log('[Session Restore] ✓ Validation complete');
+    console.log('[Session Restore] Active sessions (with tabs):', activeCount);
+    console.log('[Session Restore] Total sessions in storage:', totalCount);
 
-      // Step 1: Clean up tabToSession mappings for non-existent tabs
-      const restoredMappings = {};
-      let staleTabCount = 0;
-
-      Object.keys(loadedTabToSession).forEach(tabIdStr => {
-        const tabId = parseInt(tabIdStr);
-        if (existingTabIds.has(tabId)) {
-          restoredMappings[tabId] = loadedTabToSession[tabIdStr];
-        } else {
-          staleTabCount++;
-          console.log('[Session Restore] Removing stale tab mapping:', tabIdStr, '-> session', loadedTabToSession[tabIdStr]);
-        }
-      });
-
-      if (staleTabCount > 0) {
-        console.log('[Session Restore] Removed', staleTabCount, 'stale tab mappings');
-      }
-
-      sessionStore.tabToSession = restoredMappings;
-      console.log('[Session Restore] Kept', Object.keys(restoredMappings).length, 'valid tab-to-session mappings');
-
-      // Step 2: Clean up sessions - validate tab lists and remove empty sessions
-      const sessionsToDelete = [];
-
-      Object.keys(loadedSessions).forEach(sessionId => {
-        const session = loadedSessions[sessionId];
-
-        // Ensure session has tabs array
-        if (!session.tabs) {
-          session.tabs = [];
-        }
-
-        // Filter out non-existent tabs from session.tabs array
-        const originalTabCount = session.tabs.length;
-        const validTabs = session.tabs.filter(tabId => existingTabIds.has(tabId));
-
-        if (validTabs.length !== originalTabCount) {
-          console.log(`[Session Restore] Session ${sessionId}: Removed ${originalTabCount - validTabs.length} stale tabs (${originalTabCount} -> ${validTabs.length})`);
-          session.tabs = validTabs;
-        }
-
-        // If no valid tabs remain, mark session for deletion
-        if (validTabs.length === 0) {
-          console.log('[Session Restore] Marking empty session for deletion:', sessionId);
-          sessionsToDelete.push(sessionId);
-        }
-      });
-
-      // Step 3: Delete sessions without valid tabs
-      sessionsToDelete.forEach(sessionId => {
-        console.log('[Session Restore] Deleting session:', sessionId);
-        delete loadedSessions[sessionId];
-        delete loadedCookieStore[sessionId];
-      });
-
-      if (sessionsToDelete.length > 0) {
-        console.log('[Session Restore] Deleted', sessionsToDelete.length, 'stale sessions');
-      }
-
-      // Step 4: Apply cleaned data to sessionStore
-      sessionStore.sessions = loadedSessions;
-      sessionStore.cookieStore = loadedCookieStore;
-
-      // Step 5: Persist cleaned-up state immediately if we made changes
-      const madeChanges = staleTabCount > 0 || sessionsToDelete.length > 0;
-      if (madeChanges) {
-        console.log('[Session Restore] Persisting cleaned-up state...');
-        persistSessions(true);
-      }
-
-      // Step 6: Update badges for restored tabs
-      tabs.forEach(tab => {
-        const sessionId = sessionStore.tabToSession[tab.id];
-        if (sessionId && sessionStore.sessions[sessionId]) {
-          const color = sessionStore.sessions[sessionId].color;
-          setSessionBadge(tab.id, color);
-          console.log(`[Session Restore] Restored badge for tab ${tab.id} in session ${sessionId}`);
-        }
-      });
-
-      // Step 7: Log final state
-      const activeCount = getActiveSessionCount();
-      const totalCount = Object.keys(sessionStore.sessions).length;
-
-      console.log('[Session Restore] ✓ Validation complete');
-      console.log('[Session Restore] Active sessions (with tabs):', activeCount);
-      console.log('[Session Restore] Total sessions in storage:', totalCount);
-
-      if (activeCount !== totalCount) {
-        console.warn('[Session Restore] WARNING: Active count', activeCount, '!=', 'Total count', totalCount);
-        console.warn('[Session Restore] This should not happen after cleanup!');
-      }
-    });
-  });
+    if (activeCount !== totalCount) {
+      console.warn('[Session Restore] WARNING: Active count', activeCount, '!=', 'Total count', totalCount);
+      console.warn('[Session Restore] This should not happen after cleanup!');
+    }
+  }, 2000); // 2 second delay before tab validation
 }
 
 // ============= Session Persistence Configuration =============
@@ -1159,6 +1610,33 @@ async function getSessionStatus() {
   console.log('[getSessionStatus] JSON serialization test:', JSON.stringify(result));
 
   return result;
+}
+
+/**
+ * Get storage statistics for debugging (Edge storage issue)
+ * @returns {Promise<Object>} Storage stats
+ */
+async function getStorageStatsHelper() {
+  let stats = {
+    timestamp: Date.now(),
+    currentState: {
+      sessions: Object.keys(sessionStore.sessions).length,
+      tabs: Object.keys(sessionStore.tabToSession).length,
+      cookieSessions: Object.keys(sessionStore.cookieStore).length
+    }
+  };
+
+  // Get storage persistence stats if available
+  if (typeof storagePersistenceManager !== 'undefined' && storagePersistenceManager.isInitialized) {
+    stats.persistence = await storagePersistenceManager.getStorageStats();
+  } else {
+    stats.persistence = {
+      error: 'Storage persistence manager not initialized',
+      health: { local: false, indexedDB: false, sync: false }
+    };
+  }
+
+  return stats;
 }
 
 // ============= Session Management =============
@@ -1409,6 +1887,18 @@ function cleanupSession(sessionId) {
  */
 chrome.webRequest.onBeforeSendHeaders.addListener(
   function(details) {
+    // CRITICAL FIX: Wait for initialization before processing requests
+    // This prevents tab requests during browser startup from executing before
+    // session restoration completes (fixes tab restoration race condition)
+    if (initializationManager.currentState !== initializationManager.STATES.READY) {
+      console.log(`[onBeforeSendHeaders] ⏳ Waiting for initialization (state: ${initializationManager.currentState})`);
+      console.log(`[onBeforeSendHeaders] Tab ${details.tabId} requesting ${details.url}`);
+      console.log(`[onBeforeSendHeaders] Request proceeding WITHOUT session cookies (will reload after initialization)`);
+      // Allow request to proceed without session cookies
+      // Tab will reload after session restoration completes
+      return { requestHeaders: details.requestHeaders };
+    }
+
     // Log every request for debugging
     console.log(`[onBeforeSendHeaders] Tab ${details.tabId} requesting ${details.url}`);
 
@@ -1474,6 +1964,16 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
  */
 chrome.webRequest.onHeadersReceived.addListener(
   function(details) {
+    // CRITICAL FIX: Wait for initialization before processing responses
+    // This prevents cookie capture during browser startup before session restoration
+    if (initializationManager.currentState !== initializationManager.STATES.READY) {
+      console.log(`[onHeadersReceived] ⏳ Waiting for initialization (state: ${initializationManager.currentState})`);
+      console.log(`[onHeadersReceived] Tab ${details.tabId} received response from ${details.url}`);
+      console.log(`[onHeadersReceived] Response proceeding WITHOUT cookie capture`);
+      // Allow response to proceed without capturing cookies
+      return { responseHeaders: details.responseHeaders };
+    }
+
     // Log every response for debugging
     console.log(`[onHeadersReceived] Tab ${details.tabId} received response from ${details.url}`);
 
@@ -1965,6 +2465,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       return false; // Synchronous response
 
+    } else if (message.action === 'getStorageStats') {
+      // Get storage statistics for debugging (Edge storage issue)
+      getStorageStatsHelper()
+        .then(stats => {
+          sendResponse({ success: true, stats });
+        })
+        .catch(error => {
+          console.error('[getStorageStats] Error:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+      return true; // Keep channel open for async response
+
     } else if (message.action === 'getAvailableColors') {
       // Get available colors for current tier
       let tier = 'free';
@@ -2145,6 +2657,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       })();
       return true; // Keep channel open for async response
+
+    } else if (message.action === 'getInitializationState') {
+      // Get current initialization state for popup loading UI
+      const state = initializationManager.getState();
+      sendResponse({ success: true, ...state });
+      return false; // Synchronous response
 
     } else {
       // Try license message handlers
@@ -2443,8 +2961,10 @@ chrome.tabs.onCreated.addListener((tab) => {
  */
 chrome.runtime.onInstalled.addListener(() => {
   console.log('Multi-Session Manager installed/updated');
-  // Load persisted sessions after extension install/update
-  loadPersistedSessions();
+  // Trigger full initialization
+  initializationManager.initialize().catch(error => {
+    console.error('[INIT] Failed to initialize on install:', error);
+  });
 });
 
 /**
@@ -2452,23 +2972,28 @@ chrome.runtime.onInstalled.addListener(() => {
  */
 chrome.runtime.onStartup.addListener(() => {
   console.log('Multi-Session Manager started');
-  // Load persisted sessions on browser startup
-  loadPersistedSessions();
-
-  // Run initial cleanup check
-  cleanupExpiredSessions();
+  // Trigger full initialization
+  initializationManager.initialize().catch(error => {
+    console.error('[INIT] Failed to initialize on startup:', error);
+  });
 });
 
-// Load persisted sessions when background script loads
+// Initialize when background script loads
 console.log('Multi-Session Manager background script loaded');
-loadPersistedSessions();
-
-// Run initial cleanup check
-cleanupExpiredSessions();
+initializationManager.initialize().catch(error => {
+  console.error('[INIT] Failed to initialize on script load:', error);
+});
 
 // Schedule periodic cleanup job (every 6 hours)
-setInterval(() => {
-  cleanupExpiredSessions();
+// Cleanup is deferred and will only run after initialization completes
+setInterval(async () => {
+  // Wait for initialization to complete before running cleanup
+  const ready = await initializationManager.waitForReady(5000);
+  if (ready) {
+    cleanupExpiredSessions();
+  } else {
+    console.warn('[Session Cleanup] Skipping cleanup - initialization not ready');
+  }
 }, PERSISTENCE_CONFIG.cleanupInterval);
 console.log('[Session Cleanup] Scheduled cleanup job to run every 6 hours');
 
@@ -2476,3 +3001,115 @@ console.log('[Session Cleanup] Scheduled cleanup job to run every 6 hours');
 console.log('Testing webRequest listeners...');
 console.log('onBeforeSendHeaders registered:', chrome.webRequest.onBeforeSendHeaders.hasListeners());
 console.log('onHeadersReceived registered:', chrome.webRequest.onHeadersReceived.hasListeners());
+
+// ============= Edge Browser Restart Fix =============
+/**
+ * CRITICAL FIX: Force background script to execute on browser restart in Edge
+ *
+ * Problem: Edge (Chromium) lazy-loads background scripts even with persistent: true
+ * - Script doesn't execute until an event fires
+ * - onStartup listener can't fire if script hasn't loaded to register it
+ * - Direct initialize() call at script load never executes
+ *
+ * Solution: Use an alarm as a "wake-up" mechanism
+ * - Alarms ALWAYS fire, even if background script not loaded
+ * - Edge must load script to handle alarm event
+ * - This triggers our initialization code
+ *
+ * Implementation:
+ * 1. Create a startup alarm on onInstalled (runs once)
+ * 2. Alarm fires immediately on next browser startup
+ * 3. Alarm handler runs initialization
+ * 4. Recreate alarm for next restart
+ */
+
+// Create startup alarm on extension install/update
+chrome.runtime.onInstalled.addListener(details => {
+  console.log('[Edge Restart Fix] Extension installed/updated, creating startup alarms');
+
+  // Create immediate wake-up alarm (fires 1 second after creation)
+  chrome.alarms.create('startupWakeUp', {
+    when: Date.now() + 1000
+  });
+
+  // Create periodic wake-up alarm (every 5 minutes as safety net)
+  chrome.alarms.create('periodicWakeUp', {
+    delayInMinutes: 5,
+    periodInMinutes: 5
+  });
+
+  console.log('[Edge Restart Fix] ✓ Startup alarms created (immediate + periodic)');
+});
+
+// Handle startup alarm - this FORCES Edge to load background script
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === 'startupWakeUp') {
+    console.log('[Edge Restart Fix] ========================================');
+    console.log('[Edge Restart Fix] Startup alarm fired - triggering storage wake-up');
+    console.log('[Edge Restart Fix] ========================================');
+
+    // Write to storage to trigger onChanged listener
+    // This ensures initialization even if alarm fires before storage listener ready
+    chrome.storage.local.set({
+      _edgeWakeUp: Date.now()
+    }, () => {
+      console.log('[Edge Restart Fix] Storage wake-up triggered');
+
+      // Also try direct initialization as backup
+      if (typeof initializationManager !== 'undefined') {
+        initializationManager.initialize().catch(error => {
+          console.error('[Edge Restart Fix] Failed to initialize on alarm:', error);
+        });
+      }
+    });
+
+    // Recreate alarm for next browser restart
+    chrome.alarms.create('startupWakeUp', {
+      when: Date.now() + (24 * 60 * 60 * 1000) // 24 hours from now
+    });
+
+    console.log('[Edge Restart Fix] ✓ Alarm handled, recreated for next restart');
+  } else if (alarm.name === 'periodicWakeUp') {
+    console.log('[Edge Restart Fix] Periodic wake-up alarm fired');
+
+    // Write to storage to ensure background script stays active
+    chrome.storage.local.set({
+      _edgeWakeUp: Date.now()
+    }, () => {
+      console.log('[Edge Restart Fix] Periodic storage wake-up triggered');
+
+      // Check if initialization is needed
+      if (typeof initializationManager !== 'undefined' &&
+          initializationManager.currentState === 'LOADING') {
+        console.log('[Edge Restart Fix] Initialization needed, triggering now');
+        initializationManager.initialize().catch(error => {
+          console.error('[Edge Restart Fix] Failed to initialize on periodic alarm:', error);
+        });
+      }
+    });
+  }
+});
+
+// Alternative: Listen to first tab activation as backup wake-up
+let firstTabActivationHandled = false;
+
+chrome.tabs.onActivated.addListener(activeInfo => {
+  if (!firstTabActivationHandled) {
+    console.log('[Edge Restart Fix] First tab activation detected - backup wake-up');
+
+    // Check if initialization already happened
+    if (initializationManager.currentState === initializationManager.STATES.LOADING) {
+      console.log('[Edge Restart Fix] Initialization not started, triggering now');
+
+      initializationManager.initialize().catch(error => {
+        console.error('[Edge Restart Fix] Failed to initialize on tab activation:', error);
+      });
+    } else {
+      console.log('[Edge Restart Fix] Initialization already started/complete, skipping');
+    }
+
+    firstTabActivationHandled = true;
+  }
+});
+
+console.log('[Edge Restart Fix] ✓ Wake-up mechanisms installed (alarm + tab activation)');

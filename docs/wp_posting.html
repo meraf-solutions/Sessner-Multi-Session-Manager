@@ -1,6 +1,6 @@
 <div class="markdown-heading" dir="auto">
 <h2 dir="auto" style="text-align: center;" tabindex="-1"><img class="wp-image-3035 size-thumbnail aligncenter" src="https://dev.merafsolutions.com/wp-content/uploads/2025/10/Sessner-300x300.png" alt="" width="300" height="300" /></h2>
-<h2 dir="auto" style="text-align: center;" tabindex="-1"><strong>Sessner – Multi-Session Manager</strong> <strong>Made for Microsoft Edge</strong> <strong>100% Local, 100% Private</strong></h2>
+<h2 dir="auto" style="text-align: center;" tabindex="-1"><strong>Sessner – Multi-Session Manager</strong> <strong>Made for Microsoft Edge</strong> <strong>Version 3.0.2</strong> <strong>100% Local, 100% Private</strong></h2>
 </div>
 <!-- Navigation Menu -->
 <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; margin-bottom: 30px;">
@@ -83,10 +83,11 @@
 <h3 class="heading-element" dir="auto" tabindex="-1">💾 Persistent Sessions</h3>
 </div>
 <ul dir="auto">
- 	<li>Sessions survive browser restarts</li>
- 	<li>No need to recreate sessions every time</li>
- 	<li>Automatic cleanup when tabs close</li>
- 	<li>Reliable and stable</li>
+ 	<li><strong>Sessions reliably survive browser restarts</strong> - Intelligent tab restoration with URL-based matching (v3.0.2)</li>
+ 	<li><strong>Automatic restoration</strong> - Sessions reconnect within 2-4 seconds after browser startup</li>
+ 	<li><strong>No manual recreation needed</strong> - All session data, cookies, and badges restore automatically</li>
+ 	<li><strong>Smart cleanup</strong> - Automatic cleanup when tabs close, preserving active sessions</li>
+ 	<li><strong>Production-tested reliability</strong> - Handles browser timing quirks and slow system startups</li>
 </ul>
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">🚀 Simple Workflow</h3>
@@ -318,17 +319,25 @@
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Issue: Sessions Not Working After Browser Restart</h3>
 </div>
-<p dir="auto"><strong>Possible Causes:</strong></p>
+<p dir="auto"><strong>Update (v3.0.2):</strong> This issue has been fixed! Sessions now automatically restore after browser restart with enhanced reliability.</p>
+
+<p dir="auto"><strong>How It Works:</strong></p>
 
 <ul dir="auto">
- 	<li>Edge cleared browsing data on exit</li>
- 	<li>Extension was disabled</li>
+ 	<li>Extension waits 2-4 seconds for Edge to restore tabs after browser launch</li>
+ 	<li>Uses intelligent URL-based matching to reconnect sessions to tabs</li>
+ 	<li>Session badges and colors automatically reappear</li>
+ 	<li>All cookies and storage data fully restored</li>
+ 	<li>Retry logic handles slow system startups</li>
 </ul>
-<p dir="auto"><strong>Solution:</strong></p>
+
+<p dir="auto"><strong>If Sessions Still Don't Restore:</strong></p>
 
 <ol dir="auto">
- 	<li>Check Edge settings: Ensure "Clear browsing data on close" doesn't include cookies</li>
- 	<li>Verify extension is still enabled at <code>edge://extensions/</code></li>
+ 	<li>Ensure Edge is configured to "Open tabs from previous session" (Settings → Start, home, and new tabs)</li>
+ 	<li>Check Edge settings: "Clear browsing data on close" should not include cookies or site data</li>
+ 	<li>Verify extension is enabled at <code>edge://extensions/</code></li>
+ 	<li>Wait 5-10 seconds after browser startup for restoration to complete</li>
 </ol>
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Issue: Can't Create New Session</h3>
@@ -577,13 +586,14 @@
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Q: Will this slow down my browser?</h3>
 </div>
-<p dir="auto"><strong>A:</strong> No significant performance impact. Version 3.0.1 includes performance optimizations:</p>
+<p dir="auto"><strong>A:</strong> No significant performance impact. Version 3.0.2 includes performance optimizations:</p>
 
 <ul dir="auto">
  	<li>Each session adds minimal memory overhead (~10-20KB)</li>
  	<li>Content scripts are lightweight (~50-100KB per tab)</li>
  	<li>One-time favicon processing (no continuous monitoring)</li>
  	<li>Debounced persistence reduces storage writes</li>
+ 	<li>Browser restart restoration adds 2-4 second one-time delay (only on startup)</li>
  	<li>Overall impact is negligible on modern systems</li>
 </ul>
 <div class="markdown-heading" dir="auto">
@@ -826,8 +836,8 @@
 </div>
 <ul dir="auto">
  	<li><strong>Microsoft Edge:</strong> Chromium-based Edge (version 88+)</li>
- 	<li><strong>Chrome:</strong> Compatible with minor modifications</li>
- 	<li><strong>Firefox:</strong> Requires significant API changes</li>
+ 	<li><strong>Chrome:</strong> Coming soon.</li>
+ 	<li><strong>Firefox:</strong> Coming soon.</li>
 </ul>
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Required Permissions</h3>
@@ -849,14 +859,6 @@
  	<li>Session data stored locally only</li>
  	<li>No size limits for practical use</li>
  	<li>Automatic persistence with debounced writes for performance</li>
-</ul>
-<div class="markdown-heading" dir="auto">
-<h3 class="heading-element" dir="auto" tabindex="-1">Content Scripts</h3>
-</div>
-<ul dir="auto">
- 	<li><code>content-script-storage.js</code> - Isolates localStorage/sessionStorage using ES6 Proxy</li>
- 	<li><code>content-script-cookie.js</code> - Intercepts document.cookie operations</li>
- 	<li><code>content-script-favicon.js</code> - Replaces tab favicons with colored session badges</li>
 </ul>
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Incognito Mode Support</h3>

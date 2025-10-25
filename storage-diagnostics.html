@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Storage Diagnostics - Sessner</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+      color: #333;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: white;
+      margin-bottom: 20px;
+      font-size: 32px;
+      text-align: center;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+    }
+
+    h2 {
+      color: #667eea;
+      margin-bottom: 16px;
+      font-size: 20px;
+      border-bottom: 2px solid #f0f0f0;
+      padding-bottom: 8px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .stat-item {
+      background: #f8f9fa;
+      padding: 16px;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #333;
+    }
+
+    .status-indicator {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+
+    .status-healthy {
+      background-color: #4caf50;
+    }
+
+    .status-unhealthy {
+      background-color: #f44336;
+    }
+
+    .storage-layer {
+      background: #f8f9fa;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+
+    .storage-layer-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .storage-layer-name {
+      font-weight: bold;
+      font-size: 16px;
+      flex: 1;
+    }
+
+    .storage-layer-details {
+      font-size: 14px;
+      color: #666;
+      line-height: 1.6;
+    }
+
+    .storage-layer-details div {
+      margin-bottom: 4px;
+    }
+
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      margin-right: 12px;
+      margin-bottom: 12px;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    pre {
+      background: #f5f5f5;
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .warning {
+      background: #fff3cd;
+      border-left: 4px solid #ffc107;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+
+    .error {
+      background: #f8d7da;
+      border-left: 4px solid #f44336;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+
+    .success {
+      background: #d4edda;
+      border-left: 4px solid #4caf50;
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+
+    .timestamp {
+      color: #666;
+      font-size: 12px;
+      margin-top: 8px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      body {
+        background: #1a1a1a;
+      }
+
+      .card {
+        background: #2d2d2d;
+        color: #e0e0e0;
+      }
+
+      h2 {
+        color: #667eea;
+        border-bottom-color: #444;
+      }
+
+      .stat-item {
+        background: #242424;
+        color: #e0e0e0;
+      }
+
+      .stat-value {
+        color: #e0e0e0;
+      }
+
+      .storage-layer {
+        background: #242424;
+      }
+
+      .storage-layer-details {
+        color: #999;
+      }
+
+      pre {
+        background: #242424;
+        color: #e0e0e0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Storage Persistence Diagnostics</h1>
+
+    <div class="card">
+      <h2>Current State</h2>
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-label">Active Sessions</div>
+          <div class="stat-value" id="currentSessions">-</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Tab Mappings</div>
+          <div class="stat-value" id="currentTabs">-</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">Cookie Sessions</div>
+          <div class="stat-value" id="currentCookies">-</div>
+        </div>
+      </div>
+      <div class="timestamp" id="statsTimestamp">Last updated: Never</div>
+    </div>
+
+    <div class="card">
+      <h2>Storage Layers Health</h2>
+      <div id="storageLayers"></div>
+    </div>
+
+    <div class="card">
+      <h2>Actions</h2>
+      <button onclick="refreshStats()">Refresh Stats</button>
+      <button onclick="testPersistence()">Test Persistence</button>
+      <button onclick="viewRawData()">View Raw Data</button>
+      <button onclick="clearAllStorage()" style="background: linear-gradient(135deg, #f44336 0%, #e91e63 100%);">Clear All Storage</button>
+    </div>
+
+    <div id="messages"></div>
+
+    <div class="card">
+      <h2>Raw JSON Data</h2>
+      <pre id="rawData">Click "View Raw Data" to load...</pre>
+    </div>
+  </div>
+
+  <script>
+    let lastStats = null;
+
+    async function refreshStats() {
+      try {
+        const response = await chrome.runtime.sendMessage({ action: 'getStorageStats' });
+
+        if (response && response.success) {
+          lastStats = response.stats;
+
+          // Update current state
+          document.getElementById('currentSessions').textContent = response.stats.currentState.sessions;
+          document.getElementById('currentTabs').textContent = response.stats.currentState.tabs;
+          document.getElementById('currentCookies').textContent = response.stats.currentState.cookieSessions;
+          document.getElementById('statsTimestamp').textContent =
+            'Last updated: ' + new Date(response.stats.timestamp).toLocaleString();
+
+          // Update storage layers
+          if (response.stats.persistence) {
+            updateStorageLayers(response.stats.persistence);
+          } else {
+            document.getElementById('storageLayers').innerHTML =
+              '<div class="warning">Storage persistence manager not initialized</div>';
+          }
+
+          showMessage('Stats refreshed successfully', 'success');
+        } else {
+          showMessage('Failed to get stats: ' + (response?.error || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        showMessage('Error: ' + error.message, 'error');
+      }
+    }
+
+    function updateStorageLayers(persistence) {
+      const health = persistence.health;
+      const sources = persistence.sources;
+      let html = '';
+
+      // chrome.storage.local
+      html += `
+        <div class="storage-layer">
+          <div class="storage-layer-header">
+            <div class="storage-layer-name">
+              <span class="status-indicator ${health.local ? 'status-healthy' : 'status-unhealthy'}"></span>
+              chrome.storage.local
+            </div>
+          </div>
+          <div class="storage-layer-details">
+            ${sources.local.available ? `
+              <div>Sessions: ${sources.local.sessions}</div>
+              <div>Tabs: ${sources.local.tabs}</div>
+              <div>Cookie Sessions: ${sources.local.cookieSessions}</div>
+            ` : `<div>Error: ${sources.local.error}</div>`}
+          </div>
+        </div>
+      `;
+
+      // IndexedDB
+      html += `
+        <div class="storage-layer">
+          <div class="storage-layer-header">
+            <div class="storage-layer-name">
+              <span class="status-indicator ${health.indexedDB ? 'status-healthy' : 'status-unhealthy'}"></span>
+              IndexedDB
+            </div>
+          </div>
+          <div class="storage-layer-details">
+            ${sources.indexedDB.available ? `
+              <div>Sessions: ${sources.indexedDB.sessions}</div>
+              <div>Last Saved: ${sources.indexedDB.lastSaved ? new Date(sources.indexedDB.lastSaved).toLocaleString() : 'Never'}</div>
+            ` : `<div>Error: ${sources.indexedDB.error}</div>`}
+          </div>
+        </div>
+      `;
+
+      // Last health check
+      html += `
+        <div class="timestamp">
+          Last health check: ${persistence.lastHealthCheck ? new Date(persistence.lastHealthCheck).toLocaleString() : 'Never'}
+        </div>
+      `;
+
+      document.getElementById('storageLayers').innerHTML = html;
+    }
+
+    async function testPersistence() {
+      showMessage('Testing persistence in 3 seconds... Do NOT close browser!', 'warning');
+
+      // Wait 3 seconds
+      await new Promise(resolve => setTimeout(resolve, 3000));
+
+      try {
+        // Get current stats
+        const beforeResponse = await chrome.runtime.sendMessage({ action: 'getStorageStats' });
+        if (!beforeResponse || !beforeResponse.success) {
+          showMessage('Failed to get stats before test', 'error');
+          return;
+        }
+
+        const beforeCount = beforeResponse.stats.currentState.sessions;
+        showMessage(`Before test: ${beforeCount} sessions`, 'success');
+
+        // Wait 2 more seconds for debounced persistence
+        showMessage('Waiting 2 seconds for persistence...', 'warning');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // Check persistence layers
+        showMessage('Checking storage layers...', 'warning');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        const afterResponse = await chrome.runtime.sendMessage({ action: 'getStorageStats' });
+        if (!afterResponse || !afterResponse.success) {
+          showMessage('Failed to get stats after test', 'error');
+          return;
+        }
+
+        const afterCount = afterResponse.stats.currentState.sessions;
+        const localCount = afterResponse.stats.persistence?.sources?.local?.sessions || 0;
+        const idbCount = afterResponse.stats.persistence?.sources?.indexedDB?.sessions || 0;
+
+        let message = `Test Results:\n`;
+        message += `Memory: ${afterCount} sessions\n`;
+        message += `chrome.storage.local: ${localCount} sessions\n`;
+        message += `IndexedDB: ${idbCount} sessions\n`;
+
+        if (localCount === afterCount && idbCount === afterCount) {
+          showMessage(message + '\n✓ All layers synchronized!', 'success');
+        } else {
+          showMessage(message + '\n⚠️ Layers NOT synchronized!', 'warning');
+        }
+
+        await refreshStats();
+
+      } catch (error) {
+        showMessage('Test failed: ' + error.message, 'error');
+      }
+    }
+
+    async function viewRawData() {
+      if (lastStats) {
+        document.getElementById('rawData').textContent = JSON.stringify(lastStats, null, 2);
+        showMessage('Raw data displayed below', 'success');
+      } else {
+        showMessage('No stats available, click Refresh Stats first', 'warning');
+      }
+    }
+
+    async function clearAllStorage() {
+      if (!confirm('⚠️ WARNING: This will DELETE ALL sessions and cookies!\n\nAre you sure?')) {
+        return;
+      }
+
+      try {
+        // Clear chrome.storage.local
+        await new Promise(resolve => {
+          chrome.storage.local.clear(() => {
+            resolve();
+          });
+        });
+
+        // Clear IndexedDB (if available)
+        try {
+          await indexedDB.deleteDatabase('SessnerStorage');
+        } catch (e) {
+          console.error('Failed to clear IndexedDB:', e);
+        }
+
+        showMessage('All storage cleared! Please reload extension.', 'success');
+        await refreshStats();
+
+      } catch (error) {
+        showMessage('Failed to clear storage: ' + error.message, 'error');
+      }
+    }
+
+    function showMessage(text, type = 'success') {
+      const messagesDiv = document.getElementById('messages');
+      const messageDiv = document.createElement('div');
+      messageDiv.className = type;
+      messageDiv.textContent = text;
+      messagesDiv.appendChild(messageDiv);
+
+      // Auto-remove after 5 seconds
+      setTimeout(() => {
+        messageDiv.remove();
+      }, 5000);
+    }
+
+    // Auto-refresh on load
+    refreshStats();
+
+    // Auto-refresh every 5 seconds
+    setInterval(refreshStats, 5000);
+  </script>
+</body>
+</html>

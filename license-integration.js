@@ -67,6 +67,28 @@ function checkSessionCreationAllowed() {
  * Called periodically to clean up old sessions
  */
 async function enforceSessionPersistence() {
+  // CRITICAL: Wait for license manager to initialize before checking tier
+  // If we check too early, we'll get 'free' tier and delete all sessions!
+  if (typeof licenseManager !== 'undefined' && !licenseManager.isInitialized) {
+    console.log('[License Integration] Waiting for license manager to initialize...');
+
+    // Wait up to 30 seconds for license manager (slow systems, disk I/O)
+    const maxWait = 30000;
+    const startTime = Date.now();
+
+    while (!licenseManager.isInitialized && (Date.now() - startTime) < maxWait) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    if (!licenseManager.isInitialized) {
+      console.error('[License Integration] CRITICAL: License manager not initialized after 30s');
+      console.error('[License Integration] Skipping persistence enforcement to prevent data loss');
+      return; // EXIT - don't enforce persistence!
+    } else {
+      console.log('[License Integration] ✓ License manager ready');
+    }
+  }
+
   const tier = licenseManager.getTier();
   const features = licenseManager.getFeatures();
 
@@ -369,10 +391,13 @@ function setupPersistenceEnforcement() {
 
 /**
  * Integration initialization
- * Call this from your background.js startup code
+ * DEPRECATED: Now handled by initializationManager in background.js
+ * This function is kept for backwards compatibility but is no longer called automatically
  */
 async function initializeLicenseIntegration() {
-  console.log('[License Integration] Starting integration...');
+  console.warn('[License Integration] DEPRECATED: initializeLicenseIntegration() called directly');
+  console.warn('[License Integration] This function is deprecated - initialization is now managed by initializationManager');
+  console.warn('[License Integration] See background.js initializationManager.initialize() for the new flow');
 
   // Initialize license system
   await initializeLicenseSystem();
@@ -380,15 +405,10 @@ async function initializeLicenseIntegration() {
   // Setup persistence enforcement
   setupPersistenceEnforcement();
 
-  console.log('[License Integration] ✓ Integration complete');
+  console.log('[License Integration] ✓ Integration complete (legacy mode)');
 }
 
-// Auto-initialize on script load
-if (typeof licenseManager !== 'undefined') {
-  // Wait for DOM ready if needed
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeLicenseIntegration);
-  } else {
-    initializeLicenseIntegration();
-  }
-}
+// REMOVED: Auto-initialization on script load
+// Initialization is now controlled by initializationManager in background.js
+// This prevents race conditions where license operations run before license manager is ready
+console.log('[License Integration] License integration loaded (initialization managed by initializationManager)');

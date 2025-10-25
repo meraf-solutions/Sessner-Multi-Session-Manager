@@ -1,7 +1,7 @@
 # Extension API Documentation
 ## Sessner  Multi-Session Manager
 
-**Last Updated:** 2025-10-21
+**Last Updated:** 2025-10-25
 **Extension Version:** 3.0
 **Manifest Version:** 2
 
@@ -1287,16 +1287,22 @@ chrome.browserAction.setBadgeBackgroundColor({
 | Event | Purpose | Handler Function |
 |-------|---------|-----------------|
 | `chrome.runtime.onMessage` | Handle messages from popup/content scripts | `handleMessage()` |
-| `chrome.runtime.onInstalled` | Extension installed/updated | `loadPersistedSessions()` |
-| `chrome.runtime.onStartup` | Browser started | `loadPersistedSessions()` |
+| `chrome.runtime.onInstalled` | Extension installed/updated | `loadPersistedSessions(false)` (aggressive cleanup) |
+| `chrome.runtime.onStartup` | Browser started | `loadPersistedSessions(true)` (skip cleanup, wait for tab restoration) |
 | `chrome.webRequest.onBeforeSendHeaders` | Inject cookies into requests | Cookie injection |
 | `chrome.webRequest.onHeadersReceived` | Capture Set-Cookie headers | Cookie capture |
 | `chrome.cookies.onChanged` | Capture JavaScript cookies | Cookie capture |
 | `chrome.tabs.onCreated` | New tab created | Session inheritance |
 | `chrome.tabs.onRemoved` | Tab closed | Session cleanup |
-| `chrome.tabs.onUpdated` | Tab navigated | Badge update |
+| `chrome.tabs.onUpdated` | Tab navigated | Badge update + URL persistence |
 | `chrome.tabs.onActivated` | Tab switched | Badge update |
 | `chrome.webNavigation.onCreatedNavigationTarget` | Popup opened | Session inheritance |
+
+**Note on Browser Startup (2025-10-25)**:
+- `loadPersistedSessions(true)` skips aggressive cleanup to allow browser time to restore tabs
+- 2-second delay + retry logic (3 attempts) ensures tabs are restored before validation
+- URL-based matching reconnects sessions to tabs (tab IDs change on restart)
+- `validateAndCleanupSessions()` runs 10 seconds later to clean up truly orphaned sessions
 
 ### Content Script Event Listeners
 

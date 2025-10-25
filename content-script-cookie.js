@@ -312,7 +312,7 @@
   /**
    * Handles messages from the injected page script
    */
-  window.addEventListener('message', async function(event) {
+  window.addEventListener('message', function(event) {
     // Only accept messages from same origin
     if (event.source !== window) {
       return;
@@ -322,48 +322,58 @@
 
     // Handle GET_COOKIE request
     if (message && message.type === 'GET_COOKIE') {
-      try {
-        console.log('[Cookie Isolation] Handling GET_COOKIE request');
+      console.log('[Cookie Isolation] Handling GET_COOKIE request');
 
-        // Ensure we have session ID
-        if (!currentSessionId) {
-          await fetchSessionId();
-        }
+      // Ensure we have session ID
+      const ensureSession = currentSessionId ? Promise.resolve() : fetchSessionId();
 
-        // Forward to background script
-        const response = await chrome.runtime.sendMessage({
+      ensureSession.then(() => {
+        // Forward to background script using callback (MV2 compatible)
+        chrome.runtime.sendMessage({
           action: 'getCookies',
           url: window.location.href
+        }, (response) => {
+          // Check for runtime errors
+          if (chrome.runtime.lastError) {
+            console.error('[Cookie Isolation] Runtime error:', chrome.runtime.lastError);
+            window.postMessage({
+              type: 'COOKIE_GET_RESPONSE',
+              messageId: message.messageId,
+              cookies: '',
+              error: chrome.runtime.lastError.message
+            }, '*');
+            return;
+          }
+
+          // Check if we have a valid response
+          if (!response) {
+            console.debug('[Cookie Isolation] No response from background (normal during page load)');
+            window.postMessage({
+              type: 'COOKIE_GET_RESPONSE',
+              messageId: message.messageId,
+              cookies: ''
+            }, '*');
+            return;
+          }
+
+          if (response.success && response.cookies !== undefined) {
+            // Send response back to page
+            window.postMessage({
+              type: 'COOKIE_GET_RESPONSE',
+              messageId: message.messageId,
+              cookies: response.cookies
+            }, '*');
+            console.log('[Cookie Isolation] GET_COOKIE response sent:', response.cookies);
+          } else {
+            console.debug('[Cookie Isolation] No cookies available yet');
+            window.postMessage({
+              type: 'COOKIE_GET_RESPONSE',
+              messageId: message.messageId,
+              cookies: ''
+            }, '*');
+          }
         });
-
-        // Check if we have a valid response
-        if (!response) {
-          console.debug('[Cookie Isolation] No response from background (normal during page load)');
-          window.postMessage({
-            type: 'COOKIE_GET_RESPONSE',
-            messageId: message.messageId,
-            cookies: ''
-          }, '*');
-          return;
-        }
-
-        if (response.success && response.cookies !== undefined) {
-          // Send response back to page
-          window.postMessage({
-            type: 'COOKIE_GET_RESPONSE',
-            messageId: message.messageId,
-            cookies: response.cookies
-          }, '*');
-          console.log('[Cookie Isolation] GET_COOKIE response sent:', response.cookies);
-        } else {
-          console.debug('[Cookie Isolation] No cookies available yet');
-          window.postMessage({
-            type: 'COOKIE_GET_RESPONSE',
-            messageId: message.messageId,
-            cookies: ''
-          }, '*');
-        }
-      } catch (error) {
+      }).catch((error) => {
         console.error('[Cookie Isolation] Error handling GET_COOKIE:', error);
 
         // Send error response
@@ -373,38 +383,60 @@
           cookies: '',
           error: error.message
         }, '*');
-      }
+      });
     }
     // Handle SET_COOKIE request
     else if (message && message.type === 'SET_COOKIE') {
-      try {
-        console.log('[Cookie Isolation] Handling SET_COOKIE request:', message.cookie);
+      console.log('[Cookie Isolation] Handling SET_COOKIE request:', message.cookie);
 
-        // Ensure we have session ID
-        if (!currentSessionId) {
-          await fetchSessionId();
-        }
+      // Ensure we have session ID
+      const ensureSession = currentSessionId ? Promise.resolve() : fetchSessionId();
 
+      ensureSession.then(() => {
         // Parse cookie string to extract name and value
         const cookieString = message.cookie;
 
-        // Forward to background script
-        const response = await chrome.runtime.sendMessage({
+        // Forward to background script using callback (MV2 compatible)
+        chrome.runtime.sendMessage({
           action: 'setCookie',
           url: window.location.href,
           cookie: cookieString
+        }, (response) => {
+          // Check for runtime errors
+          if (chrome.runtime.lastError) {
+            console.error('[Cookie Isolation] Runtime error:', chrome.runtime.lastError);
+            window.postMessage({
+              type: 'COOKIE_SET_RESPONSE',
+              messageId: message.messageId,
+              success: false,
+              error: chrome.runtime.lastError.message
+            }, '*');
+            return;
+          }
+
+          // Handle undefined response
+          if (!response) {
+            console.error('[Cookie Isolation] No response from background script');
+            window.postMessage({
+              type: 'COOKIE_SET_RESPONSE',
+              messageId: message.messageId,
+              success: false,
+              error: 'No response from background script'
+            }, '*');
+            return;
+          }
+
+          // Send response back to page
+          window.postMessage({
+            type: 'COOKIE_SET_RESPONSE',
+            messageId: message.messageId,
+            success: response.success || false,
+            error: response.error
+          }, '*');
+
+          console.log('[Cookie Isolation] SET_COOKIE response sent:', response.success);
         });
-
-        // Send response back to page
-        window.postMessage({
-          type: 'COOKIE_SET_RESPONSE',
-          messageId: message.messageId,
-          success: response.success || false,
-          error: response.error
-        }, '*');
-
-        console.log('[Cookie Isolation] SET_COOKIE response sent:', response.success);
-      } catch (error) {
+      }).catch((error) => {
         console.error('[Cookie Isolation] Error handling SET_COOKIE:', error);
 
         // Send error response
@@ -414,7 +446,7 @@
           success: false,
           error: error.message
         }, '*');
-      }
+      });
     }
   }, false);
 

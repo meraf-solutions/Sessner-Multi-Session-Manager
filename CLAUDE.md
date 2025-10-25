@@ -302,11 +302,19 @@ function generateSessionId() {
 - Can be called with `immediate=true` for critical operations (session creation, tab close)
 - Saves: sessions, cookieStore, tabToSession
 
-**`loadPersistedSessions()`**
+**`loadPersistedSessions(skipCleanup = false)`** (Updated 2025-10-25)
+- **Critical Fix**: Resolved browser restart session deletion bug
+- **Parameters**: `skipCleanup` (boolean) - if true, skip aggressive cleanup during browser startup
 - Loads saved sessions from chrome.storage.local on extension startup
+- Implements 2-second delay + retry logic (3 attempts) for tab restoration
+- Uses **URL-based tab matching** (domain + path) instead of tab IDs
 - Validates tab mappings (only restores for existing tabs)
-- Restores badge indicators
-- Called on: extension install, extension update, browser startup
+- Restores badge indicators and favicon colors
+- Conditionally cleans up orphaned sessions (based on skipCleanup flag)
+- Called on:
+  - Extension install: `loadPersistedSessions(false)` (aggressive cleanup)
+  - Extension update: `loadPersistedSessions(false)` (aggressive cleanup)
+  - Browser startup: `loadPersistedSessions(true)` (skip cleanup, wait for tab restoration)
 
 #### WebRequest Interception
 
@@ -872,40 +880,73 @@ localStorage.setItem('theme', 'dark');
 
 **Result**: Session data is completely removed, memory freed
 
-### 5. Browser Restart Persistence
+### 5. Browser Restart Persistence (Updated 2025-10-25)
 
-**On Extension Startup** (browser launch or extension reload):
+**Critical Fix**: Tab Restoration Race Condition Resolved
+
+**Problem Discovered**:
+- Microsoft Edge assigns NEW tab IDs on browser restart
+- Extension loads BEFORE browser restores tabs
+- `chrome.tabs.query()` initially returns empty array (0 tabs)
+- Sessions with no tabs get deleted immediately
+- 100-500ms later, browser restores tabs → too late, sessions already gone
+
+**Updated Flow** (browser launch or extension reload):
 ```
 1. background.js loads
-2. Call loadPersistedSessions()
-3. Load from chrome.storage.local: { sessions, cookieStore, tabToSession }
-4. Validate tab mappings (check if tabs still exist)
-5. Restore sessionStore.sessions
-6. Restore sessionStore.cookieStore
-7. Restore sessionStore.tabToSession (only for existing tabs)
-8. Query all tabs
-9. Update badge indicators for all session tabs
+2. Call loadPersistedSessions(true)  // skipCleanup = true (startup grace period)
+3. Load from chrome.storage.local: { sessions, cookieStore, tabToSession, tabMetadata }
+4. Wait 2 seconds for Edge to restore tabs
+5. Retry tab query up to 3 times (1-second intervals between retries)
+6. Use URL-based tab matching:
+   - Match tabs by domain + path (ignore query params)
+   - Tab URLs stored in tabMetadata array
+   - Tab IDs change on restart, but URLs stay the same
+7. Restore sessionStore.sessions
+8. Restore sessionStore.cookieStore
+9. Restore sessionStore.tabToSession (based on URL matches)
+10. Update badge indicators for matched tabs
+11. Skip aggressive cleanup (preserved for delayed validation)
+12. 10 seconds later: validateAndCleanupSessions() cleans up truly orphaned sessions
 ```
 
-**Tab Mapping Validation**:
+**URL-Based Tab Matching** (replaces tab ID validation):
 ```javascript
-chrome.tabs.query({}, (tabs) => {
-  const existingTabIds = new Set(tabs.map(t => t.id));
-  const restoredMappings = {};
+// Wait for Edge to restore tabs (2 seconds)
+await new Promise(resolve => setTimeout(resolve, 2000));
 
-  Object.keys(data.tabToSession).forEach(tabId => {
-    const tabIdNum = parseInt(tabId);
-    if (existingTabIds.has(tabIdNum)) {
-      restoredMappings[tabIdNum] = data.tabToSession[tabId];
-    }
-  });
+// Retry logic (up to 3 attempts)
+let tabs = [];
+for (let attempt = 0; attempt < 3; attempt++) {
+  tabs = await chrome.tabs.query({});
+  if (tabs.length > 0) break;
+  if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 1000));
+}
 
-  sessionStore.tabToSession = restoredMappings;
+// URL-based matching
+tabs.forEach(tab => {
+  const savedTab = Object.values(tabMetadata).find(
+    saved => saved.url === tab.url  // Exact URL match
+  );
+  if (savedTab && sessions[savedTab.sessionId]) {
+    tabToSession[tab.id] = savedTab.sessionId;  // Restore mapping with NEW tab ID
+  }
 });
 ```
-- **Why?**: Tab IDs change across browser restarts
-- Only restore mappings for tabs that still exist
-- Orphaned sessions (no tabs) remain in storage but inactive
+
+**Why This Works**:
+- **2-second delay**: Gives Edge time to restore tabs before validation
+- **Retry logic**: Handles slower systems gracefully (up to 3 attempts)
+- **URL-based matching**: Tab IDs change on restart, but URLs stay the same
+- **skipCleanup mode**: Prevents premature deletion during startup
+- **Delayed validation**: Cleans up truly orphaned sessions after all restoration attempts complete
+
+**Evidence from Testing**:
+```
+[Session Restore] Tab query attempt 1: Found 0 tabs  ← Edge hasn't restored yet
+[Session Restore] Tab query attempt 2: Found 3 tabs  ← Tabs restored after 1 second
+[Session Restore] URL-based matching: 2 tabs restored  ← Success
+```
 
 ## Technical Decisions and Trade-offs
 
@@ -1590,6 +1631,63 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 5. Performance: No noticeable impact on session operations
 
 **Next Feature:** Session Persistence (7 days vs permanent) - Feature #02
+
+---
+
+### Browser Restart Tab Restoration Fix (✅ Tested & Deployed 2025-10-25)
+
+**Status:** Production Ready - User Confirmed Working
+
+**Critical Bug Fixed:**
+- All sessions were being deleted on browser restart due to race condition
+- Microsoft Edge assigns NEW tab IDs on restart
+- Extension loaded before browser restored tabs
+- `chrome.tabs.query()` returned empty array → sessions deleted
+
+**Solution Implemented:**
+1. **2-second delay** before tab validation (gives Edge time to restore tabs)
+2. **Retry logic** (up to 3 attempts with 1-second intervals)
+3. **URL-based tab matching** instead of tab ID matching
+4. **Startup grace period** (`skipCleanup` parameter prevents premature deletion)
+5. **Delayed validation** (10 seconds) for truly orphaned sessions
+
+**Key Functions:**
+- `loadPersistedSessions(skipCleanup = false)` - Updated with race condition fix
+  - `skipCleanup=true` on browser startup (preserves sessions during tab restoration)
+  - `skipCleanup=false` on extension install/update (aggressive cleanup)
+- `validateAndCleanupSessions()` - New function for delayed cleanup (runs 10 seconds after startup)
+
+**Timing Strategy:**
+```
+T+0ms:    Extension loads, session data loaded (skipCleanup=true)
+T+2000ms: First tab query attempt
+T+3000ms: Second retry (if first found 0 tabs)
+T+4000ms: Third retry (if second found 0 tabs)
+T+10000ms: Delayed validation cleans up orphaned sessions
+```
+
+**Evidence from Testing:**
+```
+[Session Restore] Tab query attempt 1: Found 0 tabs  ← Edge hasn't restored yet
+[Session Restore] Tab query attempt 2: Found 3 tabs  ← Tabs restored after 1 second
+[Session Restore] URL-based matching: 2 tabs restored  ← Success
+```
+
+**User Confirmation:**
+> "Great! Now it's working!" (2025-10-25)
+
+**Critical Implementation Details:**
+1. Tab URLs stored in `tabMetadata` array for URL-based matching
+2. URL matching uses exact URL (domain + path + query params)
+3. Tab IDs change on restart, URLs remain the same
+4. Startup mode skips aggressive cleanup to wait for tab restoration
+5. Normal mode (install/update) uses aggressive cleanup as before
+6. Console logs clearly indicate "STARTUP MODE" vs "NORMAL MODE"
+
+**Related Documentation:**
+- Technical details: [docs/technical.md - Section 11](docs/technical.md#11-browser-restart-tab-restoration-timing)
+- Architecture: [docs/architecture.md - Browser Restart Persistence](docs/architecture.md#5-browser-restart-persistence)
+- Feature implementation: [docs/features_implementation/02_session_persistence.md - Phase 4](docs/features_implementation/02_session_persistence.md#phase-4-browser-startup-session-deletion-fix)
 
 ---
 
