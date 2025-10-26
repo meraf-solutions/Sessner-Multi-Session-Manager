@@ -261,8 +261,8 @@ function generateSessionId() {
 /**
  * Color palettes by tier
  * Free: 6 colors (basic high-contrast palette)
- * Premium: 12 colors (expanded palette)
- * Enterprise: 20+ colors (comprehensive palette) + custom color support
+ * Premium: 13 colors (expanded palette with exclusive color)
+ * Enterprise: 35 colors (comprehensive palette with exclusive colors) + custom color support
  */
 const COLOR_PALETTES = {
   free: [
@@ -285,14 +285,16 @@ const COLOR_PALETTES = {
     '#F06292', // Pink
     '#64B5F6', // Sky Blue
     '#81C784', // Green
-    '#FFD54F'  // Amber
+    '#FFD54F', // Amber
+    '#AB47BC'  // Medium Purple
   ],
   enterprise: [
     // All premium colors
     '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A',
     '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2',
     '#F06292', '#64B5F6', '#81C784', '#FFD54F',
-    // Extended enterprise colors
+    '#AB47BC', // Medium Purple (from Premium)
+    // Extended enterprise colors (16 colors)
     '#E91E63', // Deep Pink
     '#9C27B0', // Deep Purple
     '#673AB7', // Indigo
@@ -308,7 +310,12 @@ const COLOR_PALETTES = {
     '#FF9800', // Orange
     '#FF5722', // Deep Orange
     '#795548', // Brown
-    '#607D8B'  // Blue Grey
+    '#607D8B', // Blue Grey
+    '#26A69A', // Teal Accent
+    '#66BB6A', // Light Green Accent
+    '#FFA726', // Orange Accent
+    '#EF5350', // Red Accent
+    '#5C6BC0', // Indigo Accent
   ]
 };
 
