@@ -48,15 +48,19 @@ When a website opens a popup window (for reports, OAuth login, payment processin
 - File downloads use the right account
 - No session confusion or errors
 
-### 💾 Persistent Sessions (Updated 2025-10-25)
+### 💾 Persistent Sessions (Updated 2025-10-26)
 
-- **Sessions survive browser restarts** (now with improved reliability!)
-- Automatic tab restoration using URL-based matching
+**Session Data Persistence (All Tiers):**
+- Session cookies and storage saved locally
+- **Free tier:** 7-day retention (sessions auto-deleted after 7 days of inactivity)
+- **Premium/Enterprise:** Permanent retention (sessions never auto-deleted)
+
+**Auto-Restore on Browser Restart (Enterprise Only):**
+- Automatic tab restoration using URL-based matching (v3.0.2)
 - Sessions reconnect within 2-4 seconds of browser startup
 - Session badges and colors automatically restored
 - Intelligent retry logic handles slow system startups
-- No need to recreate sessions every time
-- Automatic cleanup when tabs close
+- **Free/Premium users:** Must manually recreate sessions after browser restart using saved session data
 
 ### 🚀 Simple Workflow
 
@@ -273,14 +277,21 @@ Each session is assigned a unique color from a palette of 12 distinct colors:
 
 ### Issue: Sessions Not Working After Browser Restart
 
-**Update (2025-10-25)**: This issue has been fixed! Sessions now automatically restore after browser restart.
+**Update (2025-10-26)**: Auto-restore feature is **Enterprise tier only**.
 
-**How It Works:**
+**Enterprise Tier - Automatic Restoration:**
 - Extension waits 2-4 seconds for Edge to restore tabs
-- Uses URL-based matching to reconnect sessions to tabs
+- Uses URL-based matching to reconnect sessions to tabs automatically
 - Session badges and colors automatically reappear
+- All session data (cookies, storage) fully restored
 
-**If Sessions Still Don't Restore:**
+**Free/Premium Tier - Manual Session Recreation:**
+- Session data is saved for 7 days (Free) or permanently (Premium)
+- After browser restart, you must manually create new sessions
+- Saved session data (cookies, storage) can be used when logging in again
+- This is expected behavior for non-Enterprise tiers
+
+**For Enterprise Users - If Auto-Restore Doesn't Work:**
 1. Ensure "On startup" in Edge is set to **"Open tabs from previous session"**
 2. Wait 10-15 seconds after browser restart for full restoration
 3. Check background console for restoration logs:
@@ -288,15 +299,17 @@ Each session is assigned a unique color from a palette of 12 distinct colors:
    - Find "Sessner" → Click "background page"
    - Look for `[Session Restore] URL-based matching: X tabs restored`
 
-**Possible Causes of Restoration Failure:**
+**Possible Causes of Restoration Failure (Enterprise):**
 - Edge "Clear browsing data on close" is enabled (deletes extension storage)
 - Extension was disabled at `edge://extensions/`
 - Tabs closed manually before browser restart (expected behavior)
+- License not activated or expired (auto-restore disabled)
 
 **Solution:**
 1. Verify Edge settings: Ensure "Clear browsing data on close" is OFF
 2. Verify extension is enabled at `edge://extensions/`
 3. Check that tabs were open when browser was closed
+4. **Enterprise users:** Verify license is active in extension popup
 
 ### Issue: Can't Create New Session
 

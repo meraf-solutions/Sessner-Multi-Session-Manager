@@ -1630,7 +1630,71 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 4. Graceful degradation: Existing sessions preserved when downgrading
 5. Performance: No noticeable impact on session operations
 
-**Next Feature:** Session Persistence (7 days vs permanent) - Feature #02
+---
+
+### Session Persistence & Auto-Restore Tier Restrictions (✅ Clarified 2025-10-26)
+
+**IMPORTANT:** Session persistence consists of TWO distinct features with different tier restrictions:
+
+#### 1. Session Data Retention (All Tiers)
+
+**What it is:** Saving session cookies and storage to `chrome.storage.local`
+
+**Tier-based retention periods:**
+- **Free tier:** 7 days (sessions auto-deleted after 7 days of inactivity)
+- **Premium/Enterprise:** Permanent (sessions never auto-deleted)
+
+**Implementation:**
+- `persistSessions()` (background.js:1028-1128) - NO tier checks, saves for all tiers
+- `loadPersistedSessions()` (background.js:1143-1350) - NO tier checks, loads for all tiers
+- `cleanupExpiredSessions()` (background.js:1420-1507) - Enforces 7-day limit for Free tier
+
+**Code reference:**
+```javascript
+// background.js:1420-1507
+async function cleanupExpiredSessions() {
+  const tier = await getTier();
+  if (tier === 'free') {
+    const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+    // Delete sessions older than 7 days
+  }
+  // Premium/Enterprise: no cleanup
+}
+```
+
+#### 2. Auto-Restore on Browser Restart (Enterprise Only)
+
+**What it is:** Automatic reconnection of session-to-tab mappings after browser restart using URL-based matching (v3.0.2)
+
+**Tier restriction:** Enterprise tier ONLY
+
+**Implementation:**
+- Auto-restore preference check (background.js:2593-2661) - Enforces Enterprise-only restriction
+- Uses URL-based matching to reconnect sessions to tabs
+- Waits 2-4 seconds for Edge to restore tabs
+- Retry logic handles slow system startups
+
+**Code reference:**
+```javascript
+// background.js:2593-2661
+// Auto-restore preferences (Enterprise only)
+const autoRestoreEnabled = await getAutoRestorePreference();
+if (!autoRestoreEnabled) {
+  console.log('[Session Restore] Auto-restore disabled by user preference');
+  return; // Skip auto-restore
+}
+```
+
+**What Free/Premium users experience:**
+- Session data is saved and persists across restarts
+- After browser restart, users must manually create new sessions
+- Saved session cookies/storage remain available for 7 days (Free) or permanently (Premium)
+- No automatic tab-to-session reconnection
+
+**Marketing Communication:**
+- Pricing table should show two separate rows:
+  - "Session Data Retention": 7 days (Free), Permanent (Premium/Enterprise)
+  - "Auto-Restore on Browser Restart": ❌ (Free), ❌ (Premium), ✅ (Enterprise)
 
 ---
 

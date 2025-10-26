@@ -5,6 +5,34 @@
 Successfully implemented **Session Persistence** feature according to the monetization strategy defined in `docs/monetization_strategy/02_tier_comparison.md`.
 
 **Status**: ✅ TESTED & CONFIRMED
+**Last Updated**: 2025-10-26
+
+## IMPORTANT: Two Distinct Features
+
+Session persistence encompasses **TWO separate features** with different tier restrictions:
+
+### 1. Session Data Retention (All Tiers)
+**What**: Saving session cookies and storage to `chrome.storage.local`
+
+| Tier | Data Retention | Implementation |
+|------|---------------|----------------|
+| **Free** | 7 days of inactivity | ✅ Auto-cleanup after 7 days |
+| **Premium** | Permanent (unlimited) | ✅ Sessions never expire |
+| **Enterprise** | Permanent (unlimited) | ✅ Sessions never expire |
+
+### 2. Auto-Restore on Browser Restart (Enterprise Only)
+**What**: Automatic reconnection of session-to-tab mappings after browser restart
+
+| Tier | Auto-Restore | Implementation |
+|------|-------------|----------------|
+| **Free** | ❌ Manual recreation required | N/A |
+| **Premium** | ❌ Manual recreation required | N/A |
+| **Enterprise** | ✅ Automatic URL-based matching | ✅ Implemented (v3.0.2) |
+
+**Key Distinction**:
+- All tiers can **save and load** session data
+- Only Enterprise gets **automatic tab-to-session reconnection** after restart
+- Free/Premium users must manually create new sessions after restart, but their saved session data (cookies, storage) remains available
 
 ## Testing Status
 
@@ -19,17 +47,9 @@ Successfully implemented **Session Persistence** feature according to the moneti
 
 ## Feature Requirements
 
-### Persistence Limits by Tier
+### Data Retention Definition
 
-| Tier | Session Persistence | Implementation |
-|------|---------------------|----------------|
-| **Free** | 7 days of inactivity | ✅ Auto-cleanup after 7 days |
-| **Premium** | Permanent (unlimited) | ✅ Sessions never expire |
-| **Enterprise** | Permanent (unlimited) | ✅ Sessions never expire |
-
-### Definition
-
-**Session Persistence** = How long session data is stored before automatic deletion
+**Session Data Retention** = How long session data is stored before automatic deletion
 
 - **7 days**: Sessions unused for 7 consecutive days are automatically deleted
 - **Permanent**: Sessions never auto-deleted, stored indefinitely
@@ -2090,18 +2110,41 @@ chrome.runtime.sendMessage({ action: 'getInitializationState' }, (response) => {
    - Mitigation: None needed (expected behavior)
    - Impact: Good UX (progress feedback)
 
+### Auto-Restore Feature (✅ Implemented v3.0.2 - Enterprise Only)
+
+**Status**: Implemented and tested (2025-10-26)
+
+**Tier Restriction**: Enterprise tier ONLY
+
+**Implementation Details**:
+- **File**: background.js (lines 2593-2661)
+- **Function**: Auto-restore preference check
+- **Technology**: URL-based tab matching with retry logic
+- **Timing**: 2-4 second delay + up to 3 retries for Edge tab restoration
+- **Enforcement**: Checks Enterprise tier before enabling auto-restore
+
+**Code Reference**:
+```javascript
+// background.js:2593-2661
+const autoRestoreEnabled = await getAutoRestorePreference();
+if (!autoRestoreEnabled) {
+  console.log('[Session Restore] Auto-restore disabled');
+  return; // Skip auto-restore for Free/Premium
+}
+```
+
+**User Experience by Tier**:
+- **Enterprise**: Sessions automatically reconnect to tabs within 2-4 seconds
+- **Premium**: Must manually recreate sessions, but saved data persists permanently
+- **Free**: Must manually recreate sessions, but saved data persists for 7 days
+
 ### Future Enhancements
 
-1. **Auto-Restore Feature** (Feature #02)
-   - Phase 3 (AUTO_RESTORE_CHECK) ready for implementation
-   - Check Enterprise preferences for auto-restore setting
-   - Restore sessions if enabled
-
-2. **Initialization Progress Bar**
+1. **Initialization Progress Bar**
    - Show percentage complete
    - Estimated time remaining
 
-3. **Retry Logic**
+2. **Retry Logic**
    - Automatic retry on initialization failure
    - Exponential backoff
 
