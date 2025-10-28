@@ -1,7 +1,7 @@
 # Extension API Documentation
 ## Sessner  Multi-Session Manager
 
-**Last Updated:** 2025-10-25
+**Last Updated:** 2025-10-28
 **Extension Version:** 3.0
 **Manifest Version:** 2
 
@@ -760,6 +760,145 @@ chrome.runtime.sendMessage(
   }
 );
 ```
+
+---
+
+### Storage Management
+
+#### deleteSessionById
+
+**Status:** ✅ Added 2025-10-28
+
+Deletes a specific session by ID from all storage layers (in-memory, chrome.storage.local, IndexedDB).
+
+**Request:**
+```javascript
+{
+  action: 'deleteSessionById',
+  sessionId: string  // Session ID to delete
+}
+```
+
+**Response:**
+```javascript
+{
+  success: boolean,
+  sessionId: string,           // The deleted session ID
+  results: {
+    local: boolean,            // True if deleted from chrome.storage.local
+    indexedDB: boolean         // True if deleted from IndexedDB
+  },
+  tabsClosed: number,          // Number of tabs closed
+  error?: string
+}
+```
+
+**Example:**
+```javascript
+chrome.runtime.sendMessage(
+  {
+    action: 'deleteSessionById',
+    sessionId: 'session_1234567890_abc123'
+  },
+  (response) => {
+    if (response.success) {
+      console.log(`Session ${response.sessionId} deleted`);
+      console.log(`Chrome storage: ${response.results.local ? 'OK' : 'FAILED'}`);
+      console.log(`IndexedDB: ${response.results.indexedDB ? 'OK' : 'FAILED'}`);
+      console.log(`Closed ${response.tabsClosed} tabs`);
+    }
+  }
+);
+```
+
+**Use Cases:**
+- Storage diagnostics "Clear All Storage" operation
+- Manual session cleanup
+- Testing and debugging
+
+---
+
+#### closeIndexedDB
+
+**Status:** ✅ Added 2025-10-28
+
+Closes the IndexedDB database connection to enable database deletion.
+
+**Request:**
+```javascript
+{
+  action: 'closeIndexedDB'
+}
+```
+
+**Response:**
+```javascript
+{
+  success: boolean,
+  message: string,    // Status message
+  error?: string
+}
+```
+
+**Example:**
+```javascript
+chrome.runtime.sendMessage(
+  { action: 'closeIndexedDB' },
+  (response) => {
+    if (response.success) {
+      console.log('IndexedDB connection closed');
+      // Now safe to delete database
+    }
+  }
+);
+```
+
+**Important**: Always call this before attempting to delete the IndexedDB database, otherwise deletion will be blocked.
+
+---
+
+#### reinitializeStorage
+
+**Status:** ✅ Added 2025-10-28
+
+Reinitializes the storage persistence manager with a fresh database connection after clearing storage.
+
+**Request:**
+```javascript
+{
+  action: 'reinitializeStorage'
+}
+```
+
+**Response:**
+```javascript
+{
+  success: boolean,
+  message: string,    // Status message
+  error?: string
+}
+```
+
+**Example:**
+```javascript
+// After clearing storage and deleting IndexedDB
+chrome.runtime.sendMessage(
+  { action: 'reinitializeStorage' },
+  (response) => {
+    if (response.success) {
+      console.log('Storage persistence manager reinitialized');
+      // Can now create new sessions
+    }
+  }
+);
+```
+
+**Use Cases:**
+- After "Clear All Storage" operation
+- After IndexedDB database deletion
+- Recovery from storage errors
+
+**Wait Time**: Recommended to wait 2-3 seconds after reinitialization before creating new sessions to ensure stability.
 
 ---
 

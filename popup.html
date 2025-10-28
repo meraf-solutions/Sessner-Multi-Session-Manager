@@ -14,7 +14,11 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       width: 400px;
+      min-height: 400px;
+      max-height: 600px; /* Browser maximum (Chrome/Edge hardcoded limit) */
       background: #f5f5f5;
+      overflow-y: auto; /* Allow vertical scrolling when content exceeds max-height */
+      overflow-x: hidden; /* Prevent horizontal scrollbar */
     }
 
     .header {
@@ -144,10 +148,6 @@
       font-weight: normal;
     }
 
-    .sessions-list {
-      max-height: 400px;
-      overflow-y: auto;
-    }
 
     .session-group {
       margin-bottom: 16px;
@@ -580,6 +580,43 @@
       font-style: italic;
     }
 
+    /* Load More Colors Button (Enterprise) */
+    .load-more-colors-btn {
+      width: 100%;
+      padding: 10px 16px;
+      margin-top: 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: linear-gradient(135deg, #1ea7e8 0%, #0066cc 100%);
+      color: white;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 8px rgba(30, 167, 232, 0.3);
+    }
+
+    .load-more-colors-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(30, 167, 232, 0.5);
+    }
+
+    .load-more-colors-btn:active {
+      transform: translateY(0);
+    }
+
+    /* Fade-in animation for newly revealed colors */
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: scale(0.8);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1);
+      }
+    }
+
     /* Color Change Modal */
     .color-modal-overlay {
       position: fixed;
@@ -773,7 +810,6 @@
       padding: 16px 20px;
       background: var(--picker-bg, #f9f9f9);
       border-top: 1px solid var(--picker-border, #e0e0e0);
-      margin-top: auto;
     }
 
     .auto-restore-container {

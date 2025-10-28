@@ -8,6 +8,39 @@
 const $ = (selector) => document.querySelector(selector);
 
 /**
+ * Update popup height dynamically based on content and browser constraints
+ *
+ * IMPORTANT: Browser extension popups have hardcoded maximum dimensions:
+ * - Chrome/Edge: max-width: 800px, max-height: 600px (cannot be overridden)
+ * - These limits are enforced at the browser level, not CSS
+ *
+ * This function optimizes height within the 600px constraint for best UX
+ */
+function updatePopupHeight() {
+  requestAnimationFrame(() => {
+    // Browser-enforced maximum (Chrome/Edge hardcoded limit)
+    const BROWSER_MAX_HEIGHT = 600;
+    const minHeight = 400;
+
+    // Get content height
+    const contentHeight = document.body.scrollHeight;
+
+    // Calculate optimal height within browser constraints
+    const optimalHeight = Math.min(contentHeight, BROWSER_MAX_HEIGHT);
+    const finalHeight = Math.max(optimalHeight, minHeight);
+
+    // Apply height (will be capped at 600px by browser anyway)
+    document.body.style.height = finalHeight + 'px';
+    document.body.style.maxHeight = BROWSER_MAX_HEIGHT + 'px';
+
+    console.log('[Popup] Browser max height:', BROWSER_MAX_HEIGHT + 'px',
+                '| Content height:', contentHeight + 'px',
+                '| Final height:', finalHeight + 'px',
+                '| Scrollable:', contentHeight > BROWSER_MAX_HEIGHT);
+  });
+}
+
+/**
  * Send message to background script
  * @param {Object} message
  * @returns {Promise<any>}
@@ -128,6 +161,7 @@ function calculateDaysRemaining(lastAccessed, tier) {
 let selectedColor = null; // Stores user-selected color for new session
 let currentColorTier = 'free'; // Current tier for color selection
 let availableColors = []; // Available colors for current tier
+let showingAllColors = false; // Track if all colors are visible (enterprise only)
 
 /**
  * Initialize color selection UI
@@ -174,8 +208,21 @@ function renderColorPicker(colors, allowCustom) {
     </div>
   `;
 
-  // Add color swatches
-  colors.forEach(color => {
+  // For Enterprise tier: split colors into visible and hidden sections
+  // #E91E63 is at index 13 (14th color) - show colors BEFORE this index initially
+  const isEnterprise = currentColorTier === 'enterprise';
+  const splitIndex = 13; // Show colors 0-12, hide 13-34
+
+  let visibleColors = colors;
+  let hiddenColors = [];
+
+  if (isEnterprise && !showingAllColors) {
+    visibleColors = colors.slice(0, splitIndex);
+    hiddenColors = colors.slice(splitIndex);
+  }
+
+  // Add visible color swatches
+  visibleColors.forEach(color => {
     html += `
       <div class="color-swatch ${selectedColor === color ? 'selected' : ''}"
            data-color="${color}"
@@ -185,7 +232,29 @@ function renderColorPicker(colors, allowCustom) {
     `;
   });
 
+  // Add hidden color swatches (initially hidden via CSS class)
+  if (isEnterprise && !showingAllColors && hiddenColors.length > 0) {
+    hiddenColors.forEach(color => {
+      html += `
+        <div class="color-swatch hidden-color ${selectedColor === color ? 'selected' : ''}"
+             data-color="${color}"
+             style="background-color: ${color}; display: none;"
+             title="${color}">
+        </div>
+      `;
+    });
+  }
+
   html += '</div>'; // Close color-swatches
+
+  // Add "Load More Colors" button for Enterprise tier (only when not showing all)
+  if (isEnterprise && !showingAllColors && hiddenColors.length > 0) {
+    html += `
+      <button id="loadMoreColorsBtn" class="load-more-colors-btn">
+        Load More Colors (${hiddenColors.length} more)
+      </button>
+    `;
+  }
 
   // Add custom color input for enterprise tier
   if (allowCustom) {
@@ -247,6 +316,35 @@ function attachColorPickerListeners(allowCustom) {
       console.log('[Color Selection] Selected:', selectedColor || 'auto');
     });
   });
+
+  // Load More Colors button (Enterprise only)
+  const loadMoreBtn = $('#loadMoreColorsBtn');
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener('click', () => {
+      console.log('[Color Selection] Load More Colors clicked');
+
+      // Show all hidden colors with smooth transition
+      const hiddenSwatches = document.querySelectorAll('.color-swatch.hidden-color');
+      hiddenSwatches.forEach((swatch, index) => {
+        // Stagger the animation slightly for better visual effect
+        setTimeout(() => {
+          swatch.style.display = '';
+          swatch.classList.remove('hidden-color');
+          // Trigger reflow for animation
+          swatch.offsetHeight;
+          swatch.style.animation = 'fadeIn 0.3s ease-in';
+        }, index * 20);
+      });
+
+      // Update state
+      showingAllColors = true;
+
+      // Hide the "Load More" button
+      loadMoreBtn.style.display = 'none';
+
+      console.log('[Color Selection] All colors now visible');
+    });
+  }
 
   // Custom color input (enterprise only)
   if (allowCustom) {
@@ -1184,6 +1282,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   await updateAutoRestoreUI(); // Initialize auto-restore UI
   attachAutoRestoreListeners(); // Attach auto-restore event listeners
 
+  // Update popup height after all content is loaded
+  updatePopupHeight();
+
   // New Session button
   $('#newSessionBtn').addEventListener('click', async () => {
     await createNewSession();
@@ -1192,16 +1293,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Refresh on tab activation (if popup is still open)
   chrome.tabs.onActivated.addListener(async () => {
     await refreshSessions();
+    updatePopupHeight(); // Update height after refresh
   });
 
   // Refresh when tabs are updated
   chrome.tabs.onUpdated.addListener(async () => {
     await refreshSessions();
+    updatePopupHeight(); // Update height after refresh
   });
 
   // Refresh when tabs are removed
   chrome.tabs.onRemoved.addListener(async () => {
     await refreshSessions();
+    updatePopupHeight(); // Update height after refresh
   });
 });
 

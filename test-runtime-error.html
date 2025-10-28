@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Runtime Error Handling</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 40px;
+      background: #f5f5f5;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 20px;
+    }
+    .test-section {
+      margin: 20px 0;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 4px;
+      border-left: 4px solid #667eea;
+    }
+    .result {
+      margin-top: 10px;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 14px;
+    }
+    .result.success {
+      background: #d4edda;
+      color: #155724;
+    }
+    .result.error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    code {
+      background: #f0f0f0;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: monospace;
+    }
+    .info {
+      background: #fff3cd;
+      padding: 15px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      border-left: 4px solid #ffc107;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Chrome Runtime Error Handling Test</h1>
+
+    <div class="info">
+      <strong>Purpose:</strong> This page tests that the error handling in storage-diagnostics.html correctly detects when chrome.runtime is not available.
+      <br><br>
+      <strong>Expected Behavior:</strong>
+      <ul style="margin-left: 20px; margin-top: 10px;">
+        <li>When opened as file:// URL: Should detect missing chrome.runtime and show error</li>
+        <li>When opened as chrome-extension:// URL: Should work normally</li>
+      </ul>
+    </div>
+
+    <div class="test-section">
+      <h2>Test 1: Check chrome.runtime Availability</h2>
+      <button onclick="testChromeRuntime()">Run Test</button>
+      <div id="test1Result"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>Test 2: Attempt chrome.runtime.sendMessage</h2>
+      <button onclick="testSendMessage()">Run Test</button>
+      <div id="test2Result"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>Test 3: Check Protocol</h2>
+      <button onclick="testProtocol()">Run Test</button>
+      <div id="test3Result"></div>
+    </div>
+
+    <div class="test-section">
+      <h2>Instructions</h2>
+      <ol style="margin-left: 20px; line-height: 1.8;">
+        <li>First, open this file directly (file:// protocol) - all tests should show chrome.runtime is NOT available</li>
+        <li>Then, copy this file to your extension directory</li>
+        <li>Open it as <code>chrome-extension://[YOUR-EXTENSION-ID]/test-runtime-error.html</code></li>
+        <li>Run tests again - chrome.runtime should be available</li>
+      </ol>
+    </div>
+  </div>
+
+  <script>
+    function testChromeRuntime() {
+      const resultDiv = document.getElementById('test1Result');
+
+      try {
+        const isAvailable = typeof chrome !== 'undefined' &&
+                           chrome.runtime &&
+                           typeof chrome.runtime.sendMessage === 'function';
+
+        if (isAvailable) {
+          resultDiv.innerHTML = '<div class="result success">✓ chrome.runtime is AVAILABLE<br>Extension ID: ' + chrome.runtime.id + '</div>';
+        } else {
+          resultDiv.innerHTML = '<div class="result error">✗ chrome.runtime is NOT AVAILABLE<br>Reason: ' +
+            (typeof chrome === 'undefined' ? 'chrome object undefined' :
+             !chrome.runtime ? 'chrome.runtime undefined' :
+             'chrome.runtime.sendMessage not a function') + '</div>';
+        }
+      } catch (error) {
+        resultDiv.innerHTML = '<div class="result error">✗ ERROR: ' + error.message + '</div>';
+      }
+    }
+
+    function testSendMessage() {
+      const resultDiv = document.getElementById('test2Result');
+
+      try {
+        if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.sendMessage) {
+          throw new Error('chrome.runtime.sendMessage is not available');
+        }
+
+        // Attempt to send a message (will fail if not in extension context)
+        chrome.runtime.sendMessage({ action: 'test' }, (response) => {
+          if (chrome.runtime.lastError) {
+            resultDiv.innerHTML = '<div class="result error">✗ FAILED: ' + chrome.runtime.lastError.message + '</div>';
+          } else {
+            resultDiv.innerHTML = '<div class="result success">✓ Message sent successfully<br>Response: ' + JSON.stringify(response) + '</div>';
+          }
+        });
+
+        resultDiv.innerHTML = '<div class="result success">✓ chrome.runtime.sendMessage() called (waiting for response...)</div>';
+      } catch (error) {
+        resultDiv.innerHTML = '<div class="result error">✗ ERROR: ' + error.message + '</div>';
+      }
+    }
+
+    function testProtocol() {
+      const resultDiv = document.getElementById('test3Result');
+
+      const protocol = window.location.protocol;
+      const href = window.location.href;
+
+      let message = '';
+      let cssClass = '';
+
+      if (protocol === 'chrome-extension:') {
+        message = '✓ Correct protocol: chrome-extension://';
+        cssClass = 'success';
+      } else if (protocol === 'file:') {
+        message = '✗ File protocol detected - Extension APIs will NOT work';
+        cssClass = 'error';
+      } else {
+        message = '⚠ Unknown protocol: ' + protocol;
+        cssClass = 'error';
+      }
+
+      resultDiv.innerHTML = '<div class="result ' + cssClass + '">' + message + '<br>Full URL: ' + href + '</div>';
+    }
+
+    // Auto-run protocol test on load
+    window.addEventListener('load', () => {
+      testProtocol();
+    });
+  </script>
+</body>
+</html>

@@ -1424,6 +1424,61 @@ const PERSISTENCE_CONFIG = {
  * Free tier: 7 days inactivity
  * Premium/Enterprise: Never expire
  */
+/**
+ * Clean up orphaned sessions from IndexedDB
+ * (Sessions that exist in IndexedDB but not in sessionStore)
+ * @returns {Promise<number>} Number of orphans deleted
+ */
+async function cleanupOrphanedIndexedDBSessions() {
+  console.log('[Orphan Cleanup] Starting IndexedDB orphan cleanup...');
+
+  try {
+    // Check if storage persistence manager is available
+    if (!storagePersistenceManager || !storagePersistenceManager.getAllSessionIds) {
+      console.warn('[Orphan Cleanup] StoragePersistenceManager not available, skipping orphan cleanup');
+      return 0;
+    }
+
+    // Get valid session IDs from in-memory store (source of truth)
+    const validSessionIds = Object.keys(sessionStore.sessions);
+    console.log('[Orphan Cleanup] Valid sessions in memory:', validSessionIds.length);
+
+    // Get all session IDs from IndexedDB
+    const indexedDBSessions = await storagePersistenceManager.getAllSessionIds();
+    console.log('[Orphan Cleanup] Sessions in IndexedDB:', indexedDBSessions.length);
+
+    // Find orphans (in IndexedDB but not in sessionStore)
+    const orphans = indexedDBSessions.filter(id => !validSessionIds.includes(id));
+
+    if (orphans.length === 0) {
+      console.log('[Orphan Cleanup] No orphaned sessions found');
+      return 0;
+    }
+
+    console.log('[Orphan Cleanup] Found', orphans.length, 'orphaned IndexedDB sessions');
+    console.log('[Orphan Cleanup] Orphan IDs:', orphans);
+
+    // Delete orphans
+    let deletedCount = 0;
+    for (const orphanId of orphans) {
+      try {
+        await storagePersistenceManager.deleteSession(orphanId);
+        deletedCount++;
+        console.log('[Orphan Cleanup] Deleted orphan session:', orphanId);
+      } catch (error) {
+        console.error('[Orphan Cleanup] Error deleting orphan session:', orphanId, error);
+      }
+    }
+
+    console.log('[Orphan Cleanup] Successfully deleted', deletedCount, '/', orphans.length, 'orphans');
+    return deletedCount;
+
+  } catch (error) {
+    console.error('[Orphan Cleanup] Error during orphan cleanup:', error);
+    return 0;
+  }
+}
+
 async function cleanupExpiredSessions() {
   console.log('[Session Cleanup] Starting cleanup job...');
 
@@ -1446,6 +1501,10 @@ async function cleanupExpiredSessions() {
   // Premium/Enterprise: No cleanup needed
   if (tier === 'premium' || tier === 'enterprise') {
     console.log('[Session Cleanup] Premium/Enterprise tier - sessions never expire');
+
+    // Still clean up orphaned IndexedDB sessions
+    await cleanupOrphanedIndexedDBSessions();
+
     return;
   }
 
@@ -1470,7 +1529,7 @@ async function cleanupExpiredSessions() {
   if (sessionsToDelete.length > 0) {
     console.log(`[Session Cleanup] Deleting ${sessionsToDelete.length} expired sessions`);
 
-    sessionsToDelete.forEach(sessionId => {
+    for (const sessionId of sessionsToDelete) {
       const session = sessionStore.sessions[sessionId];
 
       // Close all tabs in expired session
@@ -1484,7 +1543,7 @@ async function cleanupExpiredSessions() {
         });
       }
 
-      // Remove session data
+      // Remove session data from in-memory store
       delete sessionStore.sessions[sessionId];
       delete sessionStore.cookieStore[sessionId];
 
@@ -1494,9 +1553,18 @@ async function cleanupExpiredSessions() {
           delete sessionStore.tabToSession[tabId];
         }
       });
-    });
 
-    // Persist changes
+      // Delete from persistent storage (IndexedDB + chrome.storage.local)
+      if (storagePersistenceManager && storagePersistenceManager.deleteSession) {
+        try {
+          await storagePersistenceManager.deleteSession(sessionId);
+        } catch (error) {
+          console.error('[Session Cleanup] Error deleting session from storage:', sessionId, error);
+        }
+      }
+    }
+
+    // Persist changes (backup/fallback)
     persistSessions(true);
 
     // Show notification to user
@@ -1514,6 +1582,9 @@ async function cleanupExpiredSessions() {
   } else {
     console.log('[Session Cleanup] No expired sessions found');
   }
+
+  // Clean up orphaned IndexedDB sessions
+  await cleanupOrphanedIndexedDBSessions();
 }
 
 // ============= Session Limits Configuration =============
@@ -1624,24 +1695,70 @@ async function getSessionStatus() {
  * @returns {Promise<Object>} Storage stats
  */
 async function getStorageStatsHelper() {
+  console.log('[getStorageStatsHelper] ================================================');
+  console.log('[getStorageStatsHelper] Getting storage statistics...');
+  console.log('[getStorageStatsHelper] ================================================');
+
   let stats = {
     timestamp: Date.now(),
     currentState: {
       sessions: Object.keys(sessionStore.sessions).length,
       tabs: Object.keys(sessionStore.tabToSession).length,
-      cookieSessions: Object.keys(sessionStore.cookieStore).length
+      cookieSessions: Object.keys(sessionStore.cookieStore).length,
+      orphans: 0, // Will be populated below
+      sessionList: Object.keys(sessionStore.sessions) // NEW: List of session IDs for clearAllStorage
     }
   };
 
+  console.log('[getStorageStatsHelper] Current state:', stats.currentState);
+
   // Get storage persistence stats if available
-  if (typeof storagePersistenceManager !== 'undefined' && storagePersistenceManager.isInitialized) {
-    stats.persistence = await storagePersistenceManager.getStorageStats();
+  if (typeof storagePersistenceManager !== 'undefined') {
+    console.log('[getStorageStatsHelper] storagePersistenceManager is available');
+    console.log('[getStorageStatsHelper] Manager state:');
+    console.log('[getStorageStatsHelper]   - isInitialized:', storagePersistenceManager.isInitialized);
+    console.log('[getStorageStatsHelper]   - db exists:', !!storagePersistenceManager.db);
+
+    // ALWAYS call getStorageStats, even if not fully initialized
+    // This allows us to see partial state during reinitialization
+    try {
+      stats.persistence = await storagePersistenceManager.getStorageStats();
+      console.log('[getStorageStatsHelper] ✓ Got persistence stats:', JSON.stringify(stats.persistence));
+
+      // Calculate orphan count (IndexedDB sessions not in memory) - only if initialized
+      if (storagePersistenceManager.isInitialized && stats.persistence.sources?.indexedDB?.available) {
+        try {
+          console.log('[getStorageStatsHelper] Calculating orphan count...');
+          const orphanCount = await storagePersistenceManager.getOrphanSessionCount();
+          stats.currentState.orphans = orphanCount;
+          console.log('[getStorageStatsHelper] ✓ Orphan count:', orphanCount);
+        } catch (error) {
+          console.error('[getStorageStatsHelper] Failed to get orphan count:', error);
+          stats.currentState.orphans = 0;
+        }
+      } else {
+        console.log('[getStorageStatsHelper] Skipping orphan count (not initialized or IndexedDB unavailable)');
+      }
+    } catch (error) {
+      console.error('[getStorageStatsHelper] Error getting persistence stats:', error);
+      stats.persistence = {
+        error: 'Failed to get persistence stats: ' + error.message,
+        health: { local: false, indexedDB: false, sync: false },
+        isInitialized: storagePersistenceManager.isInitialized,
+        dbConnected: !!storagePersistenceManager.db
+      };
+    }
   } else {
+    console.warn('[getStorageStatsHelper] storagePersistenceManager not available');
     stats.persistence = {
-      error: 'Storage persistence manager not initialized',
+      error: 'Storage persistence manager not available',
       health: { local: false, indexedDB: false, sync: false }
     };
   }
+
+  console.log('[getStorageStatsHelper] ================================================');
+  console.log('[getStorageStatsHelper] Statistics complete');
+  console.log('[getStorageStatsHelper] ================================================');
 
   return stats;
 }
@@ -1870,20 +1987,71 @@ function extractDomain(url) {
  * Cleanup session when all tabs are closed
  * @param {string} sessionId
  */
-function cleanupSession(sessionId) {
+async function cleanupSession(sessionId) {
   if (sessionStore.sessions[sessionId]) {
     // Check if session has any tabs left
     const tabs = sessionStore.sessions[sessionId].tabs || [];
     const activeTabs = tabs.filter(tabId => sessionStore.tabToSession[tabId] === sessionId);
 
     if (activeTabs.length === 0) {
-      console.log(`Cleaning up session ${sessionId}`);
+      console.log(`[cleanupSession] Starting cleanup for session ${sessionId}`);
+      console.log(`[cleanupSession] Session has ${tabs.length} total tabs, ${activeTabs.length} active tabs`);
+
+      // Delete from in-memory store FIRST
+      console.log(`[cleanupSession] Deleting from in-memory store...`);
       delete sessionStore.sessions[sessionId];
       delete sessionStore.cookieStore[sessionId];
+      console.log(`[cleanupSession] ✓ Deleted from in-memory store`);
 
-      // Persist after cleanup immediately
-      persistSessions(true);
+      // Delete from persistent storage (IndexedDB + chrome.storage.local)
+      // CRITICAL: Wait for deleteSession to complete before persisting
+      console.log(`[cleanupSession] Checking storagePersistenceManager...`);
+      if (storagePersistenceManager && storagePersistenceManager.isInitialized) {
+        console.log(`[cleanupSession] storagePersistenceManager is initialized, calling deleteSession()...`);
+        try {
+          const deleteResults = await storagePersistenceManager.deleteSession(sessionId);
+          console.log(`[cleanupSession] ✓ deleteSession() completed:`, deleteResults);
+
+          if (deleteResults.errors && deleteResults.errors.length > 0) {
+            console.error(`[cleanupSession] ⚠️ deleteSession() had errors:`, deleteResults.errors);
+          }
+
+          if (deleteResults.indexedDB) {
+            console.log(`[cleanupSession] ✓ Session deleted from IndexedDB`);
+          } else {
+            console.error(`[cleanupSession] ✗ Session NOT deleted from IndexedDB!`);
+          }
+
+          if (deleteResults.local) {
+            console.log(`[cleanupSession] ✓ Session deleted from chrome.storage.local`);
+          } else {
+            console.error(`[cleanupSession] ✗ Session NOT deleted from chrome.storage.local!`);
+          }
+
+        } catch (error) {
+          console.error('[cleanupSession] ✗ Error calling deleteSession():', error);
+          console.error('[cleanupSession] Stack trace:', error.stack);
+
+          // Fallback: persist without the deleted session
+          console.log('[cleanupSession] Using fallback persistSessions() due to deleteSession() error');
+          persistSessions(true);
+        }
+      } else {
+        console.warn('[cleanupSession] ⚠️ storagePersistenceManager not initialized or not available');
+        console.log('[cleanupSession] storagePersistenceManager exists:', !!storagePersistenceManager);
+        console.log('[cleanupSession] storagePersistenceManager.isInitialized:', storagePersistenceManager?.isInitialized);
+
+        // Fallback to legacy persist (saves current state without deleted session)
+        console.log('[cleanupSession] Using fallback persistSessions()');
+        persistSessions(true);
+      }
+
+      console.log(`[cleanupSession] ✓ Cleanup complete for session ${sessionId}`);
+    } else {
+      console.log(`[cleanupSession] Session ${sessionId} still has ${activeTabs.length} active tabs, not cleaning up`);
     }
+  } else {
+    console.warn(`[cleanupSession] Session ${sessionId} not found in sessionStore`);
   }
 }
 
@@ -2484,6 +2652,43 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         });
       return true; // Keep channel open for async response
 
+    } else if (message.action === 'getOrphanCount') {
+      // Get orphan session count (IndexedDB sessions not in memory)
+      if (typeof storagePersistenceManager !== 'undefined' && storagePersistenceManager.isInitialized) {
+        storagePersistenceManager.getOrphanSessionCount()
+          .then(count => {
+            console.log('[getOrphanCount] Found ' + count + ' orphan sessions in IndexedDB');
+            sendResponse({ success: true, orphanCount: count });
+          })
+          .catch(error => {
+            console.error('[getOrphanCount] Error:', error);
+            sendResponse({ success: false, error: error.message });
+          });
+      } else {
+        console.warn('[getOrphanCount] Storage persistence manager not initialized');
+        sendResponse({ success: false, error: 'Storage persistence manager not initialized' });
+      }
+      return true; // Keep channel open for async response
+
+    } else if (message.action === 'cleanupOrphans') {
+      // Clean up orphan sessions (IndexedDB sessions not in memory)
+      console.log('[cleanupOrphans] Starting orphan cleanup...');
+      if (typeof storagePersistenceManager !== 'undefined' && storagePersistenceManager.isInitialized) {
+        storagePersistenceManager.cleanupOrphanSessions()
+          .then(result => {
+            console.log('[cleanupOrphans] Cleanup complete:', result);
+            sendResponse({ success: true, ...result });
+          })
+          .catch(error => {
+            console.error('[cleanupOrphans] Error:', error);
+            sendResponse({ success: false, error: error.message });
+          });
+      } else {
+        console.warn('[cleanupOrphans] Storage persistence manager not initialized');
+        sendResponse({ success: false, error: 'Storage persistence manager not initialized' });
+      }
+      return true; // Keep channel open for async response
+
     } else if (message.action === 'getAvailableColors') {
       // Get available colors for current tier
       let tier = 'free';
@@ -2670,6 +2875,169 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const state = initializationManager.getState();
       sendResponse({ success: true, ...state });
       return false; // Synchronous response
+
+    } else if (message.action === 'clearAllSessions') {
+      try {
+        console.log('[clearAllSessions] Clearing all in-memory session data...');
+
+        // Get all session tab IDs before clearing
+        const allTabIds = Object.keys(sessionStore.tabToSession).map(id => parseInt(id));
+
+        // Clear in-memory state
+        sessionStore.sessions = {};
+        sessionStore.tabToSession = {};
+        sessionStore.cookieStore = {};
+
+        console.log('[clearAllSessions] In-memory state cleared');
+
+        // Close all session tabs
+        if (allTabIds.length > 0) {
+          console.log('[clearAllSessions] Closing ' + allTabIds.length + ' session tabs...');
+          chrome.tabs.remove(allTabIds, () => {
+            if (chrome.runtime.lastError) {
+              console.error('[clearAllSessions] Error closing tabs:', chrome.runtime.lastError);
+            }
+          });
+        }
+
+        sendResponse({ success: true, message: 'All sessions cleared from memory', tabsClosed: allTabIds.length });
+      } catch (error) {
+        console.error('[clearAllSessions] Error:', error);
+        sendResponse({ success: false, error: error.message });
+      }
+      return false; // Synchronous response
+
+    } else if (message.action === 'deleteSessionById') {
+      // Delete a specific session by ID (used by clearAllStorage in diagnostics)
+      console.log('[deleteSessionById] Request to delete session:', message.sessionId);
+
+      if (!message.sessionId) {
+        sendResponse({ success: false, error: 'Session ID required' });
+        return false;
+      }
+
+      const sessionId = message.sessionId;
+
+      // Delete from persistence layer first (critical)
+      if (typeof storagePersistenceManager !== 'undefined' && storagePersistenceManager.isInitialized) {
+        storagePersistenceManager.deleteSession(sessionId)
+          .then(results => {
+            console.log('[deleteSessionById] Persistence layer deletion results:', results);
+
+            // Delete from in-memory state
+            if (sessionStore.sessions[sessionId]) {
+              const tabIds = sessionStore.sessions[sessionId].tabs || [];
+
+              // Close tabs associated with this session
+              if (tabIds.length > 0) {
+                console.log('[deleteSessionById] Closing', tabIds.length, 'tabs for session:', sessionId);
+                chrome.tabs.remove(tabIds, () => {
+                  if (chrome.runtime.lastError) {
+                    console.error('[deleteSessionById] Error closing tabs:', chrome.runtime.lastError);
+                  }
+                });
+              }
+
+              // Remove from in-memory structures
+              delete sessionStore.sessions[sessionId];
+              delete sessionStore.cookieStore[sessionId];
+
+              // Remove tab mappings
+              tabIds.forEach(tabId => {
+                delete sessionStore.tabToSession[tabId];
+              });
+
+              console.log('[deleteSessionById] ✓ Session deleted from all layers:', sessionId);
+              sendResponse({
+                success: true,
+                message: 'Session deleted successfully',
+                sessionId: sessionId,
+                results: results
+              });
+            } else {
+              console.log('[deleteSessionById] Session not found in memory:', sessionId);
+              sendResponse({
+                success: true,
+                message: 'Session not found in memory (may have already been deleted)',
+                sessionId: sessionId,
+                results: results
+              });
+            }
+          })
+          .catch(error => {
+            console.error('[deleteSessionById] Persistence layer deletion error:', error);
+            sendResponse({ success: false, error: error.message, sessionId: sessionId });
+          });
+      } else {
+        console.error('[deleteSessionById] Storage persistence manager not initialized');
+        sendResponse({ success: false, error: 'Storage persistence manager not initialized' });
+      }
+
+      return true; // Async response
+
+    } else if (message.action === 'closeIndexedDB') {
+      // Close IndexedDB connection (used by clearAllStorage to enable database deletion)
+      console.log('[closeIndexedDB] Request to close IndexedDB connection');
+
+      if (typeof storagePersistenceManager !== 'undefined' && storagePersistenceManager.db) {
+        try {
+          console.log('[closeIndexedDB] Closing database connection...');
+          storagePersistenceManager.db.close();
+          storagePersistenceManager.db = null;
+          storagePersistenceManager.isInitialized = false;
+          console.log('[closeIndexedDB] ✓ Database connection closed');
+          sendResponse({ success: true, message: 'IndexedDB connection closed' });
+        } catch (error) {
+          console.error('[closeIndexedDB] Error closing database:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+      } else {
+        console.log('[closeIndexedDB] Database not initialized or already closed');
+        sendResponse({ success: true, message: 'Database not initialized or already closed' });
+      }
+
+      return false; // Synchronous response
+
+    } else if (message.action === 'reinitializeStorage') {
+      // Reinitialize storage persistence manager after database deletion
+      (async () => {
+        try {
+          console.log('[reinitializeStorage] ================================================');
+          console.log('[reinitializeStorage] Request to reinitialize storage persistence manager');
+          console.log('[reinitializeStorage] ================================================');
+
+          if (typeof storagePersistenceManager !== 'undefined') {
+            console.log('[reinitializeStorage] storagePersistenceManager is available');
+            console.log('[reinitializeStorage] Current state before reinit:');
+            console.log('[reinitializeStorage]   - isInitialized:', storagePersistenceManager.isInitialized);
+            console.log('[reinitializeStorage]   - db exists:', !!storagePersistenceManager.db);
+
+            console.log('[reinitializeStorage] Calling initialize(forceReinit=true)...');
+            await storagePersistenceManager.initialize(true); // CRITICAL: Pass forceReinit=true
+
+            console.log('[reinitializeStorage] ================================================');
+            console.log('[reinitializeStorage] ✅ Storage persistence manager reinitialized');
+            console.log('[reinitializeStorage] New state after reinit:');
+            console.log('[reinitializeStorage]   - isInitialized:', storagePersistenceManager.isInitialized);
+            console.log('[reinitializeStorage]   - db exists:', !!storagePersistenceManager.db);
+            console.log('[reinitializeStorage]   - health:', JSON.stringify(storagePersistenceManager.storageHealth));
+            console.log('[reinitializeStorage] ================================================');
+
+            sendResponse({ success: true, message: 'Storage persistence manager reinitialized' });
+          } else {
+            console.error('[reinitializeStorage] ❌ storagePersistenceManager not defined');
+            sendResponse({ success: false, error: 'Storage persistence manager not available' });
+          }
+        } catch (error) {
+          console.error('[reinitializeStorage] ================================================');
+          console.error('[reinitializeStorage] ❌ Error reinitializing storage');
+          console.error('[reinitializeStorage] Error:', error);
+          console.error('[reinitializeStorage] Error stack:', error.stack);
+          console.error('[reinitializeStorage] ================================================');
+          sendResponse({ success: false, error: error.message });
+        }
+      })();
+      return true; // Async response
 
     } else {
       // Try license message handlers

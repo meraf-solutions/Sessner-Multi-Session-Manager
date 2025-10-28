@@ -245,6 +245,10 @@
           <div class="stat-label">Cookie Sessions</div>
           <div class="stat-value" id="currentCookies">-</div>
         </div>
+        <div class="stat-item">
+          <div class="stat-label">Orphan Sessions (IndexedDB)</div>
+          <div class="stat-value" id="currentOrphans">-</div>
+        </div>
       </div>
       <div class="timestamp" id="statsTimestamp">Last updated: Never</div>
     </div>
@@ -256,10 +260,12 @@
 
     <div class="card">
       <h2>Actions</h2>
-      <button onclick="refreshStats()">Refresh Stats</button>
-      <button onclick="testPersistence()">Test Persistence</button>
-      <button onclick="viewRawData()">View Raw Data</button>
-      <button onclick="clearAllStorage()" style="background: linear-gradient(135deg, #f44336 0%, #e91e63 100%);">Clear All Storage</button>
+      <button id="refreshStatsBtn">Refresh Stats</button>
+      <button id="testPersistenceBtn">Test Persistence</button>
+      <button id="detectOrphansBtn">Detect & Clean Orphans</button>
+      <button id="testImmediateDeletionBtn">Test Immediate Deletion</button>
+      <button id="viewRawDataBtn">View Raw Data</button>
+      <button id="clearAllStorageBtn" style="background: linear-gradient(135deg, #f44336 0%, #e91e63 100%);">Clear All Storage</button>
     </div>
 
     <div id="messages"></div>
@@ -270,200 +276,6 @@
     </div>
   </div>
 
-  <script>
-    let lastStats = null;
-
-    async function refreshStats() {
-      try {
-        const response = await chrome.runtime.sendMessage({ action: 'getStorageStats' });
-
-        if (response && response.success) {
-          lastStats = response.stats;
-
-          // Update current state
-          document.getElementById('currentSessions').textContent = response.stats.currentState.sessions;
-          document.getElementById('currentTabs').textContent = response.stats.currentState.tabs;
-          document.getElementById('currentCookies').textContent = response.stats.currentState.cookieSessions;
-          document.getElementById('statsTimestamp').textContent =
-            'Last updated: ' + new Date(response.stats.timestamp).toLocaleString();
-
-          // Update storage layers
-          if (response.stats.persistence) {
-            updateStorageLayers(response.stats.persistence);
-          } else {
-            document.getElementById('storageLayers').innerHTML =
-              '<div class="warning">Storage persistence manager not initialized</div>';
-          }
-
-          showMessage('Stats refreshed successfully', 'success');
-        } else {
-          showMessage('Failed to get stats: ' + (response?.error || 'Unknown error'), 'error');
-        }
-      } catch (error) {
-        showMessage('Error: ' + error.message, 'error');
-      }
-    }
-
-    function updateStorageLayers(persistence) {
-      const health = persistence.health;
-      const sources = persistence.sources;
-      let html = '';
-
-      // chrome.storage.local
-      html += `
-        <div class="storage-layer">
-          <div class="storage-layer-header">
-            <div class="storage-layer-name">
-              <span class="status-indicator ${health.local ? 'status-healthy' : 'status-unhealthy'}"></span>
-              chrome.storage.local
-            </div>
-          </div>
-          <div class="storage-layer-details">
-            ${sources.local.available ? `
-              <div>Sessions: ${sources.local.sessions}</div>
-              <div>Tabs: ${sources.local.tabs}</div>
-              <div>Cookie Sessions: ${sources.local.cookieSessions}</div>
-            ` : `<div>Error: ${sources.local.error}</div>`}
-          </div>
-        </div>
-      `;
-
-      // IndexedDB
-      html += `
-        <div class="storage-layer">
-          <div class="storage-layer-header">
-            <div class="storage-layer-name">
-              <span class="status-indicator ${health.indexedDB ? 'status-healthy' : 'status-unhealthy'}"></span>
-              IndexedDB
-            </div>
-          </div>
-          <div class="storage-layer-details">
-            ${sources.indexedDB.available ? `
-              <div>Sessions: ${sources.indexedDB.sessions}</div>
-              <div>Last Saved: ${sources.indexedDB.lastSaved ? new Date(sources.indexedDB.lastSaved).toLocaleString() : 'Never'}</div>
-            ` : `<div>Error: ${sources.indexedDB.error}</div>`}
-          </div>
-        </div>
-      `;
-
-      // Last health check
-      html += `
-        <div class="timestamp">
-          Last health check: ${persistence.lastHealthCheck ? new Date(persistence.lastHealthCheck).toLocaleString() : 'Never'}
-        </div>
-      `;
-
-      document.getElementById('storageLayers').innerHTML = html;
-    }
-
-    async function testPersistence() {
-      showMessage('Testing persistence in 3 seconds... Do NOT close browser!', 'warning');
-
-      // Wait 3 seconds
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      try {
-        // Get current stats
-        const beforeResponse = await chrome.runtime.sendMessage({ action: 'getStorageStats' });
-        if (!beforeResponse || !beforeResponse.success) {
-          showMessage('Failed to get stats before test', 'error');
-          return;
-        }
-
-        const beforeCount = beforeResponse.stats.currentState.sessions;
-        showMessage(`Before test: ${beforeCount} sessions`, 'success');
-
-        // Wait 2 more seconds for debounced persistence
-        showMessage('Waiting 2 seconds for persistence...', 'warning');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        // Check persistence layers
-        showMessage('Checking storage layers...', 'warning');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        const afterResponse = await chrome.runtime.sendMessage({ action: 'getStorageStats' });
-        if (!afterResponse || !afterResponse.success) {
-          showMessage('Failed to get stats after test', 'error');
-          return;
-        }
-
-        const afterCount = afterResponse.stats.currentState.sessions;
-        const localCount = afterResponse.stats.persistence?.sources?.local?.sessions || 0;
-        const idbCount = afterResponse.stats.persistence?.sources?.indexedDB?.sessions || 0;
-
-        let message = `Test Results:\n`;
-        message += `Memory: ${afterCount} sessions\n`;
-        message += `chrome.storage.local: ${localCount} sessions\n`;
-        message += `IndexedDB: ${idbCount} sessions\n`;
-
-        if (localCount === afterCount && idbCount === afterCount) {
-          showMessage(message + '\n✓ All layers synchronized!', 'success');
-        } else {
-          showMessage(message + '\n⚠️ Layers NOT synchronized!', 'warning');
-        }
-
-        await refreshStats();
-
-      } catch (error) {
-        showMessage('Test failed: ' + error.message, 'error');
-      }
-    }
-
-    async function viewRawData() {
-      if (lastStats) {
-        document.getElementById('rawData').textContent = JSON.stringify(lastStats, null, 2);
-        showMessage('Raw data displayed below', 'success');
-      } else {
-        showMessage('No stats available, click Refresh Stats first', 'warning');
-      }
-    }
-
-    async function clearAllStorage() {
-      if (!confirm('⚠️ WARNING: This will DELETE ALL sessions and cookies!\n\nAre you sure?')) {
-        return;
-      }
-
-      try {
-        // Clear chrome.storage.local
-        await new Promise(resolve => {
-          chrome.storage.local.clear(() => {
-            resolve();
-          });
-        });
-
-        // Clear IndexedDB (if available)
-        try {
-          await indexedDB.deleteDatabase('SessnerStorage');
-        } catch (e) {
-          console.error('Failed to clear IndexedDB:', e);
-        }
-
-        showMessage('All storage cleared! Please reload extension.', 'success');
-        await refreshStats();
-
-      } catch (error) {
-        showMessage('Failed to clear storage: ' + error.message, 'error');
-      }
-    }
-
-    function showMessage(text, type = 'success') {
-      const messagesDiv = document.getElementById('messages');
-      const messageDiv = document.createElement('div');
-      messageDiv.className = type;
-      messageDiv.textContent = text;
-      messagesDiv.appendChild(messageDiv);
-
-      // Auto-remove after 5 seconds
-      setTimeout(() => {
-        messageDiv.remove();
-      }, 5000);
-    }
-
-    // Auto-refresh on load
-    refreshStats();
-
-    // Auto-refresh every 5 seconds
-    setInterval(refreshStats, 5000);
-  </script>
+  <script src="storage-diagnostics.js"></script>
 </body>
 </html>

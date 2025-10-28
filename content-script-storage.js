@@ -13,6 +13,20 @@
 (function() {
   'use strict';
 
+  // Skip execution on extension pages and local HTML files
+  const isExtensionProtocol = window.location.protocol === 'chrome-extension:' ||
+                              window.location.protocol === 'edge-extension:';
+  const isFileProtocol = window.location.protocol === 'file:';
+  const isExtensionHTML = window.location.href.includes('storage-diagnostics.html') ||
+                          window.location.href.includes('popup-license.html') ||
+                          window.location.href.includes('license-details.html');
+  const isPopup = window.location.href.includes('/popup.html');
+
+  if ((isExtensionProtocol && !isPopup) || isFileProtocol || (isExtensionHTML && !isPopup)) {
+    console.log('[Storage Isolation] Skipping execution on extension/local page');
+    return;
+  }
+
   // Prevent multiple injections
   if (window.__STORAGE_ISOLATION_INJECTED__) {
     console.warn('[Storage Isolation] Already injected, skipping');

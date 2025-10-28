@@ -60,41 +60,96 @@ class StoragePersistenceManager {
 
   /**
    * Initialize storage persistence manager
+   * @param {boolean} forceReinit - Force reinitialization even if already initialized
    * @returns {Promise<void>}
    */
-  async initialize() {
-    // Prevent multiple initialization
-    if (this.initPromise) {
+  async initialize(forceReinit = false) {
+    console.log('[Storage Persistence] ================================================');
+    console.log('[Storage Persistence] initialize() called');
+    console.log('[Storage Persistence] forceReinit:', forceReinit);
+    console.log('[Storage Persistence] Current state:');
+    console.log('[Storage Persistence]   - isInitialized:', this.isInitialized);
+    console.log('[Storage Persistence]   - initPromise exists:', !!this.initPromise);
+    console.log('[Storage Persistence]   - db exists:', !!this.db);
+    console.log('[Storage Persistence] ================================================');
+
+    // If force reinit, reset state
+    if (forceReinit) {
+      console.log('[Storage Persistence] Force reinitialization requested');
+      console.log('[Storage Persistence] Resetting initialization state...');
+
+      // Close existing database if open
+      if (this.db) {
+        try {
+          console.log('[Storage Persistence] Closing existing database connection...');
+          this.db.close();
+          console.log('[Storage Persistence] ✓ Database connection closed');
+        } catch (error) {
+          console.error('[Storage Persistence] Error closing database:', error);
+        }
+      }
+
+      // Reset all state
+      this.db = null;
+      this.isInitialized = false;
+      this.initPromise = null;
+      console.log('[Storage Persistence] ✓ State reset complete');
+    }
+
+    // Prevent multiple initialization (unless force reinit)
+    if (this.initPromise && !forceReinit) {
+      console.log('[Storage Persistence] Returning existing initialization promise');
       return this.initPromise;
     }
 
     this.initPromise = (async () => {
+      console.log('[Storage Persistence] Starting initialization process...');
       console.log('[Storage Persistence] Initializing multi-layer storage...');
 
       try {
         // Initialize IndexedDB
+        console.log('[Storage Persistence] Step 1: Initialize IndexedDB...');
         await this.initIndexedDB();
-        console.log('[Storage Persistence] ✓ IndexedDB initialized');
+        console.log('[Storage Persistence] ✓ IndexedDB initialized successfully');
+        console.log('[Storage Persistence]   - Database name:', this.db?.name);
+        console.log('[Storage Persistence]   - Database version:', this.db?.version);
+        console.log('[Storage Persistence]   - Object stores:', this.db ? Array.from(this.db.objectStoreNames) : 'none');
 
         // Run initial health check
+        console.log('[Storage Persistence] Step 2: Run health check...');
         await this.checkStorageHealth();
         console.log('[Storage Persistence] ✓ Storage health check complete');
+        console.log('[Storage Persistence]   - Health status:', JSON.stringify(this.storageHealth));
 
         // Start storage monitoring
+        console.log('[Storage Persistence] Step 3: Start storage monitoring...');
         this.startStorageMonitoring();
         console.log('[Storage Persistence] ✓ Storage monitoring started');
 
         // Start periodic health checks
+        console.log('[Storage Persistence] Step 4: Start health check timer...');
         this.startHealthCheckTimer();
         console.log('[Storage Persistence] ✓ Health check timer started');
 
         this.isInitialized = true;
-        console.log('[Storage Persistence] ✓ Initialization complete');
+        console.log('[Storage Persistence] ================================================');
+        console.log('[Storage Persistence] ✅ INITIALIZATION COMPLETE');
+        console.log('[Storage Persistence]   - isInitialized:', this.isInitialized);
+        console.log('[Storage Persistence]   - Database ready:', !!this.db);
+        console.log('[Storage Persistence]   - Health:', JSON.stringify(this.storageHealth));
+        console.log('[Storage Persistence] ================================================');
 
       } catch (error) {
-        console.error('[Storage Persistence] Initialization error:', error);
+        console.error('[Storage Persistence] ================================================');
+        console.error('[Storage Persistence] ❌ INITIALIZATION ERROR');
+        console.error('[Storage Persistence] Error:', error);
+        console.error('[Storage Persistence] Error stack:', error.stack);
+        console.error('[Storage Persistence] ================================================');
+
         // Don't throw - fallback to chrome.storage.local only
         this.storageHealth.indexedDB = false;
+        this.isInitialized = false; // Mark as not initialized on error
+        this.initPromise = null; // Clear promise to allow retry
       }
     })();
 
@@ -790,22 +845,557 @@ class StoragePersistenceManager {
   }
 
   /**
+   * Delete a specific session from all storage layers
+   * @param {string} sessionId - Session ID to delete
+   * @returns {Promise<Object>} Results from each layer
+   */
+  async deleteSession(sessionId) {
+    console.log('[Storage Persistence] ================================================');
+    console.log('[Storage Persistence] deleteSession() called for session:', sessionId);
+    console.log('[Storage Persistence] isInitialized:', this.isInitialized);
+    console.log('[Storage Persistence] Database object exists:', !!this.db);
+
+    if (this.db) {
+      console.log('[Storage Persistence] Database name:', this.db.name);
+      console.log('[Storage Persistence] Database version:', this.db.version);
+      console.log('[Storage Persistence] Object stores:', Array.from(this.db.objectStoreNames));
+    }
+
+    console.log('[Storage Persistence] Storage health:', JSON.stringify(this.storageHealth));
+    console.log('[Storage Persistence] ================================================');
+
+    const results = {
+      local: false,
+      indexedDB: false,
+      errors: []
+    };
+
+    // Layer 1: Delete from chrome.storage.local
+    console.log('[Storage Persistence] LAYER 1: Deleting from chrome.storage.local...');
+    if (this.storageHealth.local) {
+      try {
+        // Load current data
+        console.log('[Storage Persistence] Loading current data from chrome.storage.local...');
+        const data = await new Promise((resolve, reject) => {
+          chrome.storage.local.get(['sessions', 'cookieStore', 'tabToSession', 'tabMetadata'], (result) => {
+            if (chrome.runtime.lastError) {
+              reject(chrome.runtime.lastError);
+            } else {
+              resolve(result);
+            }
+          });
+        });
+
+        console.log('[Storage Persistence] Current data loaded:', {
+          sessions: Object.keys(data.sessions || {}).length,
+          cookieStore: Object.keys(data.cookieStore || {}).length,
+          tabToSession: Object.keys(data.tabToSession || {}).length,
+          tabMetadata: Object.keys(data.tabMetadata || {}).length
+        });
+
+        // Remove session from all data structures
+        console.log('[Storage Persistence] Removing session from data structures...');
+        let removedFromSessions = false;
+        let removedFromCookies = false;
+        let removedTabMappings = 0;
+        let removedTabMetadata = 0;
+
+        if (data.sessions && data.sessions[sessionId]) {
+          delete data.sessions[sessionId];
+          removedFromSessions = true;
+          console.log('[Storage Persistence] ✓ Removed from sessions');
+        } else {
+          console.log('[Storage Persistence] Session not found in sessions object');
+        }
+
+        if (data.cookieStore && data.cookieStore[sessionId]) {
+          delete data.cookieStore[sessionId];
+          removedFromCookies = true;
+          console.log('[Storage Persistence] ✓ Removed from cookieStore');
+        } else {
+          console.log('[Storage Persistence] Session not found in cookieStore');
+        }
+
+        // Remove tab mappings for this session
+        if (data.tabToSession) {
+          Object.keys(data.tabToSession).forEach(tabId => {
+            if (data.tabToSession[tabId] === sessionId) {
+              delete data.tabToSession[tabId];
+              removedTabMappings++;
+            }
+          });
+          console.log('[Storage Persistence] ✓ Removed', removedTabMappings, 'tab mappings');
+        }
+
+        // Remove tab metadata for this session
+        if (data.tabMetadata) {
+          Object.keys(data.tabMetadata).forEach(tabId => {
+            if (data.tabMetadata[tabId] && data.tabMetadata[tabId].sessionId === sessionId) {
+              delete data.tabMetadata[tabId];
+              removedTabMetadata++;
+            }
+          });
+          console.log('[Storage Persistence] ✓ Removed', removedTabMetadata, 'tab metadata entries');
+        }
+
+        console.log('[Storage Persistence] Deletion summary:', {
+          removedFromSessions,
+          removedFromCookies,
+          removedTabMappings,
+          removedTabMetadata
+        });
+
+        // Save updated data back
+        console.log('[Storage Persistence] Saving updated data to chrome.storage.local...');
+        await new Promise((resolve, reject) => {
+          chrome.storage.local.set({
+            sessions: data.sessions || {},
+            cookieStore: data.cookieStore || {},
+            tabToSession: data.tabToSession || {},
+            tabMetadata: data.tabMetadata || {},
+            _lastSaved: Date.now()
+          }, () => {
+            if (chrome.runtime.lastError) {
+              reject(chrome.runtime.lastError);
+            } else {
+              resolve();
+            }
+          });
+        });
+
+        console.log('[Storage Persistence] ✓ Data saved to chrome.storage.local');
+        console.log('[Storage Persistence] Remaining sessions:', Object.keys(data.sessions || {}).length);
+
+        results.local = true;
+        console.log('[Storage Persistence] ✓ LAYER 1 COMPLETE: Deleted session from chrome.storage.local:', sessionId);
+
+      } catch (error) {
+        console.error('[Storage Persistence] ✗ Failed to delete from chrome.storage.local:', error);
+        results.errors.push({ layer: 'local', error: error.message });
+        // Don't mark storage as unhealthy for individual delete failures
+      }
+    } else {
+      console.warn('[Storage Persistence] Skipping chrome.storage.local (unhealthy)');
+    }
+
+    // Layer 2: Delete from IndexedDB
+    console.log('[Storage Persistence] ================================================');
+    console.log('[Storage Persistence] LAYER 2: Deleting from IndexedDB...');
+    console.log('[Storage Persistence] IndexedDB health:', this.storageHealth.indexedDB);
+    console.log('[Storage Persistence] Database object:', !!this.db);
+    console.log('[Storage Persistence] ================================================');
+
+    if (this.storageHealth.indexedDB && this.db) {
+      try {
+        // Delete from sessions store
+        console.log('[Storage Persistence] Deleting from sessions store...');
+        await new Promise((resolve, reject) => {
+          const transaction = this.db.transaction([STORAGE_CONFIG.IDB_STORE_SESSIONS], 'readwrite');
+          const store = transaction.objectStore(STORAGE_CONFIG.IDB_STORE_SESSIONS);
+          const request = store.delete(sessionId);
+
+          transaction.oncomplete = () => {
+            console.log(`[IndexedDB Delete] ✓ Transaction committed: Deleted session from sessions store: ${sessionId}`);
+            resolve();
+          };
+
+          transaction.onerror = () => {
+            console.error(`[IndexedDB Delete] ✗ Transaction error (sessions store):`, transaction.error);
+            reject(transaction.error);
+          };
+
+          request.onerror = () => {
+            console.error(`[IndexedDB Delete] ✗ Request error (sessions store):`, request.error);
+            // Don't reject here - let transaction.onerror handle it
+          };
+        });
+        console.log('[Storage Persistence] ✓ Session deleted from sessions store');
+
+        // Delete from cookies store
+        console.log('[Storage Persistence] Deleting from cookies store...');
+        await new Promise((resolve, reject) => {
+          const transaction = this.db.transaction([STORAGE_CONFIG.IDB_STORE_COOKIES], 'readwrite');
+          const store = transaction.objectStore(STORAGE_CONFIG.IDB_STORE_COOKIES);
+          const request = store.delete(sessionId);
+
+          transaction.oncomplete = () => {
+            console.log(`[IndexedDB Delete] ✓ Transaction committed: Deleted cookies: ${sessionId}`);
+            resolve();
+          };
+
+          transaction.onerror = () => {
+            console.error(`[IndexedDB Delete] ✗ Transaction error (cookies store):`, transaction.error);
+            reject(transaction.error);
+          };
+
+          request.onerror = () => {
+            console.error(`[IndexedDB Delete] ✗ Request error (cookies store):`, request.error);
+            // Don't reject here - let transaction.onerror handle it
+          };
+        });
+        console.log('[Storage Persistence] ✓ Cookies deleted from cookies store');
+
+        // Update tab mappings
+        console.log('[Storage Persistence] Updating tab mappings...');
+        try {
+          const tabMappings = await this.getIndexedDBValue(STORAGE_CONFIG.IDB_STORE_TABS, 'mappings');
+          if (tabMappings) {
+            let removedMappings = 0;
+            Object.keys(tabMappings).forEach(tabId => {
+              if (tabMappings[tabId] === sessionId) {
+                delete tabMappings[tabId];
+                removedMappings++;
+              }
+            });
+            console.log('[Storage Persistence] Removed', removedMappings, 'tab mappings from IndexedDB');
+            await this.setIndexedDBValue(STORAGE_CONFIG.IDB_STORE_TABS, 'mappings', tabMappings);
+            console.log('[Storage Persistence] ✓ Tab mappings updated in IndexedDB');
+          } else {
+            console.log('[Storage Persistence] No tab mappings found in IndexedDB');
+          }
+        } catch (error) {
+          console.warn('[IndexedDB Delete] Could not update tab mappings:', error);
+          // Non-critical error, continue
+        }
+
+        // Update tab metadata
+        console.log('[Storage Persistence] Updating tab metadata...');
+        try {
+          const tabMetadata = await this.getIndexedDBValue(STORAGE_CONFIG.IDB_STORE_TABS, 'tabMetadata');
+          if (tabMetadata) {
+            let removedMetadata = 0;
+            Object.keys(tabMetadata).forEach(tabId => {
+              if (tabMetadata[tabId] && tabMetadata[tabId].sessionId === sessionId) {
+                delete tabMetadata[tabId];
+                removedMetadata++;
+              }
+            });
+            console.log('[Storage Persistence] Removed', removedMetadata, 'tab metadata entries from IndexedDB');
+            await this.setIndexedDBValue(STORAGE_CONFIG.IDB_STORE_TABS, 'tabMetadata', tabMetadata);
+            console.log('[Storage Persistence] ✓ Tab metadata updated in IndexedDB');
+          } else {
+            console.log('[Storage Persistence] No tab metadata found in IndexedDB');
+          }
+        } catch (error) {
+          console.warn('[IndexedDB Delete] Could not update tab metadata:', error);
+          // Non-critical error, continue
+        }
+
+        // CRITICAL: Verify deletion by checking if session still exists
+        console.log('[Storage Persistence] ================================================');
+        console.log('[Storage Persistence] VERIFYING DELETION...');
+        console.log('[Storage Persistence] ================================================');
+
+        try {
+          // Try to get the deleted session
+          const deletedSession = await this.getIndexedDBValue(STORAGE_CONFIG.IDB_STORE_SESSIONS, sessionId);
+
+          if (deletedSession) {
+            console.error('[Storage Persistence] ✗ VERIFICATION FAILED: Session STILL EXISTS in IndexedDB!');
+            console.error('[Storage Persistence] Session data:', deletedSession);
+            results.indexedDB = false;
+            results.errors.push({
+              layer: 'indexedDB',
+              error: 'Session still exists after delete operation',
+              sessionId: sessionId
+            });
+          } else {
+            console.log('[Storage Persistence] ✓ VERIFICATION PASSED: Session confirmed deleted from IndexedDB');
+            results.indexedDB = true;
+          }
+        } catch (verifyError) {
+          console.error('[Storage Persistence] ✗ Verification error:', verifyError);
+          // If verification fails, assume deletion succeeded (benefit of the doubt)
+          results.indexedDB = true;
+        }
+
+        // Count remaining sessions for logging
+        const remainingSessions = await this.getAllIndexedDBValues(STORAGE_CONFIG.IDB_STORE_SESSIONS);
+        console.log('[Storage Persistence] Total remaining sessions in IndexedDB:', remainingSessions.length);
+        console.log('[Storage Persistence] ================================================');
+
+        console.log('[Storage Persistence] ✓ LAYER 2 COMPLETE: Delete operation finished for:', sessionId);
+
+      } catch (error) {
+        console.error('[Storage Persistence] ✗ Failed to delete from IndexedDB:', error);
+        results.errors.push({ layer: 'indexedDB', error: error.message });
+        // Don't mark storage as unhealthy for individual delete failures
+      }
+    } else {
+      console.warn('[Storage Persistence] Skipping IndexedDB (unhealthy or not initialized)');
+    }
+
+    // Log final results
+    console.log('[Storage Persistence] ================================================');
+    console.log('[Storage Persistence] deleteSession() COMPLETE');
+    const successCount = [results.local, results.indexedDB].filter(Boolean).length;
+    console.log(`[Storage Persistence] Success: Deleted from ${successCount}/2 storage layers`);
+    console.log('[Storage Persistence] Results:', {
+      local: results.local ? '✓ SUCCESS' : '✗ FAILED',
+      indexedDB: results.indexedDB ? '✓ SUCCESS' : '✗ FAILED',
+      errors: results.errors.length
+    });
+
+    if (results.errors.length > 0) {
+      console.error('[Storage Persistence] ⚠️ Errors during deletion:', results.errors);
+    } else {
+      console.log('[Storage Persistence] ✓ No errors - session fully deleted');
+    }
+
+    console.log('[Storage Persistence] ================================================');
+
+    return results;
+  }
+
+  /**
+   * Get all session IDs from IndexedDB (for orphan detection)
+   * @returns {Promise<Array<string>>} Array of session IDs
+   */
+  async getAllSessionIds() {
+    try {
+      if (!this.db) {
+        console.warn('[Storage Persistence] Database not initialized');
+        return [];
+      }
+
+      const sessions = await this.getAllIndexedDBValues(STORAGE_CONFIG.IDB_STORE_SESSIONS);
+      const sessionIds = sessions.map(session => session.id).filter(Boolean);
+
+      console.log('[Storage Persistence] Found', sessionIds.length, 'sessions in IndexedDB');
+      return sessionIds;
+
+    } catch (error) {
+      console.error('[Storage Persistence] Error getting all session IDs:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get count of orphaned sessions in IndexedDB
+   * (sessions in IndexedDB but not in chrome.storage.local)
+   * @returns {Promise<number>} Count of orphaned sessions
+   */
+  async getOrphanSessionCount() {
+    try {
+      if (!this.db || !this.isInitialized) {
+        console.warn('[Storage Persistence] Database not initialized');
+        return 0;
+      }
+
+      console.log('[Storage Persistence] Calculating orphan count...');
+
+      // Get all session IDs from IndexedDB
+      const indexedDBSessionIds = await this.getAllSessionIds();
+      console.log('[Storage Persistence] IndexedDB has', indexedDBSessionIds.length, 'sessions');
+
+      // Get valid session IDs from chrome.storage.local
+      const localData = await new Promise((resolve, reject) => {
+        chrome.storage.local.get(['sessions'], (result) => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve(result);
+          }
+        });
+      });
+
+      const validSessionIds = localData.sessions ? Object.keys(localData.sessions) : [];
+      console.log('[Storage Persistence] chrome.storage.local has', validSessionIds.length, 'valid sessions');
+
+      // Find orphans (in IndexedDB but not in valid sessions)
+      const orphans = indexedDBSessionIds.filter(id => !validSessionIds.includes(id));
+
+      console.log('[Storage Persistence] ✓ Found', orphans.length, 'orphaned sessions');
+      console.log('[Storage Persistence] Orphan IDs:', orphans);
+
+      return orphans.length;
+    } catch (error) {
+      console.error('[Storage Persistence] Error getting orphan count:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Clean up orphaned sessions from IndexedDB
+   * (sessions in IndexedDB but not in chrome.storage.local)
+   * @returns {Promise<number>} Number of orphans deleted
+   */
+  async cleanupOrphanSessions() {
+    try {
+      if (!this.db || !this.isInitialized) {
+        console.warn('[Storage Persistence] Database not initialized');
+        return 0;
+      }
+
+      console.log('[Storage Persistence] ================================================');
+      console.log('[Storage Persistence] Starting orphan cleanup...');
+      console.log('[Storage Persistence] ================================================');
+
+      // Get all session IDs from IndexedDB
+      const indexedDBSessionIds = await this.getAllSessionIds();
+      console.log('[Storage Persistence] IndexedDB has', indexedDBSessionIds.length, 'sessions');
+
+      // Get valid session IDs from chrome.storage.local
+      const localData = await new Promise((resolve, reject) => {
+        chrome.storage.local.get(['sessions'], (result) => {
+          if (chrome.runtime.lastError) {
+            reject(chrome.runtime.lastError);
+          } else {
+            resolve(result);
+          }
+        });
+      });
+
+      const validSessionIds = localData.sessions ? Object.keys(localData.sessions) : [];
+      console.log('[Storage Persistence] chrome.storage.local has', validSessionIds.length, 'valid sessions');
+
+      // Find orphans
+      const orphans = indexedDBSessionIds.filter(id => !validSessionIds.includes(id));
+
+      console.log('[Storage Persistence] Found', orphans.length, 'orphaned sessions');
+
+      if (orphans.length === 0) {
+        console.log('[Storage Persistence] ✓ No orphans to clean');
+        console.log('[Storage Persistence] ================================================');
+        return 0;
+      }
+
+      console.log('[Storage Persistence] Orphan session IDs:', orphans);
+
+      // Delete each orphan from IndexedDB ONLY (not from chrome.storage.local)
+      let deletedCount = 0;
+      let failedCount = 0;
+
+      for (const orphanId of orphans) {
+        console.log('[Storage Persistence] ----------------------------------------');
+        console.log('[Storage Persistence] Deleting orphan:', orphanId);
+
+        try {
+          // Delete from sessions store
+          await new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([STORAGE_CONFIG.IDB_STORE_SESSIONS], 'readwrite');
+            const store = transaction.objectStore(STORAGE_CONFIG.IDB_STORE_SESSIONS);
+            const request = store.delete(orphanId);
+
+            transaction.oncomplete = () => {
+              console.log(`[Storage Persistence] ✓ Deleted ${orphanId} from sessions store`);
+              resolve();
+            };
+
+            transaction.onerror = () => {
+              console.error(`[Storage Persistence] ✗ Transaction error deleting ${orphanId}:`, transaction.error);
+              reject(transaction.error);
+            };
+
+            request.onerror = () => {
+              console.error(`[Storage Persistence] ✗ Request error deleting ${orphanId}:`, request.error);
+            };
+          });
+
+          // Delete from cookies store
+          await new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([STORAGE_CONFIG.IDB_STORE_COOKIES], 'readwrite');
+            const store = transaction.objectStore(STORAGE_CONFIG.IDB_STORE_COOKIES);
+            const request = store.delete(orphanId);
+
+            transaction.oncomplete = () => {
+              console.log(`[Storage Persistence] ✓ Deleted ${orphanId} from cookies store`);
+              resolve();
+            };
+
+            transaction.onerror = () => {
+              console.error(`[Storage Persistence] ✗ Transaction error deleting cookies for ${orphanId}:`, transaction.error);
+              reject(transaction.error);
+            };
+
+            request.onerror = () => {
+              console.error(`[Storage Persistence] ✗ Request error deleting cookies for ${orphanId}:`, request.error);
+            };
+          });
+
+          // Clean up tab mappings and metadata
+          try {
+            const tabMappings = await this.getIndexedDBValue(STORAGE_CONFIG.IDB_STORE_TABS, 'mappings');
+            if (tabMappings) {
+              let removedMappings = 0;
+              Object.keys(tabMappings).forEach(tabId => {
+                if (tabMappings[tabId] === orphanId) {
+                  delete tabMappings[tabId];
+                  removedMappings++;
+                }
+              });
+              if (removedMappings > 0) {
+                await this.setIndexedDBValue(STORAGE_CONFIG.IDB_STORE_TABS, 'mappings', tabMappings);
+                console.log(`[Storage Persistence] ✓ Cleaned ${removedMappings} tab mappings for ${orphanId}`);
+              }
+            }
+
+            const tabMetadata = await this.getIndexedDBValue(STORAGE_CONFIG.IDB_STORE_TABS, 'tabMetadata');
+            if (tabMetadata) {
+              let removedMetadata = 0;
+              Object.keys(tabMetadata).forEach(tabId => {
+                if (tabMetadata[tabId] && tabMetadata[tabId].sessionId === orphanId) {
+                  delete tabMetadata[tabId];
+                  removedMetadata++;
+                }
+              });
+              if (removedMetadata > 0) {
+                await this.setIndexedDBValue(STORAGE_CONFIG.IDB_STORE_TABS, 'tabMetadata', tabMetadata);
+                console.log(`[Storage Persistence] ✓ Cleaned ${removedMetadata} tab metadata entries for ${orphanId}`);
+              }
+            }
+          } catch (error) {
+            console.warn(`[Storage Persistence] Non-critical error cleaning tab data for ${orphanId}:`, error);
+          }
+
+          deletedCount++;
+          console.log(`[Storage Persistence] ✓ Orphan ${orphanId} fully deleted (${deletedCount}/${orphans.length})`);
+
+        } catch (error) {
+          failedCount++;
+          console.error(`[Storage Persistence] ✗ Failed to delete orphan ${orphanId}:`, error);
+        }
+      }
+
+      console.log('[Storage Persistence] ================================================');
+      console.log('[Storage Persistence] Orphan cleanup complete');
+      console.log('[Storage Persistence] Successfully deleted:', deletedCount, '/', orphans.length);
+      console.log('[Storage Persistence] Failed:', failedCount, '/', orphans.length);
+      console.log('[Storage Persistence] ================================================');
+
+      // Verify cleanup
+      const remainingSessions = await this.getAllSessionIds();
+      console.log('[Storage Persistence] ✓ Verification: IndexedDB now has', remainingSessions.length, 'sessions');
+
+      return deletedCount;
+    } catch (error) {
+      console.error('[Storage Persistence] Error cleaning orphans:', error);
+      return 0;
+    }
+  }
+
+  /**
    * Clear all data (for debugging)
    * @returns {Promise<void>}
    */
   async clearAllData() {
+    console.log('[Storage Persistence] ================================================');
+    console.log('[Storage Persistence] clearAllData() called');
     console.log('[Storage Persistence] Clearing all data from all layers...');
+    console.log('[Storage Persistence] ================================================');
 
     // Clear chrome.storage.local
+    console.log('[Storage Persistence] Clearing chrome.storage.local...');
     await new Promise(resolve => {
       chrome.storage.local.clear(() => {
-        console.log('[Storage Persistence] Cleared chrome.storage.local');
+        console.log('[Storage Persistence] ✓ Cleared chrome.storage.local');
         resolve();
       });
     });
 
     // Clear IndexedDB
     if (this.db) {
+      console.log('[Storage Persistence] Clearing IndexedDB object stores...');
       const stores = [
         STORAGE_CONFIG.IDB_STORE_SESSIONS,
         STORAGE_CONFIG.IDB_STORE_COOKIES,
@@ -814,18 +1404,65 @@ class StoragePersistenceManager {
       ];
 
       for (const storeName of stores) {
-        await new Promise((resolve, reject) => {
-          const transaction = this.db.transaction([storeName], 'readwrite');
-          const store = transaction.objectStore(storeName);
-          const request = store.clear();
-          request.onsuccess = () => resolve();
-          request.onerror = () => reject(request.error);
-        });
+        try {
+          await new Promise((resolve, reject) => {
+            const transaction = this.db.transaction([storeName], 'readwrite');
+            const store = transaction.objectStore(storeName);
+            const request = store.clear();
+
+            transaction.oncomplete = () => {
+              console.log(`[Storage Persistence] ✓ Cleared ${storeName}`);
+              resolve();
+            };
+
+            transaction.onerror = () => {
+              console.error(`[Storage Persistence] ✗ Error clearing ${storeName}:`, transaction.error);
+              reject(transaction.error);
+            };
+
+            request.onerror = () => {
+              console.error(`[Storage Persistence] ✗ Request error clearing ${storeName}:`, request.error);
+            };
+          });
+        } catch (error) {
+          console.error(`[Storage Persistence] Failed to clear ${storeName}:`, error);
+        }
       }
-      console.log('[Storage Persistence] Cleared IndexedDB');
+      console.log('[Storage Persistence] ✓ Cleared all IndexedDB object stores');
+
+      // Close database connection
+      console.log('[Storage Persistence] Closing database connection...');
+      try {
+        this.db.close();
+        console.log('[Storage Persistence] ✓ Database connection closed');
+      } catch (error) {
+        console.error('[Storage Persistence] Error closing database:', error);
+      }
+
+      // Reset database reference
+      this.db = null;
+    } else {
+      console.log('[Storage Persistence] IndexedDB not initialized, skipping');
     }
 
-    console.log('[Storage Persistence] ✓ All data cleared');
+    // Reset initialization state
+    console.log('[Storage Persistence] Resetting initialization state...');
+    this.isInitialized = false;
+    this.initPromise = null;
+    this.storageHealth = {
+      local: true,
+      indexedDB: true,
+      sync: true
+    };
+    console.log('[Storage Persistence] ✓ Initialization state reset');
+
+    console.log('[Storage Persistence] ================================================');
+    console.log('[Storage Persistence] ✅ ALL DATA CLEARED');
+    console.log('[Storage Persistence]   - chrome.storage.local: cleared');
+    console.log('[Storage Persistence]   - IndexedDB: cleared');
+    console.log('[Storage Persistence]   - Database connection: closed');
+    console.log('[Storage Persistence]   - Initialization state: reset');
+    console.log('[Storage Persistence] ================================================');
   }
 
   /**
@@ -833,14 +1470,25 @@ class StoragePersistenceManager {
    * @returns {Promise<Object>}
    */
   async getStorageStats() {
+    console.log('[Storage Stats] ================================================');
+    console.log('[Storage Stats] Getting storage statistics...');
+    console.log('[Storage Stats] Current state:');
+    console.log('[Storage Stats]   - isInitialized:', this.isInitialized);
+    console.log('[Storage Stats]   - db exists:', !!this.db);
+    console.log('[Storage Stats]   - health:', JSON.stringify(this.storageHealth));
+    console.log('[Storage Stats] ================================================');
+
     const stats = {
       health: this.storageHealth,
       lastHealthCheck: this.lastHealthCheck,
+      isInitialized: this.isInitialized,
+      dbConnected: !!this.db,
       sources: {}
     };
 
     // Check chrome.storage.local
     try {
+      console.log('[Storage Stats] Checking chrome.storage.local...');
       const localData = await new Promise(resolve => {
         chrome.storage.local.get(['sessions', 'cookieStore', 'tabToSession'], resolve);
       });
@@ -850,13 +1498,17 @@ class StoragePersistenceManager {
         tabs: Object.keys(localData.tabToSession || {}).length,
         cookieSessions: Object.keys(localData.cookieStore || {}).length
       };
+      console.log('[Storage Stats] ✓ chrome.storage.local:', stats.sources.local);
     } catch (error) {
+      console.error('[Storage Stats] ✗ chrome.storage.local error:', error);
       stats.sources.local = { available: false, error: error.message };
     }
 
     // Check IndexedDB
     try {
+      console.log('[Storage Stats] Checking IndexedDB...');
       if (this.db) {
+        console.log('[Storage Stats] Database connection exists, querying...');
         const sessions = await this.getAllIndexedDBValues(STORAGE_CONFIG.IDB_STORE_SESSIONS);
         const metadata = await this.getIndexedDBValue(STORAGE_CONFIG.IDB_STORE_METADATA, 'lastSaved');
         stats.sources.indexedDB = {
@@ -864,12 +1516,30 @@ class StoragePersistenceManager {
           sessions: sessions.length,
           lastSaved: metadata ? metadata.timestamp : null
         };
+        console.log('[Storage Stats] ✓ IndexedDB:', stats.sources.indexedDB);
       } else {
-        stats.sources.indexedDB = { available: false, error: 'Not initialized' };
+        console.warn('[Storage Stats] ✗ IndexedDB database not initialized');
+        stats.sources.indexedDB = {
+          available: false,
+          error: 'Database not initialized',
+          isInitialized: this.isInitialized,
+          initPromiseExists: !!this.initPromise
+        };
       }
     } catch (error) {
-      stats.sources.indexedDB = { available: false, error: error.message };
+      console.error('[Storage Stats] ✗ IndexedDB error:', error);
+      stats.sources.indexedDB = {
+        available: false,
+        error: error.message,
+        isInitialized: this.isInitialized,
+        dbExists: !!this.db
+      };
     }
+
+    console.log('[Storage Stats] ================================================');
+    console.log('[Storage Stats] Statistics complete');
+    console.log('[Storage Stats] Result:', JSON.stringify(stats, null, 2));
+    console.log('[Storage Stats] ================================================');
 
     return stats;
   }

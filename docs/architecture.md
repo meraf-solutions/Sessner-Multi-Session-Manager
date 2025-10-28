@@ -1,7 +1,7 @@
 # System Architecture
 ## Sessner – Multi-Session Manager
 
-**Last Updated:** 2025-10-25
+**Last Updated:** 2025-10-28
 **Extension Version:** 3.0
 **Architecture Pattern:** SessionBox-Style Isolation
 
@@ -74,7 +74,8 @@ Sessner is a SessionBox-style multi-session browser extension that creates **com
 ┌──────────────────────────────────────────────────────────────────┐
 │                    Persistence Layer                              │
 │  • chrome.storage.local (10MB quota)                             │
-│  • sessionStore (sessions, cookies, tab mappings)                │
+│  • IndexedDB (session data, cookies, metadata)                   │
+│  • Storage Persistence Manager (dual-layer sync)                 │
 │  • License data (device ID, tier, features)                      │
 └──────────────────────────────────────────────────────────────────┘
                             ↕
@@ -790,15 +791,40 @@ function persistSessions(immediate = false) {
 
 ## Persistence Architecture
 
+### Dual-Layer Storage System
+
+**Architecture**: Storage Persistence Manager (2025-10-28)
+
+The extension uses a dual-layer persistence system for reliability and performance:
+
+**Layer 1: chrome.storage.local** (Primary)
+- Fast, synchronous access
+- 10MB quota
+- Automatic browser-level persistence
+- Session metadata, cookies, tab mappings
+
+**Layer 2: IndexedDB** (Secondary)
+- Asynchronous, transactional
+- Larger capacity (based on available disk space)
+- Advanced querying capabilities
+- Complete session state backup
+
+**Synchronization**: Storage Persistence Manager maintains consistency between both layers through:
+- Debounced writes (1 second delay for batch operations)
+- Immediate writes for critical operations (session creation/deletion)
+- Automatic fallback to cached data if one layer fails
+
 ### Storage Quota Management
 
 **chrome.storage.local Quota**: 10MB
 
+**IndexedDB Quota**: Dynamic (based on available disk space, typically 50%+ of free space)
+
 **Typical Usage**:
-- 10 sessions with metadata: ~10KB
-- 1000 cookies: ~500KB
-- License data: ~5KB
-- **Total**: <1MB (well under quota)
+- 10 sessions with metadata: ~10KB (both layers)
+- 1000 cookies: ~500KB (both layers)
+- License data: ~5KB (chrome.storage.local only)
+- **Total per layer**: <1MB (well under quota)
 
 **Quota Monitoring**:
 ```javascript
@@ -806,6 +832,22 @@ chrome.storage.local.getBytesInUse(null, (bytesInUse) => {
   const quotaPercent = (bytesInUse / 10485760) * 100;
   console.log(`Storage usage: ${quotaPercent.toFixed(2)}%`);
 });
+```
+
+### Storage Reinitialization (2025-10-28)
+
+**Critical Fix**: After clearing all storage or closing the IndexedDB connection, the Storage Persistence Manager must be properly reinitialized to restore functionality.
+
+**Reinitialization Process**:
+1. Close existing database connection
+2. Reset initialization flags (`isInitialized = false`, `db = null`, `initPromise = null`)
+3. Call `initialize(forceReinit = true)` to open fresh connection
+4. Recreate object stores if needed
+5. Resume health monitoring
+
+**Force Reinitialization**: The `initialize(forceReinit)` parameter ensures complete state reset:
+```javascript
+await storagePersistenceManager.initialize(true); // Force fresh initialization
 ```
 
 ---
