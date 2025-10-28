@@ -1199,8 +1199,44 @@ async function loadPersistedSessions() {
       });
     });
 
+    let preference = prefs.autoRestorePreference || {};
+
+    // CLEANUP STALE DOWNGRADE METADATA: If user is Enterprise and has stale downgrade metadata, clean it
+    if (tier === 'enterprise' && preference.disabledReason === 'tier_downgrade') {
+      console.log('[Session Restore] ⚠ Detected stale downgrade metadata for Enterprise user');
+      console.log('[Session Restore] Cleaning up stale metadata from previous tier downgrade...');
+
+      // Keep only the essential fields
+      const cleanPreference = {
+        enabled: preference.enabled !== false, // Default to true for Enterprise if not explicitly false
+        dontShowNotice: preference.dontShowNotice || false
+      };
+
+      // Log the cleanup
+      console.log('[Session Restore] Before cleanup:', preference);
+      console.log('[Session Restore] After cleanup:', cleanPreference);
+
+      // Save cleaned preference back to storage
+      try {
+        await new Promise((resolve, reject) => {
+          chrome.storage.local.set({ autoRestorePreference: cleanPreference }, () => {
+            if (chrome.runtime.lastError) {
+              reject(chrome.runtime.lastError);
+            } else {
+              resolve();
+            }
+          });
+        });
+        console.log('[Session Restore] ✓ Stale downgrade metadata cleaned successfully');
+        preference = cleanPreference; // Use cleaned preference
+      } catch (cleanupError) {
+        console.error('[Session Restore] ✗ Error saving cleaned preference:', cleanupError);
+        // Continue with uncleaned preference (fail gracefully)
+      }
+    }
+
     // Boolean coercion for safety (handles corrupted preferences)
-    autoRestoreEnabled = Boolean(prefs.autoRestorePreference?.enabled);
+    autoRestoreEnabled = Boolean(preference.enabled);
     console.log('[Session Restore] Auto-restore preference:', autoRestoreEnabled);
   } catch (error) {
     console.error('[Session Restore] Error loading auto-restore preference:', error);
@@ -3305,8 +3341,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
           });
 
-          const prefs = result.autoRestorePreference || {};
-          console.log('[Auto-Restore] Get preference:', prefs);
+          let prefs = result.autoRestorePreference || {};
+          console.log('[Auto-Restore] Get preference (before cleanup):', prefs);
+
+          // CLEANUP STALE DOWNGRADE METADATA: If user is Enterprise and has stale downgrade metadata, clean it
+          const tier = licenseManager.getTier();
+          if (tier === 'enterprise' && prefs.disabledReason === 'tier_downgrade') {
+            console.log('[Auto-Restore] ⚠ Detected stale downgrade metadata for Enterprise user');
+            console.log('[Auto-Restore] Cleaning up stale metadata from previous tier downgrade...');
+
+            // Keep only the essential fields
+            const cleanPreference = {
+              enabled: prefs.enabled !== false, // Default to true for Enterprise if not explicitly false
+              dontShowNotice: prefs.dontShowNotice || false
+            };
+
+            // Log the cleanup
+            console.log('[Auto-Restore] Before cleanup:', prefs);
+            console.log('[Auto-Restore] After cleanup:', cleanPreference);
+
+            // Save cleaned preference back to storage
+            try {
+              await new Promise((resolve, reject) => {
+                chrome.storage.local.set({ autoRestorePreference: cleanPreference }, () => {
+                  if (chrome.runtime.lastError) {
+                    reject(chrome.runtime.lastError);
+                  } else {
+                    resolve();
+                  }
+                });
+              });
+              console.log('[Auto-Restore] ✓ Stale downgrade metadata cleaned successfully');
+              prefs = cleanPreference; // Use cleaned preference
+            } catch (cleanupError) {
+              console.error('[Auto-Restore] ✗ Error saving cleaned preference:', cleanupError);
+              // Continue with uncleaned preference (fail gracefully)
+            }
+          }
+
+          console.log('[Auto-Restore] Get preference (after cleanup):', prefs);
 
           sendResponse({
             success: true,
@@ -3331,7 +3404,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
           });
 
-          const prefs = currentPrefs.autoRestorePreference || {};
+          let prefs = currentPrefs.autoRestorePreference || {};
+
+          // CLEANUP STALE DOWNGRADE METADATA: If user is Enterprise and has stale downgrade metadata, clean it first
+          const tier = licenseManager.getTier();
+          if (tier === 'enterprise' && prefs.disabledReason === 'tier_downgrade') {
+            console.log('[Auto-Restore] ⚠ Detected stale downgrade metadata for Enterprise user');
+            console.log('[Auto-Restore] Cleaning stale metadata before updating preference...');
+
+            // Keep only essential fields, removing all downgrade metadata
+            prefs = {
+              enabled: prefs.enabled !== false, // Default to true for Enterprise if not explicitly false
+              dontShowNotice: prefs.dontShowNotice || false
+            };
+
+            console.log('[Auto-Restore] ✓ Stale metadata cleaned');
+          }
 
           // Update preferences
           if (message.hasOwnProperty('enabled')) {
@@ -3344,9 +3432,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             console.log('[Auto-Restore] "Don\'t show notice" set to:', message.dontShowNotice);
           }
 
+          // Ensure we only save the essential fields (no stale metadata)
+          const cleanPrefs = {
+            enabled: prefs.enabled || false,
+            dontShowNotice: prefs.dontShowNotice || false
+          };
+
           // Save to storage
           await new Promise((resolve, reject) => {
-            chrome.storage.local.set({ autoRestorePreference: prefs }, () => {
+            chrome.storage.local.set({ autoRestorePreference: cleanPrefs }, () => {
               if (chrome.runtime.lastError) {
                 reject(new Error(chrome.runtime.lastError.message));
               } else {
@@ -3355,8 +3449,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
           });
 
-          console.log('[Auto-Restore] Preferences saved:', prefs);
-          sendResponse({ success: true, preference: prefs });
+          console.log('[Auto-Restore] Preferences saved:', cleanPrefs);
+          sendResponse({ success: true, preference: cleanPrefs });
         } catch (error) {
           console.error('[Auto-Restore] Error setting preference:', error);
           sendResponse({ success: false, error: error.message });

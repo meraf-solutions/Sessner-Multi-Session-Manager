@@ -21,6 +21,7 @@ This document provides comprehensive testing procedures for the auto-restore tie
 6. **Notification listener singleton** - Prevents memory leaks from duplicate listeners
 7. **Tier flapping protection** - Debounces rapid tier changes (5-second delay)
 8. **Stale session cleanup fix** - Eliminates race condition for Free/Premium tier cleanup
+9. **Stale metadata cleanup fix** - Automatically removes stale downgrade metadata when upgrading to Enterprise
 
 ---
 
@@ -933,11 +934,122 @@ The debouncing mechanism successfully prevents multiple notifications and ensure
 - ✅ Console logs: `[Migration] ⚠ Auto-restore is enabled for non-Enterprise user (bug)`
 - ✅ Console logs: `[Migration] ✓ Auto-restore preference cleared for Free/Premium user`
 
-**Test Result:** ⬜ PASS / ⬜ FAIL
+**Test Result:** ✅ PASS
 
 **Comments:**
 ```
-[Your comments here]
+SETUP (Before Extension Reload):
+Console verification:
+chrome.storage.local.get(['autoRestorePreference', 'licenseData'], (data) => {
+  console.log('Tier:', data.licenseData?.tier || 'free');
+  console.log('Auto-restore enabled:', data.autoRestorePreference?.enabled);
+});
+
+Output:
+Tier: free
+Auto-restore enabled: true  ← BUG SIMULATED: Free user with auto-restore enabled
+
+MIGRATION (Extension Reload):
+chrome.storage.local.set({
+  autoRestorePreference: { enabled: true }
+}, () => {
+  console.log('✓ Manual preference set');
+});
+
+--> Reloaded extension (Ctrl+R on edge://extensions/)
+
+RESULTS (After Extension Reload):
+chrome.storage.local.get(['autoRestorePreference'], (data) => {
+  console.log('=== MIGRATION RESULTS ===');
+  console.log('Preference:', data.autoRestorePreference);
+});
+
+Output:
+=== MIGRATION RESULTS ===
+Preference: {
+  disabledAt: 1761683244861,
+  disabledReason: 'migration_tier_restriction',  ← CORRECT
+  dontShowNotice: false,
+  enabled: false,  ← CORRECTED TO FALSE
+  previouslyEnabled: true  ← PRESERVED FOR DEBUGGING
+}
+
+VERIFICATION:
+✅ Migration runs on extension update (extension reload)
+✅ Auto-restore preference disabled (enabled: false)
+✅ Preference metadata: disabledReason = 'migration_tier_restriction'
+✅ Previous state preserved: previouslyEnabled = true
+✅ Timestamp recorded: disabledAt = 1761683244861
+✅ Notice preference preserved: dontShowNotice = false
+
+KEY FINDING:
+The migration logic successfully detects and corrects invalid auto-restore preferences
+for Free/Premium users. This prevents the bug where non-Enterprise users could
+somehow enable auto-restore (e.g., through manual storage manipulation or previous bugs).
+
+MIGRATION LOGIC VALIDATION:
+- Free tier user with enabled=true → Detected and corrected
+- Metadata preserved for debugging (previouslyEnabled, disabledReason)
+- Clean migration without data loss
+- No console errors during migration
+
+FINAL VERDICT: ✅ PASS
+Migration logic working perfectly. Invalid preferences are correctly cleared for Free/Premium users.
+
+---
+
+ADDITIONAL FINDING (Post-Test Observation) - ✅ **FIXED**:
+After activating Enterprise license following a downgrade, the preference previously showed stale metadata:
+```javascript
+{
+  disabledAt: 1761683815377,
+  disabledReason: 'tier_downgrade',  ← STALE METADATA (NOW CLEANED)
+  enabled: true,
+  newTier: 'free',  ← STALE: Should be 'enterprise' (NOW CLEANED)
+  previousTier: 'enterprise'  ← STALE (NOW CLEANED)
+}
+```
+
+**ISSUE:** Stale downgrade metadata not cleared on upgrade
+- When Free/Premium → Enterprise upgrade occurred
+- Downgrade metadata persisted incorrectly
+- Caused incorrect "upgrade to enable" notifications for Enterprise users
+
+**FIX IMPLEMENTED (2025-10-28):**
+Added automatic metadata cleanup in 3 strategic locations:
+
+1. **On browser startup** - `loadPersistedSessions()` (background.js:1227-1236)
+2. **On preference read** - `getAutoRestorePreference` handler (background.js:3347-3380)
+3. **On preference save** - `setAutoRestorePreference` handler (background.js:3409-3439)
+
+**Cleanup Logic:**
+```javascript
+// Detect Enterprise tier + stale downgrade metadata
+if (tier === 'enterprise' && preference.disabledReason === 'tier_downgrade') {
+  console.log('[Auto-Restore] ⚠ Detected stale downgrade metadata for Enterprise user');
+
+  // Clean to essential fields only
+  const cleanPreference = {
+    enabled: preference.enabled !== false, // Default to true for Enterprise
+    dontShowNotice: preference.dontShowNotice || false
+  };
+
+  // Save cleaned preference (removes: disabledAt, disabledReason, newTier, previousTier, previouslyEnabled)
+  await chrome.storage.local.set({ autoRestorePreference: cleanPreference });
+
+  console.log('[Auto-Restore] ✓ Stale downgrade metadata cleaned successfully');
+}
+```
+
+**Expected Result After Fix:**
+```javascript
+{
+  enabled: true,
+  dontShowNotice: false
+}
+```
+
+**STATUS:** ✅ **RESOLVED** - Automatic cleanup prevents stale metadata accumulation
 ```
 
 ---
@@ -958,11 +1070,11 @@ The debouncing mechanism successfully prevents multiple notifications and ensure
 - ✅ Premium tier: Auto-restore section HIDDEN
 - ✅ Enterprise tier: Auto-restore section VISIBLE with toggle
 
-**Test Result:** ⬜ PASS / ⬜ FAIL
+**Test Result:** ✅ PASS
 
 **Comments:**
 ```
-[Your comments here]
+Works perfectly.
 ```
 
 ---
@@ -984,11 +1096,11 @@ The debouncing mechanism successfully prevents multiple notifications and ensure
 - ✅ "Upgrade to Enterprise →" link present
 - ✅ Clicking link opens popup-license.html
 
-**Test Result:** ⬜ PASS / ⬜ FAIL
+**Test Result:** ✅ PASS
 
 **Comments:**
 ```
-[Your comments here]
+Works perfectly.
 ```
 
 ---
@@ -1006,11 +1118,11 @@ The debouncing mechanism successfully prevents multiple notifications and ensure
 - ✅ Notification dismissed automatically
 - ✅ No duplicate tabs opened (singleton listener)
 
-**Test Result:** ⬜ PASS / ⬜ FAIL
+**Test Result:** ✅ PASS
 
 **Comments:**
 ```
-[Your comments here]
+Works perfectly.
 ```
 
 ---
