@@ -131,6 +131,19 @@ const initializationManager = {
    * Run complete initialization sequence
    */
   async initialize() {
+    // Prevent duplicate initialization - if already READY or in progress, skip
+    if (this.currentState === this.STATES.READY) {
+      console.log('[INIT] Already initialized and ready, skipping duplicate initialization');
+      return;
+    }
+
+    // If already initializing, wait for completion instead of starting new initialization
+    if (this.currentState !== this.STATES.LOADING && this.currentState !== this.STATES.ERROR) {
+      console.log('[INIT] Initialization already in progress (state:', this.currentState, '), waiting for completion...');
+      await this.waitForReady();
+      return;
+    }
+
     try {
       console.log('[INIT] ========================================');
       console.log('[INIT] Starting extension initialization...');
@@ -202,6 +215,11 @@ const initializationManager = {
       loadPersistedSessions();
 
       console.log('[INIT] ✓ Sessions loaded successfully');
+
+      // Phase 3.5: Detect Edge Browser Restore (Free/Premium only)
+      // Use async pattern with retry logic (similar to Enterprise auto-restore)
+      // No await - let detection run in background without blocking initialization
+      detectEdgeBrowserRestore();
 
       // Phase 4: Run Cleanup (only after license ready!)
       this.setState(this.STATES.CLEANUP);
@@ -1146,10 +1164,66 @@ function fallbackPersist(data, mode) {
 
 /**
  * Load persisted sessions from storage (multi-layer)
+ * FEATURE: Auto-Restore (Enterprise-only)
+ * - Free/Premium: Session data retained but tab mappings NOT restored
+ * - Enterprise: Full auto-restore with tab-to-session mappings
  */
 async function loadPersistedSessions() {
+  console.log('[Session Restore] ================================================');
   console.log('[Session Restore] Loading persisted sessions from all storage layers...');
 
+  // ========== STEP 1: Check Tier and Auto-Restore Preference ==========
+  let tier = 'free'; // Default to free tier (fail-safe)
+  let autoRestoreEnabled = false;
+
+  try {
+    // Get current tier from license manager
+    tier = licenseManager.getTier();
+    console.log('[Session Restore] Current tier:', tier);
+  } catch (error) {
+    console.error('[Session Restore] Error getting tier:', error);
+    console.warn('[Session Restore] Defaulting to Free tier (fail-safe)');
+    tier = 'free';
+  }
+
+  // Get auto-restore preference from storage
+  try {
+    const prefs = await new Promise((resolve) => {
+      chrome.storage.local.get(['autoRestorePreference'], (result) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Session Restore] Error reading auto-restore preference:', chrome.runtime.lastError);
+          resolve({ autoRestorePreference: { enabled: false } });
+        } else {
+          resolve(result);
+        }
+      });
+    });
+
+    // Boolean coercion for safety (handles corrupted preferences)
+    autoRestoreEnabled = Boolean(prefs.autoRestorePreference?.enabled);
+    console.log('[Session Restore] Auto-restore preference:', autoRestoreEnabled);
+  } catch (error) {
+    console.error('[Session Restore] Error loading auto-restore preference:', error);
+    autoRestoreEnabled = false;
+  }
+
+  // Determine if auto-restore should execute
+  const shouldAutoRestore = (tier === 'enterprise') && autoRestoreEnabled;
+  console.log('[Session Restore] Should auto-restore:', shouldAutoRestore);
+  console.log('[Session Restore]   - Tier is Enterprise:', tier === 'enterprise');
+  console.log('[Session Restore]   - Auto-restore enabled:', autoRestoreEnabled);
+
+  if (!shouldAutoRestore) {
+    if (tier !== 'enterprise') {
+      console.log('[Session Restore] ⚠ Auto-restore DISABLED: Not Enterprise tier');
+    } else {
+      console.log('[Session Restore] ⚠ Auto-restore DISABLED: Preference not enabled');
+    }
+  } else {
+    console.log('[Session Restore] ✓ Auto-restore ENABLED');
+  }
+
+  // ========== STEP 2: Load Session Data from Storage ==========
   let data = null;
 
   // Try multi-layer storage if available
@@ -1193,9 +1267,11 @@ async function loadPersistedSessions() {
     console.log('[Session Restore] No persisted data found, starting fresh');
     console.log('[Session Restore] Active sessions (with tabs): 0');
     console.log('[Session Restore] Total sessions in storage: 0');
+    console.log('[Session Restore] ================================================');
     return;
   }
 
+  // ========== STEP 3: Restore Session Data (All Tiers) ==========
   // Load sessions and cookieStore temporarily
   const loadedSessions = data.sessions || {};
   const loadedCookieStore = data.cookieStore || {};
@@ -1220,8 +1296,122 @@ async function loadPersistedSessions() {
     }
   });
 
-  // CRITICAL FIX: Add delay to allow Edge to restore tabs before validation
-  // Edge may take 1-3 seconds to restore tabs after browser restart
+  // ========== STEP 4: TIER-BASED SESSION RESTORATION ==========
+
+  if (!shouldAutoRestore) {
+    // ========== FREE/PREMIUM TIER: Immediate Cleanup (No Tab Restoration) ==========
+    console.log('[Session Restore] FREE/PREMIUM TIER: No auto-restore, applying immediate cleanup...');
+
+    // Clear tab mappings immediately (no tabs to restore)
+    sessionStore.tabToSession = {};
+
+    // Cleanup sessions with invalid/missing tabs
+    const sessionsToDelete = [];
+
+    // For Free/Premium: Any session with tabs should be validated
+    // Since we're not restoring tabs, sessions from previous browser session have stale tab IDs
+    // We need to check if those tab IDs still exist in current browser
+
+    // Query current tabs to check if any session tabs still exist
+    const tabs = await new Promise((resolve) => {
+      chrome.tabs.query({}, (result) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Session Restore] Failed to query tabs:', chrome.runtime.lastError);
+          resolve([]);
+        } else {
+          resolve(result || []);
+        }
+      });
+    });
+
+    const existingTabIds = new Set(tabs.map(t => t.id));
+    console.log('[Session Restore] Found', existingTabIds.size, 'existing tabs in browser');
+
+    // Validate each session's tab list
+    Object.keys(loadedSessions).forEach(sessionId => {
+      const session = loadedSessions[sessionId];
+
+      // Ensure session has tabs array
+      if (!session.tabs) {
+        session.tabs = [];
+      }
+
+      // Filter out non-existent tabs (stale tab IDs from before restart)
+      const originalTabCount = session.tabs.length;
+      const validTabs = session.tabs.filter(tabId => existingTabIds.has(tabId));
+
+      if (validTabs.length !== originalTabCount) {
+        const removedCount = originalTabCount - validTabs.length;
+        console.log(`[Session Restore] Session ${sessionId}: Removed ${removedCount} stale tabs (${originalTabCount} -> ${validTabs.length})`);
+        session.tabs = validTabs;
+      }
+
+      // If no valid tabs remain, mark session for deletion
+      if (validTabs.length === 0) {
+        console.log('[Session Restore] Marking empty session for deletion:', sessionId);
+        sessionsToDelete.push(sessionId);
+      }
+    });
+
+    // Delete orphaned sessions (no valid tabs)
+    if (sessionsToDelete.length > 0) {
+      console.log('[Session Restore] Deleting', sessionsToDelete.length, 'orphaned sessions');
+      sessionsToDelete.forEach(sessionId => {
+        console.log('[Session Restore] Deleting session:', sessionId);
+
+        // Clear badges and favicon for all tabs that belonged to this session
+        const session = loadedSessions[sessionId];
+        if (session && session.tabs && session.tabs.length > 0) {
+          session.tabs.forEach(tabId => {
+            console.log(`[Session Restore] Clearing badges for orphaned tab ${tabId}`);
+
+            // Clear extension icon badge
+            clearBadge(tabId);
+
+            // Clear favicon badge by notifying content script to remove overlay
+            chrome.tabs.sendMessage(tabId, {
+              action: 'clearSessionFavicon'
+            }, (response) => {
+              if (chrome.runtime.lastError) {
+                // Tab might not exist or content script not loaded - silent ignore
+                console.log(`[Session Restore] Could not clear favicon for tab ${tabId} (tab may not exist)`);
+              } else {
+                console.log(`[Session Restore] Cleared favicon badge for tab ${tabId}`);
+              }
+            });
+          });
+        }
+
+        delete loadedSessions[sessionId];
+        delete loadedCookieStore[sessionId];
+      });
+    }
+
+    // Apply cleaned data to sessionStore IMMEDIATELY
+    sessionStore.sessions = loadedSessions;
+    sessionStore.cookieStore = loadedCookieStore;
+
+    // Persist cleaned state if we made changes
+    if (sessionsToDelete.length > 0) {
+      console.log('[Session Restore] Persisting cleaned-up state (Free/Premium)...');
+      persistSessions(true);
+    }
+
+    // Log final state
+    const activeCount = getActiveSessionCount();
+    const totalCount = Object.keys(sessionStore.sessions).length;
+
+    console.log('[Session Restore] ✓ FREE/PREMIUM cleanup complete');
+    console.log('[Session Restore] Active sessions (with tabs):', activeCount);
+    console.log('[Session Restore] Total sessions in storage:', totalCount);
+    console.log('[Session Restore] Tier:', tier);
+    console.log('[Session Restore] ================================================');
+
+    return; // Exit early, no need for Enterprise auto-restore logic
+  }
+
+  // ========== ENTERPRISE TIER: Auto-Restore with Tab Matching ==========
+  console.log('[Session Restore] ENTERPRISE TIER: Starting auto-restore with tab matching...');
   console.log('[Session Restore] Waiting for Edge to restore tabs...');
 
   setTimeout(async () => {
@@ -1266,6 +1456,9 @@ async function loadPersistedSessions() {
 
     const existingTabIds = new Set(tabs.map(t => t.id));
     console.log('[Session Restore] Found', existingTabIds.size, 'existing tabs in browser');
+
+    // ========== ENTERPRISE: URL-BASED TAB MAPPING RESTORATION ==========
+    console.log('[Session Restore] ✓ ENTERPRISE AUTO-RESTORE: Restoring tab mappings...');
 
     // CRITICAL FIX: Use URL-based matching for tab restoration
     // Edge assigns NEW tab IDs on restart, so old ID mappings are invalid
@@ -1325,8 +1518,10 @@ async function loadPersistedSessions() {
       console.log(`[Session Restore] ID-based matching: ${idMatchCount} tabs restored (legacy)`);
     }
 
+    console.log('[Session Restore] ✓ ENTERPRISE: Total restored:', Object.keys(restoredMappings).length, 'tab mappings');
+
+    // Apply restored tab mappings
     sessionStore.tabToSession = restoredMappings;
-    console.log('[Session Restore] Total restored:', Object.keys(restoredMappings).length, 'tab mappings');
 
     // Step 2: Clean up sessions - validate tab lists and remove empty sessions
     const sessionsToDelete = [];
@@ -1397,11 +1592,15 @@ async function loadPersistedSessions() {
     console.log('[Session Restore] ✓ Validation complete');
     console.log('[Session Restore] Active sessions (with tabs):', activeCount);
     console.log('[Session Restore] Total sessions in storage:', totalCount);
+    console.log('[Session Restore] Tier:', tier);
+    console.log('[Session Restore] Auto-restore enabled:', shouldAutoRestore);
 
     if (activeCount !== totalCount) {
       console.warn('[Session Restore] WARNING: Active count', activeCount, '!=', 'Total count', totalCount);
       console.warn('[Session Restore] This should not happen after cleanup!');
     }
+
+    console.log('[Session Restore] ================================================');
   }, 2000); // 2 second delay before tab validation
 }
 
@@ -1585,6 +1784,301 @@ async function cleanupExpiredSessions() {
 
   // Clean up orphaned IndexedDB sessions
   await cleanupOrphanedIndexedDBSessions();
+}
+
+// ============= Notification Listener (Singleton) =============
+// CRITICAL FIX: Use single global listener to prevent memory leaks
+// Multiple calls to addListener create duplicate listeners
+let notificationListenerInitialized = false;
+
+function ensureNotificationListener() {
+  if (notificationListenerInitialized) return;
+
+  chrome.notifications.onButtonClicked.addListener((notifId, buttonIndex) => {
+    console.log('[Notification] Button clicked:', notifId, 'button:', buttonIndex);
+
+    if (buttonIndex === 0) {
+      // "Upgrade to Enterprise" / "View Enterprise Plans" button
+      chrome.tabs.create({ url: 'popup-license.html' });
+    }
+    chrome.notifications.clear(notifId);
+  });
+
+  notificationListenerInitialized = true;
+  console.log('[Notification] ✓ Global notification listener initialized');
+}
+
+// ============= Tier Change Debouncing =============
+// CRITICAL FIX: Prevent tier flapping (rapid tier changes)
+// Use debouncing to wait 5 seconds before processing tier change
+let tierChangeTimer = null;
+let lastTierChangeAttempt = null;
+
+function debouncedHandleTierChange(oldTier, newTier) {
+  console.log('[Tier Change Debounce] Tier change request:', oldTier, '->', newTier);
+
+  // Store the change request
+  lastTierChangeAttempt = { oldTier, newTier, timestamp: Date.now() };
+
+  // Clear any existing timer
+  if (tierChangeTimer) {
+    console.log('[Tier Change Debounce] Clearing previous timer (debouncing)');
+    clearTimeout(tierChangeTimer);
+  }
+
+  // Wait 5 seconds before processing
+  tierChangeTimer = setTimeout(() => {
+    console.log('[Tier Change Debounce] Timer expired, processing tier change');
+    handleTierChange(lastTierChangeAttempt.oldTier, lastTierChangeAttempt.newTier);
+    tierChangeTimer = null;
+    lastTierChangeAttempt = null;
+  }, 5000);
+
+  console.log('[Tier Change Debounce] Timer set (5 seconds)');
+}
+
+/**
+ * Handle license tier change (Enterprise → Free/Premium)
+ * Automatically disables auto-restore when user downgrades from Enterprise
+ * @param {string} oldTier - Previous tier ('free', 'premium', or 'enterprise')
+ * @param {string} newTier - New tier ('free', 'premium', or 'enterprise')
+ */
+async function handleTierChange(oldTier, newTier) {
+  // Ensure notification listener is initialized (singleton pattern)
+  ensureNotificationListener();
+
+  console.log('[Tier Change] ================================================');
+  console.log('[Tier Change] Tier changed:', oldTier, '->', newTier);
+
+  // Only handle downgrades from Enterprise
+  if (oldTier !== 'enterprise') {
+    console.log('[Tier Change] Previous tier was not Enterprise, no action needed');
+    console.log('[Tier Change] ================================================');
+    return;
+  }
+
+  if (newTier === 'enterprise') {
+    console.log('[Tier Change] New tier is also Enterprise, no action needed');
+    console.log('[Tier Change] ================================================');
+    return;
+  }
+
+  // Downgrade from Enterprise → Free/Premium
+  console.log('[Tier Change] ⚠ Downgrade detected: Enterprise → ' + newTier.toUpperCase());
+
+  // Check if auto-restore is currently enabled
+  let prefs = null;
+  try {
+    prefs = await new Promise((resolve) => {
+      chrome.storage.local.get(['autoRestorePreference'], (result) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Tier Change] Error reading auto-restore preference:', chrome.runtime.lastError);
+          resolve(null);
+        } else {
+          resolve(result.autoRestorePreference || null);
+        }
+      });
+    });
+  } catch (error) {
+    console.error('[Tier Change] Error loading auto-restore preference:', error);
+    prefs = null;
+  }
+
+  if (!prefs) {
+    console.log('[Tier Change] No auto-restore preference found, nothing to disable');
+    console.log('[Tier Change] ================================================');
+    return;
+  }
+
+  if (!prefs.enabled) {
+    console.log('[Tier Change] Auto-restore already disabled, nothing to change');
+    console.log('[Tier Change] ================================================');
+    return;
+  }
+
+  // Auto-restore is enabled - disable it
+  console.log('[Tier Change] Auto-restore is currently ENABLED');
+  console.log('[Tier Change] Disabling auto-restore due to tier downgrade...');
+
+  try {
+    const updatedPrefs = {
+      enabled: false,
+      dontShowNotice: prefs.dontShowNotice || false,
+      disabledReason: 'tier_downgrade',
+      disabledAt: Date.now(),
+      previousTier: oldTier,
+      newTier: newTier,
+      previouslyEnabled: true  // Track that it was enabled before downgrade
+    };
+
+    await new Promise((resolve, reject) => {
+      chrome.storage.local.set({ autoRestorePreference: updatedPrefs }, () => {
+        if (chrome.runtime.lastError) {
+          console.error('[Tier Change] Error saving auto-restore preference:', chrome.runtime.lastError);
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve();
+        }
+      });
+    });
+
+    console.log('[Tier Change] ✓ Auto-restore preference disabled');
+    console.log('[Tier Change] Reason: tier_downgrade');
+    console.log('[Tier Change] Previous tier:', oldTier);
+    console.log('[Tier Change] New tier:', newTier);
+
+    // Show notification to user
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: 'Auto-Restore Disabled',
+      message: `Your license tier has changed to ${newTier.toUpperCase()}. Auto-restore is only available for Enterprise tier. Your sessions are still saved but won't automatically restore on browser restart.`,
+      priority: 2,
+      buttons: [
+        { title: 'Upgrade to Enterprise' },
+        { title: 'Dismiss' }
+      ]
+    }, (notificationId) => {
+      if (chrome.runtime.lastError) {
+        console.warn('[Tier Change] Notification error:', chrome.runtime.lastError.message);
+      } else {
+        console.log('[Tier Change] ✓ Notification shown to user');
+      }
+    });
+
+    // Note: Notification button handler is registered globally via ensureNotificationListener()
+
+  } catch (error) {
+    console.error('[Tier Change] ✗ Error disabling auto-restore preference:', error);
+  }
+
+  console.log('[Tier Change] ================================================');
+}
+
+/**
+ * Detect Edge browser restore and show upgrade notification for Free/Premium users
+ * This function checks if Edge restored multiple tabs and the user is not on Enterprise tier
+ * If detected, shows a one-time notification prompting upgrade to Enterprise for auto-restore
+ *
+ * TIMING STRATEGY (similar to Enterprise auto-restore):
+ * - Initial delay: 2 seconds (wait for Edge to start restoring tabs)
+ * - Retry logic: Up to 3 attempts with 1-second intervals
+ * - Total max wait: 2s + 1s + 1s = 4 seconds
+ */
+// Flag to ensure Edge restore detection only runs once per browser session
+let edgeRestoreDetectionCompleted = false;
+
+async function detectEdgeBrowserRestore() {
+  // Ensure detection only runs once per browser session
+  if (edgeRestoreDetectionCompleted) {
+    console.log('[Edge Restore Detection] Already completed, skipping duplicate execution');
+    return;
+  }
+
+  edgeRestoreDetectionCompleted = true;
+
+  // Ensure notification listener is initialized (singleton pattern)
+  ensureNotificationListener();
+
+  try {
+    console.log('[Edge Restore Detection] ================================================');
+    console.log('[Edge Restore Detection] Checking for Edge browser restore...');
+
+    // Get current tier
+    let tier = 'free';
+    try {
+      tier = licenseManager.getTier();
+      console.log('[Edge Restore Detection] Current tier:', tier);
+    } catch (error) {
+      console.error('[Edge Restore Detection] Error getting tier:', error);
+      tier = 'free';
+    }
+
+    // Only run for Free/Premium users (Enterprise users already have auto-restore)
+    if (tier === 'enterprise') {
+      console.log('[Edge Restore Detection] User is Enterprise tier, no notification needed');
+      console.log('[Edge Restore Detection] ================================================');
+      return;
+    }
+
+    // Wait 2 seconds for Edge to start restoring tabs (same as Enterprise auto-restore)
+    console.log('[Edge Restore Detection] Waiting 2 seconds for Edge to restore tabs...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Retry logic: Try up to 3 times to detect restored tabs
+    let tabs = [];
+    let attempt = 0;
+    const maxAttempts = 3;
+
+    while (attempt < maxAttempts) {
+      tabs = await new Promise((resolve) => {
+        chrome.tabs.query({}, (result) => {
+          if (chrome.runtime.lastError) {
+            console.error('[Edge Restore Detection] Error querying tabs:', chrome.runtime.lastError);
+            resolve([]);
+          } else {
+            resolve(result || []);
+          }
+        });
+      });
+
+      console.log(`[Edge Restore Detection] Tab query attempt ${attempt + 1}/${maxAttempts}: Found ${tabs.length} tabs`);
+
+      // Check if Edge browser restored multiple tabs
+      // Heuristic: More than 1 tab suggests browser restore (not just new tab page)
+      if (tabs.length > 1) {
+        console.log('[Edge Restore Detection] ✓ Restored tabs detected, breaking out of retry loop');
+        break;
+      }
+
+      // If only 0-1 tabs found and we have more attempts, wait and retry
+      if (attempt < maxAttempts - 1) {
+        console.log(`[Edge Restore Detection] Only ${tabs.length} tab(s) found, waiting 1 second before retry...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      attempt++;
+    }
+
+    // After all retries, check final result
+    const hasRestoredTabs = tabs.length > 1;
+
+    if (!hasRestoredTabs) {
+      console.log('[Edge Restore Detection] No restored tabs detected after', maxAttempts, 'attempts (found', tabs.length, 'tab(s))');
+      console.log('[Edge Restore Detection] User likely started fresh browser session or has single-tab workflow');
+      console.log('[Edge Restore Detection] ================================================');
+      return;
+    }
+
+    console.log('[Edge Restore Detection] ✓ Edge browser restore detected:', tabs.length, 'tabs');
+    console.log('[Edge Restore Detection] User is', tier.toUpperCase(), 'tier (not Enterprise)');
+    console.log('[Edge Restore Detection] Showing upgrade notification...');
+
+    // Show notification prompting upgrade to Enterprise
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: 'icons/icon128.png',
+      title: 'Upgrade to Enterprise for Auto-Restore',
+      message: `Your browser restored ${tabs.length} tabs from the previous session. Upgrade to Enterprise tier to automatically restore your session mappings and badges on browser restart!`,
+      priority: 1,
+      buttons: [
+        { title: 'View Enterprise Plans' },
+        { title: 'Dismiss' }
+      ]
+    }, (notificationId) => {
+      if (chrome.runtime.lastError) {
+        console.warn('[Edge Restore Detection] Notification error:', chrome.runtime.lastError.message);
+      } else {
+        console.log('[Edge Restore Detection] ✓ Notification shown:', notificationId);
+      }
+    });
+
+    // Note: Notification button handler is registered globally via ensureNotificationListener()
+
+    console.log('[Edge Restore Detection] ================================================');
+  } catch (error) {
+    console.error('[Edge Restore Detection] Error:', error);
+  }
 }
 
 // ============= Session Limits Configuration =============
@@ -3039,6 +3533,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       })();
       return true; // Async response
 
+    } else if (message.action === 'tierChanged') {
+      // Handle tier change notification from license-manager.js
+      // This is called when user downgrades from Enterprise or license becomes invalid
+      console.log('[tierChanged] ================================================');
+      console.log('[tierChanged] Tier change notification received');
+      console.log('[tierChanged] Old tier:', message.oldTier);
+      console.log('[tierChanged] New tier:', message.newTier);
+      console.log('[tierChanged] Reason:', message.reason);
+
+      // Use debounced handler to prevent tier flapping
+      debouncedHandleTierChange(message.oldTier, message.newTier);
+
+      console.log('[tierChanged] ✓ Tier change queued (debounced)');
+      console.log('[tierChanged] ================================================');
+      sendResponse({ success: true });
+      return false; // Synchronous response (debouncing is async internally)
+
     } else {
       // Try license message handlers
       if (typeof handleLicenseMessage !== 'undefined') {
@@ -3334,8 +3845,86 @@ chrome.tabs.onCreated.addListener((tab) => {
 /**
  * Initialize on install
  */
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async (details) => {
   console.log('Multi-Session Manager installed/updated');
+  console.log('[onInstalled] Reason:', details.reason);
+
+  // Run migration logic on extension update
+  if (details.reason === 'update') {
+    console.log('[Migration] ================================================');
+    console.log('[Migration] Extension updated - running migration logic');
+
+    try {
+      // Get current tier
+      let tier = 'free';
+      try {
+        // Wait a moment for license manager to be available
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        if (typeof licenseManager !== 'undefined' && licenseManager.getTier) {
+          tier = licenseManager.getTier();
+          console.log('[Migration] Current tier:', tier);
+        }
+      } catch (error) {
+        console.error('[Migration] Error getting tier:', error);
+      }
+
+      // Clear invalid auto-restore preferences for Free/Premium users
+      if (tier !== 'enterprise') {
+        console.log('[Migration] User is not Enterprise tier, checking auto-restore preference');
+
+        const prefs = await new Promise((resolve) => {
+          chrome.storage.local.get(['autoRestorePreference'], (result) => {
+            if (chrome.runtime.lastError) {
+              console.error('[Migration] Error reading preference:', chrome.runtime.lastError);
+              resolve(null);
+            } else {
+              resolve(result.autoRestorePreference || null);
+            }
+          });
+        });
+
+        console.log('[Migration] Current auto-restore preference:', prefs);
+
+        // If auto-restore is enabled (bug from previous versions), disable it
+        if (prefs && prefs.enabled) {
+          console.log('[Migration] ⚠ Auto-restore is enabled for non-Enterprise user (bug)');
+          console.log('[Migration] Disabling auto-restore preference');
+
+          await new Promise((resolve, reject) => {
+            chrome.storage.local.set({
+              autoRestorePreference: {
+                enabled: false,
+                dontShowNotice: prefs.dontShowNotice || false,
+                disabledReason: 'migration_tier_restriction',
+                disabledAt: Date.now(),
+                previouslyEnabled: true
+              }
+            }, () => {
+              if (chrome.runtime.lastError) {
+                console.error('[Migration] Error saving preference:', chrome.runtime.lastError);
+                reject(chrome.runtime.lastError);
+              } else {
+                resolve();
+              }
+            });
+          });
+
+          console.log('[Migration] ✓ Auto-restore preference cleared for Free/Premium user');
+        } else {
+          console.log('[Migration] Auto-restore already disabled or not set');
+        }
+      } else {
+        console.log('[Migration] User is Enterprise tier, no migration needed');
+      }
+
+      console.log('[Migration] ✓ Migration complete');
+      console.log('[Migration] ================================================');
+    } catch (error) {
+      console.error('[Migration] ❌ Migration error:', error);
+    }
+  }
+
   // Trigger full initialization
   initializationManager.initialize().catch(error => {
     console.error('[INIT] Failed to initialize on install:', error);

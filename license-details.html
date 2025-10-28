@@ -401,6 +401,18 @@
       <div class="card">
         <div id="tier-badge" class="tier-badge tier-free">Free Version</div>
 
+        <!-- Auto-Restore Downgrade Warning -->
+        <div id="auto-restore-warning" class="warning" style="display: none;">
+          <strong>⚠️ Auto-Restore Disabled</strong>
+          <p style="margin: 5px 0 0 0;">
+            Your auto-restore feature has been disabled due to license tier change.
+            Auto-restore is only available for Enterprise tier. Your sessions are still saved but won't automatically restore on browser restart.
+          </p>
+          <p style="margin: 8px 0 0 0;">
+            <a href="popup-license.html" style="color: #856404; font-weight: 600;">Upgrade to Enterprise →</a>
+          </p>
+        </div>
+
         <div id="message-container"></div>
 
         <!-- License Status -->

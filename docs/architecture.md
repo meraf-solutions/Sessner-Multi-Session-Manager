@@ -933,43 +933,24 @@ User closes tab → onRemoved fires → Look up session → Remove from mapping
 
 ### 5. Browser Restart Persistence
 
-**Critical Fix (2025-10-25)**: Tab Restoration Race Condition
+**Overview**: Sessions and cookies persist across browser restarts via `chrome.storage.local`.
 
-**Problem**: Microsoft Edge assigns NEW tab IDs on browser restart, causing race condition where extension loads before tabs are restored.
+**Key Architecture Points**:
+- **State Restoration**: `loadPersistedSessions()` loads saved sessions, cookies, and tab mappings
+- **Race Condition Handling**: 2-second delay + retry logic (3 attempts) for Edge tab restoration timing
+- **URL-Based Matching**: Tab IDs change on restart, so tabs matched by URL (domain + path)
+- **Startup Grace Period**: `skipCleanup=true` mode prevents premature session deletion during tab restoration
+- **Delayed Validation**: 10-second delayed cleanup removes truly orphaned sessions
 
-**Updated Flow**:
-```
-Browser starts → Extension loads → chrome.runtime.onStartup fires
-→ Load from chrome.storage.local (with skipCleanup=true)
-→ Wait 2 seconds for Edge to restore tabs
-→ Retry tab query up to 3 times (1-second intervals)
-→ URL-based matching (domain + path, ignore query params)
-→ Restore session-to-tab mappings by URL
-→ Restore badges and favicon colors
-→ Delayed validation (10 seconds) cleans up truly orphaned sessions
-```
+**Tier-Based Behavior (Auto-Restore Feature - 2025-10-28)**:
+- **Free/Premium**: Sessions saved, but tab mappings cleared (no auto-restore)
+- **Enterprise Only**: Tab mappings automatically restored via URL-based matching
+- See: [Session Persistence & Auto-Restore Tier Restrictions](../features_implementation/05_auto_restore_tier_restrictions.md)
 
-**State Changes**:
-- `sessionStore = data.sessionStore` (from storage)
-- Tab URLs stored in `tabMetadata` for matching
-- **URL-based matching** instead of tab ID matching
-- **Startup grace period** prevents premature session deletion
-- Sessions validated AFTER browser restores tabs
-- Only truly orphaned sessions cleaned up
-
-**Timing Strategy**:
-1. **T+0ms**: Extension loads, session data loaded
-2. **T+2000ms**: First tab query attempt (Edge may have restored tabs)
-3. **T+3000ms**: Second retry (if first attempt found 0 tabs)
-4. **T+4000ms**: Third retry (if second attempt found 0 tabs)
-5. **T+10000ms**: Delayed validation cleans up orphaned sessions
-
-**Evidence from Testing**:
-```
-[Session Restore] Tab query attempt 1: Found 0 tabs  ← Edge hasn't restored yet
-[Session Restore] Tab query attempt 2: Found 3 tabs  ← Success after 1 second
-[Session Restore] URL-based matching: 2 tabs restored
-```
+**For Complete Implementation Details**:
+- **Browser Restart Fix**: [Session Persistence - Phase 4](../features_implementation/02_session_persistence.md#phase-4-browser-startup-session-deletion-fix)
+- **Technical Timing**: [Technical Docs - Section 11](technical.md#11-browser-restart-tab-restoration-timing)
+- **Architecture Diagrams**: See feature documentation above
 
 ---
 

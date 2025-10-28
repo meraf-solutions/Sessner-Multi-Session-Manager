@@ -1109,43 +1109,38 @@ tabs.forEach(tab => {
 
 **Decision**: 2-second delay + retry logic + URL-based matching
 
-**Problem** (discovered 2025-10-25):
-- Microsoft Edge assigns NEW tab IDs on browser restart
-- Extension loads before browser restores tabs
-- `chrome.tabs.query()` returns empty array initially
-- Sessions with no tabs get deleted immediately
-- 100-500ms later, browser restores tabs → too late, sessions already gone
+**Core Algorithm**:
+```javascript
+// On browser startup: Wait for Edge to restore tabs
+await new Promise(resolve => setTimeout(resolve, 2000));
 
-**Why This Approach**:
-- **2-second delay**: Gives Edge time to restore tabs before validation
-- **Retry logic (3 attempts)**: Handles slower systems gracefully
-- **URL-based matching**: Tab IDs change on restart, but URLs stay the same
-- **skipCleanup mode**: Prevents deletion during browser startup grace period
-- **Delayed validation (10 seconds)**: Cleans up truly orphaned sessions after all restoration attempts complete
+// Retry tab query (up to 3 attempts with 1-second intervals)
+let tabs = [];
+for (let attempt = 0; attempt < 3; attempt++) {
+  tabs = await chrome.tabs.query({});
+  if (tabs.length > 0) break;
+  if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 1000));
+}
 
-**Evidence from User Testing**:
+// URL-based tab matching (tab IDs change, URLs stay same)
+tabs.forEach(tab => {
+  const savedTab = Object.values(tabMetadata).find(
+    saved => saved.url === tab.url
+  );
+  if (savedTab && sessions[savedTab.sessionId]) {
+    tabToSession[tab.id] = savedTab.sessionId;  // Restore with NEW tab ID
+  }
+});
 ```
-[Session Restore] Tab query attempt 1: Found 0 tabs  ← Edge hasn't restored yet
-[Session Restore] Tab query attempt 2: Found 3 tabs  ← Tabs restored after 1 second
-[Session Restore] URL-based matching: 2 tabs restored  ← Success
-```
 
-**Alternative Considered**: Immediate tab query without delay
-- Would miss all tabs (race condition)
-- Would delete all sessions on every browser restart
-- Not acceptable for production use
+**Key Implementation Points**:
+- `loadPersistedSessions(skipCleanup = true)` on browser startup (prevents premature deletion)
+- `validateAndCleanupSessions()` delayed by 10 seconds (cleans up truly orphaned sessions)
+- `loadPersistedSessions(skipCleanup = false)` on extension install/update (aggressive cleanup)
 
-**Trade-off**:
-- L 2-4 seconds startup delay for tab restoration
-- L 10 seconds delay for cleanup of truly orphaned sessions
--  Zero session loss on browser restart
--  Robust handling of browser timing variations
--  Works reliably across slow/fast systems
+**Trade-off**: 2-4 seconds startup delay for zero session loss on browser restart
 
-**Implementation Details**:
-- `loadPersistedSessions(skipCleanup = true)` on browser startup
-- `validateAndCleanupSessions()` delayed by 10 seconds
-- `loadPersistedSessions(skipCleanup = false)` on extension install/update
+**For Complete Details**: See [Session Persistence - Phase 4](../features_implementation/02_session_persistence.md#phase-4-browser-startup-session-deletion-fix)
 
 **Related Code Patterns**:
 - Section 3: Exponential Backoff Retry (similar timing strategy)

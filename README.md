@@ -1,6 +1,6 @@
 # 🌐 Sessner – Multi-Session Manager
 
-**Version 3.0.2** - The simple way to manage multiple accounts on any website
+**Version 3.0.3** - The simple way to manage multiple accounts on any website
 
 ---
 
@@ -48,19 +48,20 @@ When a website opens a popup window (for reports, OAuth login, payment processin
 - File downloads use the right account
 - No session confusion or errors
 
-### 💾 Persistent Sessions (Updated 2025-10-26)
+### 💾 Persistent Sessions (Updated 2025-10-28)
 
 **Session Data Persistence (All Tiers):**
 - Session cookies and storage saved locally
 - **Free tier:** 7-day retention (sessions auto-deleted after 7 days of inactivity)
 - **Premium/Enterprise:** Permanent retention (sessions never auto-deleted)
 
-**Auto-Restore on Browser Restart (Enterprise Only):**
-- Automatic tab restoration using URL-based matching (v3.0.2)
+**Auto-Restore on Browser Restart (Enterprise Only - v3.0.3):**
+- Automatic tab restoration using URL-based matching
 - Sessions reconnect within 2-4 seconds of browser startup
 - Session badges and colors automatically restored
 - Intelligent retry logic handles slow system startups
-- **Free/Premium users:** Must manually recreate sessions after browser restart using saved session data
+- Automatic preference disabling on tier downgrade with notification
+- **Free/Premium users:** Sessions saved but tab mappings cleared on restart (manual session recreation required)
 
 ### 🚀 Simple Workflow
 
@@ -277,39 +278,45 @@ Each session is assigned a unique color from a palette of 12 distinct colors:
 
 ### Issue: Sessions Not Working After Browser Restart
 
-**Update (2025-10-26)**: Auto-restore feature is **Enterprise tier only**.
+**Update (2025-10-28)**: Auto-restore feature is **Enterprise tier only** (v3.0.3).
 
 **Enterprise Tier - Automatic Restoration:**
 - Extension waits 2-4 seconds for Edge to restore tabs
 - Uses URL-based matching to reconnect sessions to tabs automatically
 - Session badges and colors automatically reappear
 - All session data (cookies, storage) fully restored
+- Preference automatically disabled on tier downgrade with notification
 
 **Free/Premium Tier - Manual Session Recreation:**
 - Session data is saved for 7 days (Free) or permanently (Premium)
-- After browser restart, you must manually create new sessions
-- Saved session data (cookies, storage) can be used when logging in again
-- This is expected behavior for non-Enterprise tiers
+- After browser restart, tab mappings are cleared (no auto-restore)
+- Must manually create new sessions to log in again
+- This is expected and intentional behavior for non-Enterprise tiers
+- Edge restore detection shows "Upgrade to Enterprise" notification (Free/Premium only)
 
 **For Enterprise Users - If Auto-Restore Doesn't Work:**
-1. Ensure "On startup" in Edge is set to **"Open tabs from previous session"**
-2. Wait 10-15 seconds after browser restart for full restoration
-3. Check background console for restoration logs:
+1. Verify auto-restore is enabled in License Details page
+2. Ensure "On startup" in Edge is set to **"Open tabs from previous session"**
+3. Wait 10-15 seconds after browser restart for full restoration
+4. Check background console for restoration logs:
    - Open `edge://extensions/` → Developer mode ON
    - Find "Sessner" → Click "background page"
    - Look for `[Session Restore] URL-based matching: X tabs restored`
 
 **Possible Causes of Restoration Failure (Enterprise):**
+- Auto-restore preference disabled in settings (check License Details page)
 - Edge "Clear browsing data on close" is enabled (deletes extension storage)
 - Extension was disabled at `edge://extensions/`
 - Tabs closed manually before browser restart (expected behavior)
+- License downgraded to Free/Premium (auto-restore auto-disabled with notification)
 - License not activated or expired (auto-restore disabled)
 
 **Solution:**
-1. Verify Edge settings: Ensure "Clear browsing data on close" is OFF
-2. Verify extension is enabled at `edge://extensions/`
-3. Check that tabs were open when browser was closed
-4. **Enterprise users:** Verify license is active in extension popup
+1. **Enterprise users:** Check auto-restore toggle in License Details page
+2. Verify Edge settings: Ensure "Clear browsing data on close" is OFF
+3. Verify extension is enabled at `edge://extensions/`
+4. Check that tabs were open when browser was closed
+5. **Enterprise users:** Verify license tier is Enterprise in extension popup
 
 ### Issue: Can't Create New Session
 
@@ -573,7 +580,19 @@ This extension is open source! The code is documented and structured for readabi
 
 ## 🚀 Version History
 
-### Version 3.0.2 (Current - 2025-10-25)
+### Version 3.0.3 (Current - 2025-10-28)
+- **Feature**: Enterprise-exclusive auto-restore with comprehensive tier enforcement
+- **Feature**: Automatic preference disabling on tier downgrade with notification system
+- **Feature**: Edge browser restore detection with upgrade notifications (Free/Premium)
+- **Fix**: Stale session cleanup race condition (Free/Premium immediate cleanup)
+- **Fix**: Favicon badge persistence after session deletion
+- **Fix**: Duplicate Edge restore detection on browser startup (singleton pattern)
+- **Fix**: Edge restore detection timing (2s delay + 3 retry attempts)
+- **Improvement**: Memory leak prevention with singleton notification listeners
+- **Improvement**: Debouncing (5-second) for tier change handling
+- **Testing**: Free/Premium tiers fully tested (Tests 1.1, 1.2, 2.1 passed)
+
+### Version 3.0.2 (2025-10-25)
 - **Critical Fix**: Resolved browser restart session deletion bug
 - **Reliability**: Implemented 2-second delay + retry logic for tab restoration
 - **Improvement**: URL-based tab matching (domain + path) instead of tab IDs

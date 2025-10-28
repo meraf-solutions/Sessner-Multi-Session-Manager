@@ -478,6 +478,9 @@ class LicenseManager {
         // Validation failed - license is invalid
         console.error('[LicenseManager] License validation failed: Invalid license (response: 0)');
 
+        // Store old tier before clearing license data
+        const oldTier = (this.licenseData && this.licenseData.tier) ? this.licenseData.tier : 'free';
+
         // Show notification to user
         try {
           chrome.notifications.create({
@@ -502,6 +505,29 @@ class LicenseManager {
         this.licenseData = null;
 
         console.log('[LicenseManager] ✓ All license data cleared, reverted to Free tier');
+
+        // Notify background script of tier change (invalid license)
+        const newTier = 'free';
+        console.log('[LicenseManager] Tier changed:', oldTier, '->', newTier, '(license invalid)');
+
+        try {
+          if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+            chrome.runtime.sendMessage({
+              action: 'tierChanged',
+              oldTier: oldTier,
+              newTier: newTier,
+              reason: 'license_invalid'
+            }, (response) => {
+              if (chrome.runtime.lastError) {
+                console.error('[LicenseManager] Error notifying background of tier change:', chrome.runtime.lastError);
+              } else {
+                console.log('[LicenseManager] ✓ Background script notified of tier change');
+              }
+            });
+          }
+        } catch (error) {
+          console.error('[LicenseManager] Error sending tier change message:', error);
+        }
 
         // Redirect to popup.html (free version) - hybrid approach for tabs and extension popups
         // NOTE: This is async and happens in background, don't block return
@@ -689,9 +715,37 @@ class LicenseManager {
     console.warn(`[LicenseManager] Downgrading license: ${reason}`);
 
     if (this.licenseData) {
+      // Store old tier for comparison
+      const oldTier = this.licenseData.tier || 'free';
+
       this.licenseData.isActive = false;
       this.licenseData.tier = 'free';
       await this.storage.set({ licenseData: this.licenseData });
+
+      // Notify background script of tier change
+      // This will disable auto-restore if downgrading from Enterprise
+      const newTier = 'free';
+      console.log('[LicenseManager] Tier changed:', oldTier, '->', newTier);
+
+      // Call handleTierChange() in background script
+      try {
+        if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+          chrome.runtime.sendMessage({
+            action: 'tierChanged',
+            oldTier: oldTier,
+            newTier: newTier,
+            reason: reason
+          }, (response) => {
+            if (chrome.runtime.lastError) {
+              console.error('[LicenseManager] Error notifying background of tier change:', chrome.runtime.lastError);
+            } else {
+              console.log('[LicenseManager] ✓ Background script notified of tier change');
+            }
+          });
+        }
+      } catch (error) {
+        console.error('[LicenseManager] Error sending tier change message:', error);
+      }
     }
 
     // Could emit event for UI notification here

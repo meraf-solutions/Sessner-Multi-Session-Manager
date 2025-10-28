@@ -163,6 +163,47 @@ function displayLicenseDetails(info) {
     validateButton.style.display = 'block';
     deactivateButton.style.display = 'block';
   }
+
+  // Check auto-restore preference and show warning if disabled due to tier downgrade
+  checkAutoRestoreStatus();
+}
+
+/**
+ * Check auto-restore preference and show warning if disabled due to tier downgrade
+ */
+async function checkAutoRestoreStatus() {
+  try {
+    // Get auto-restore preference from chrome.storage.local
+    const prefs = await new Promise((resolve) => {
+      chrome.storage.local.get(['autoRestorePreference'], (result) => {
+        if (chrome.runtime.lastError) {
+          console.error('[Auto-Restore Warning] Error reading preference:', chrome.runtime.lastError);
+          resolve(null);
+        } else {
+          resolve(result.autoRestorePreference || null);
+        }
+      });
+    });
+
+    console.log('[Auto-Restore Warning] Preference:', prefs);
+
+    const warningDiv = $('#auto-restore-warning');
+
+    // Show warning if auto-restore was disabled due to tier downgrade
+    if (prefs && prefs.disabledReason === 'tier_downgrade') {
+      console.log('[Auto-Restore Warning] Showing downgrade warning');
+      console.log('[Auto-Restore Warning] Previous tier:', prefs.previousTier);
+      console.log('[Auto-Restore Warning] New tier:', prefs.newTier);
+      console.log('[Auto-Restore Warning] Disabled at:', new Date(prefs.disabledAt).toISOString());
+
+      warningDiv.style.display = 'block';
+    } else {
+      console.log('[Auto-Restore Warning] No downgrade warning needed');
+      warningDiv.style.display = 'none';
+    }
+  } catch (error) {
+    console.error('[Auto-Restore Warning] Error checking auto-restore status:', error);
+  }
 }
 
 /**

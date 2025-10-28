@@ -237,7 +237,27 @@
     }
   }
 
-  // Listen for session color changes
+  /**
+   * Remove session favicon and restore original favicon
+   */
+  function clearSessionFavicon() {
+    console.log('[Favicon] Clearing session favicon...');
+
+    // Remove our custom favicon
+    const sessionFavicons = document.querySelectorAll('link[data-session-favicon="true"]');
+    sessionFavicons.forEach(link => {
+      console.log('[Favicon] Removing session favicon:', link.href);
+      link.remove();
+    });
+
+    // Reset state
+    sessionColor = null;
+    isInitialized = false;
+
+    console.log('[Favicon] ✓ Session favicon cleared (original favicon restored)');
+  }
+
+  // Listen for session color changes and clear requests
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'sessionColorChanged' && message.color) {
       console.log('[Favicon] Session color changed to:', message.color);
@@ -246,6 +266,10 @@
       // Reapply favicon with new color
       applyBadgedFavicon();
 
+      sendResponse({ success: true });
+    } else if (message.action === 'clearSessionFavicon') {
+      console.log('[Favicon] Received clear session favicon request');
+      clearSessionFavicon();
       sendResponse({ success: true });
     }
   });

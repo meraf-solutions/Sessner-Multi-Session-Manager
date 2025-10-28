@@ -375,6 +375,160 @@ chrome.runtime.sendMessage(
 
 ---
 
+### Auto-Restore Management
+
+**Status:** ✅ Implemented (2025-10-28) - Enterprise-Only Feature
+
+Auto-restore is an Enterprise-exclusive feature that automatically reconnects session-to-tab mappings after browser restart using URL-based matching.
+
+#### getAutoRestorePreference
+
+Gets the user's auto-restore preference settings.
+
+**Request:**
+```javascript
+{
+  action: 'getAutoRestorePreference'
+}
+```
+
+**Response:**
+```javascript
+{
+  success: boolean,
+  enabled: boolean,              // true if auto-restore enabled
+  tier: string,                  // 'free', 'premium', or 'enterprise'
+  isEnterpriseOnly: boolean,     // Always true (metadata for UI)
+  disabledReason?: string,       // 'tier_downgrade', 'migration_tier_restriction', or undefined
+  previousTier?: string,         // Previous tier before downgrade (if applicable)
+  newTier?: string,              // New tier after downgrade (if applicable)
+  disabledAt?: number,           // Timestamp when disabled (if applicable)
+  error?: string
+}
+```
+
+**Example:**
+```javascript
+chrome.runtime.sendMessage(
+  { action: 'getAutoRestorePreference' },
+  (response) => {
+    if (response.success) {
+      console.log(`Auto-restore enabled: ${response.enabled}`);
+      console.log(`Current tier: ${response.tier}`);
+
+      if (response.disabledReason === 'tier_downgrade') {
+        console.log(`Disabled due to tier change: ${response.previousTier} → ${response.newTier}`);
+      }
+    }
+  }
+);
+```
+
+---
+
+#### setAutoRestorePreference
+
+Sets the user's auto-restore preference (Enterprise-only).
+
+**Request:**
+```javascript
+{
+  action: 'setAutoRestorePreference',
+  enabled: boolean,              // true to enable, false to disable
+  dontShowNotice?: boolean       // true to hide future notices (optional)
+}
+```
+
+**Response:**
+```javascript
+{
+  success: boolean,
+  tier: string,                  // Current tier
+  allowed: boolean,              // false if not Enterprise tier
+  message?: string,              // Error message if not allowed
+  error?: string
+}
+```
+
+**Example:**
+```javascript
+chrome.runtime.sendMessage(
+  {
+    action: 'setAutoRestorePreference',
+    enabled: true,
+    dontShowNotice: false
+  },
+  (response) => {
+    if (response.success) {
+      if (response.allowed) {
+        console.log('Auto-restore enabled successfully');
+      } else {
+        console.log(`Not allowed: ${response.message}`);
+        // Show upgrade prompt for Enterprise
+      }
+    }
+  }
+);
+```
+
+**Note:** This action is only allowed for Enterprise tier users. Free/Premium users will receive `allowed: false`.
+
+---
+
+#### getInitializationState
+
+**Status:** ✅ Implemented (2025-10-23)
+
+Gets the current initialization state of the extension (used for loading UI).
+
+**Request:**
+```javascript
+{
+  action: 'getInitializationState'
+}
+```
+
+**Response:**
+```javascript
+{
+  success: boolean,
+  state: string,                 // 'LOADING', 'AUTO_RESTORE_CHECK', 'READY', or 'ERROR'
+  isReady: boolean,              // true if state === 'READY'
+  currentPhase?: string,         // Human-readable phase description
+  error?: string
+}
+```
+
+**Example:**
+```javascript
+chrome.runtime.sendMessage(
+  { action: 'getInitializationState' },
+  (response) => {
+    if (response.success) {
+      console.log(`Initialization state: ${response.state}`);
+      console.log(`Is ready: ${response.isReady}`);
+
+      if (response.currentPhase) {
+        console.log(`Current phase: ${response.currentPhase}`);
+      }
+    }
+  }
+);
+```
+
+**Initialization States:**
+- `LOADING`: Extension is loading and initializing
+- `AUTO_RESTORE_CHECK`: Checking auto-restore preference and tier
+- `READY`: Extension fully initialized and ready
+- `ERROR`: Initialization failed
+
+**Related Documentation:**
+- **Feature Documentation:** [docs/features_implementation/05_auto_restore_tier_restrictions.md](../features_implementation/05_auto_restore_tier_restrictions.md)
+- **Session Persistence:** [docs/features_implementation/02_session_persistence.md](../features_implementation/02_session_persistence.md)
+- **Technical Details:** [docs/technical.md - Section 11](technical.md#11-browser-restart-tab-restoration-timing)
+
+---
+
 ### Cookie Management
 
 #### getCookies

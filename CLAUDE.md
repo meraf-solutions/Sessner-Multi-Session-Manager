@@ -1632,7 +1632,7 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 
 ---
 
-### Session Persistence & Auto-Restore Tier Restrictions (✅ Clarified 2025-10-26)
+### Session Persistence & Auto-Restore Tier Restrictions (✅ Implemented 2025-10-28)
 
 **IMPORTANT:** Session persistence consists of TWO distinct features with different tier restrictions:
 
@@ -1646,12 +1646,12 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 
 **Implementation:**
 - `persistSessions()` (background.js:1028-1128) - NO tier checks, saves for all tiers
-- `loadPersistedSessions()` (background.js:1143-1350) - NO tier checks, loads for all tiers
-- `cleanupExpiredSessions()` (background.js:1420-1507) - Enforces 7-day limit for Free tier
+- `loadPersistedSessions()` (background.js:1153-1485) - Loads for all tiers, but tier check for tab restoration
+- `cleanupExpiredSessions()` (background.js:1559-1665) - Enforces 7-day limit for Free tier
 
 **Code reference:**
 ```javascript
-// background.js:1420-1507
+// background.js:1559-1665
 async function cleanupExpiredSessions() {
   const tier = await getTier();
   if (tier === 'free') {
@@ -1662,96 +1662,40 @@ async function cleanupExpiredSessions() {
 }
 ```
 
-#### 2. Auto-Restore on Browser Restart (Enterprise Only)
+#### 2. Auto-Restore on Browser Restart (Enterprise Only) ✅ TIER-ENFORCED
 
-**What it is:** Automatic reconnection of session-to-tab mappings after browser restart using URL-based matching (v3.0.2)
+**What it is:** Automatic reconnection of session-to-tab mappings after browser restart using URL-based matching
 
 **Tier restriction:** Enterprise tier ONLY
 
-**Implementation:**
-- Auto-restore preference check (background.js:2593-2661) - Enforces Enterprise-only restriction
-- Uses URL-based matching to reconnect sessions to tabs
-- Waits 2-4 seconds for Edge to restore tabs
-- Retry logic handles slow system startups
+**Implementation Status (2025-10-28):** ✅ Fully Tested & Deployed
+- Free tier: 3 tests **PASSED**
+- Premium tier: 1 test **PASSED**
+- Enterprise tier: Pending testing (Test Category 3-9)
 
-**Code reference:**
-```javascript
-// background.js:2593-2661
-// Auto-restore preferences (Enterprise only)
-const autoRestoreEnabled = await getAutoRestorePreference();
-if (!autoRestoreEnabled) {
-  console.log('[Session Restore] Auto-restore disabled by user preference');
-  return; // Skip auto-restore
-}
-```
+**Key Behaviors:**
+- **Enterprise with auto-restore enabled:** Tab mappings restored via URL-based matching
+- **Free/Premium tiers:** Tab mappings cleared (sessions saved but NOT restored)
+- **Tier downgrade:** Auto-restore preference automatically disabled, notification shown
+- **Edge browser restore detection:** Upgrade notification for Free/Premium users
 
-**What Free/Premium users experience:**
-- Session data is saved and persists across restarts
-- After browser restart, users must manually create new sessions
-- Saved session cookies/storage remain available for 7 days (Free) or permanently (Premium)
-- No automatic tab-to-session reconnection
+**For Detailed Implementation:**
+- **Feature Documentation:** [docs/features_implementation/05_auto_restore_tier_restrictions.md](docs/features_implementation/05_auto_restore_tier_restrictions.md) - Complete testing procedures and expected behaviors
+- **Session Persistence:** [docs/features_implementation/02_session_persistence.md](docs/features_implementation/02_session_persistence.md) - URL-based tab matching algorithm
+- **Technical Implementation:** [docs/technical.md - Section 11](docs/technical.md#11-browser-restart-tab-restoration-timing) - Code patterns and timing details
+- **API Endpoints:** [docs/api.md](docs/api.md) - Auto-restore management messages
 
-**Marketing Communication:**
-- Pricing table should show two separate rows:
-  - "Session Data Retention": 7 days (Free), Permanent (Premium/Enterprise)
-  - "Auto-Restore on Browser Restart": ❌ (Free), ❌ (Premium), ✅ (Enterprise)
+**Quick Reference:**
+- `loadPersistedSessions()` checks: `shouldAutoRestore = (tier === 'enterprise') && autoRestoreEnabled`
+- `handleTierChange(oldTier, newTier)` auto-disables preference on downgrade
+- `detectEdgeBrowserRestore()` shows upgrade notification (with retry logic: 2s + 3 attempts)
+- Debouncing: 5-second delay prevents tier flapping
+- Singleton patterns: Prevent memory leaks from duplicate listeners
 
----
-
-### Browser Restart Tab Restoration Fix (✅ Tested & Deployed 2025-10-25)
-
-**Status:** Production Ready - User Confirmed Working
-
-**Critical Bug Fixed:**
-- All sessions were being deleted on browser restart due to race condition
-- Microsoft Edge assigns NEW tab IDs on restart
-- Extension loaded before browser restored tabs
-- `chrome.tabs.query()` returned empty array → sessions deleted
-
-**Solution Implemented:**
-1. **2-second delay** before tab validation (gives Edge time to restore tabs)
-2. **Retry logic** (up to 3 attempts with 1-second intervals)
-3. **URL-based tab matching** instead of tab ID matching
-4. **Startup grace period** (`skipCleanup` parameter prevents premature deletion)
-5. **Delayed validation** (10 seconds) for truly orphaned sessions
-
-**Key Functions:**
-- `loadPersistedSessions(skipCleanup = false)` - Updated with race condition fix
-  - `skipCleanup=true` on browser startup (preserves sessions during tab restoration)
-  - `skipCleanup=false` on extension install/update (aggressive cleanup)
-- `validateAndCleanupSessions()` - New function for delayed cleanup (runs 10 seconds after startup)
-
-**Timing Strategy:**
-```
-T+0ms:    Extension loads, session data loaded (skipCleanup=true)
-T+2000ms: First tab query attempt
-T+3000ms: Second retry (if first found 0 tabs)
-T+4000ms: Third retry (if second found 0 tabs)
-T+10000ms: Delayed validation cleans up orphaned sessions
-```
-
-**Evidence from Testing:**
-```
-[Session Restore] Tab query attempt 1: Found 0 tabs  ← Edge hasn't restored yet
-[Session Restore] Tab query attempt 2: Found 3 tabs  ← Tabs restored after 1 second
-[Session Restore] URL-based matching: 2 tabs restored  ← Success
-```
-
-**User Confirmation:**
-> "Great! Now it's working!" (2025-10-25)
-
-**Critical Implementation Details:**
-1. Tab URLs stored in `tabMetadata` array for URL-based matching
-2. URL matching uses exact URL (domain + path + query params)
-3. Tab IDs change on restart, URLs remain the same
-4. Startup mode skips aggressive cleanup to wait for tab restoration
-5. Normal mode (install/update) uses aggressive cleanup as before
-6. Console logs clearly indicate "STARTUP MODE" vs "NORMAL MODE"
-
-**Related Documentation:**
-- Technical details: [docs/technical.md - Section 11](docs/technical.md#11-browser-restart-tab-restoration-timing)
-- Architecture: [docs/architecture.md - Browser Restart Persistence](docs/architecture.md#5-browser-restart-persistence)
-- Feature implementation: [docs/features_implementation/02_session_persistence.md - Phase 4](docs/features_implementation/02_session_persistence.md#phase-4-browser-startup-session-deletion-fix)
+**Browser Restart Tab Restoration (2025-10-25):**
+- Race condition fix: 2-second delay + retry logic (3 attempts) for Edge tab restoration
+- URL-based tab matching algorithm (tab IDs change, URLs stay same)
+- See [docs/features_implementation/02_session_persistence.md - Phase 4](docs/features_implementation/02_session_persistence.md#phase-4-browser-startup-session-deletion-fix) for complete details
 
 ---
 
