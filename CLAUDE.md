@@ -79,6 +79,7 @@ This is a **SessionBox-style multi-session browser extension** that creates **is
 - **Dynamic favicon badges** showing extension icon with session color for easy tab identification
 - Ephemeral sessions that end when all tabs close
 - **Tier-based session limits** (Free: 3 concurrent sessions, Premium/Enterprise: Unlimited)
+- **Custom session names** (Premium/Enterprise: name sessions like "Work Gmail" instead of session IDs)
 
 ## Architecture
 
@@ -1696,6 +1697,58 @@ async function cleanupExpiredSessions() {
 - Race condition fix: 2-second delay + retry logic (3 attempts) for Edge tab restoration
 - URL-based tab matching algorithm (tab IDs change, URLs stay same)
 - See [docs/features_implementation/02_session_persistence.md - Phase 4](docs/features_implementation/02_session_persistence.md#phase-4-browser-startup-session-deletion-fix) for complete details
+
+---
+
+### Session Naming/Labeling (✅ Complete 2025-10-29)
+
+**Status:** Production Ready - v3.1.0
+
+**Implementation Overview:**
+- Premium/Enterprise exclusive feature
+- Custom session names with validation (max 50 chars, no duplicates, emoji support)
+- Inline editing (double-click session name)
+- Enterprise modal integration (gear icon → Session Settings)
+- Full theme support (light/dark modes)
+
+**Key Functions:**
+- `setSessionName(sessionId, name)` - Set custom name with validation (background.js:2756)
+- `getSessionName(sessionId)` - Retrieve session name (background.js:2829)
+- `clearSessionName(sessionId)` - Clear custom name (background.js:2853)
+- `validateSessionName(name, currentSessionId)` - Validate name (background.js:2660)
+
+**API Endpoints:**
+- `setSessionName` - Set/update session name
+- `getSessionName` - Get session name
+- `clearSessionName` - Clear session name (revert to ID)
+
+**Session Data Model:**
+```javascript
+sessionStore.sessions[sessionId] = {
+  id: sessionId,
+  name: null, // NEW: Custom session name (Premium/Enterprise only)
+  color: color,
+  customColor: validatedCustomColor,
+  createdAt: timestamp,
+  lastAccessed: timestamp,
+  tabs: []
+};
+```
+
+**Validation Rules:**
+- Max 50 characters (emoji-aware)
+- No duplicates (case-insensitive)
+- No HTML characters: `< > " ' \``
+- Whitespace trimmed and collapsed
+- Free tier blocked with upgrade prompt
+
+**UI Features:**
+- **Premium:** Inline editing (double-click session name)
+- **Enterprise:** Settings modal with name + color fields
+- **Free:** PRO badge with upgrade prompt
+- **Theme-aware:** Full light/dark mode support
+
+**For detailed implementation:** See [docs/features_implementation/06_session_naming.md](docs/features_implementation/06_session_naming.md)
 
 ---
 

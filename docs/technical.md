@@ -1,8 +1,8 @@
 # Technical Implementation
 ## Sessner  Multi-Session Manager
 
-**Last Updated:** 2025-10-28
-**Extension Version:** 3.0
+**Last Updated:** 2025-10-29
+**Extension Version:** 3.1.0
 **Language:** JavaScript (ES6+)
 
 ---
@@ -1356,6 +1356,86 @@ Object.keys(localStorage).filter(k => k.startsWith('__SID_'));
 4. **WebSockets**: Cookies in WS handshake not modified after connection
 5. **Storage Quota**: chrome.storage.local 10MB limit, IndexedDB quota varies by browser
 6. **Color Reuse**: Only 12 colors available (Free/Premium), unlimited for Enterprise
+
+---
+
+## Session Naming Feature (v3.1.0)
+
+### Overview
+Premium/Enterprise exclusive feature allowing custom session names.
+
+### Core Functions
+
+**Location:** `background.js` lines 2594-2891
+
+#### Validation Rules
+```javascript
+const SESSION_NAME_RULES = {
+  MIN_LENGTH: 1,
+  MAX_LENGTH: 50,
+  ALLOW_EMOJIS: true,
+  ALLOW_DUPLICATES: false,
+  CASE_SENSITIVE_CHECK: false,
+  BLOCK_HTML: true,
+  BLOCK_DANGEROUS_CHARS: ['<', '>', '"', "'", '`']
+};
+```
+
+#### sanitizeSessionName(name)
+Removes dangerous characters and normalizes whitespace.
+
+**Algorithm:**
+1. Trim leading/trailing whitespace
+2. Collapse multiple spaces into single space
+3. Remove HTML characters: `< > " ' \``
+4. Truncate to 50 characters if needed
+
+#### validateSessionName(name, currentSessionId)
+Validates session name against rules.
+
+**Validation Steps:**
+1. Type check (must be string)
+2. Sanitize input
+3. Check empty after trimming
+4. Check character limit (emoji-aware: `[...name].length`)
+5. Check dangerous characters
+6. Check duplicates (case-insensitive)
+
+**Returns:** `{valid: boolean, error?: string, sanitized?: string}`
+
+#### isSessionNameDuplicate(name, excludeSessionId)
+Case-insensitive duplicate detection.
+
+**Algorithm:**
+```javascript
+const lowerName = name.toLowerCase();
+return Object.values(sessionStore.sessions).some(session => {
+  if (session.id === excludeSessionId) return false;
+  if (!session.name) return false;
+  return session.name.toLowerCase() === lowerName;
+});
+```
+
+### UI Implementation
+
+**Inline Editing (Premium):**
+- Double-click session name to edit
+- Real-time character counter (0-39: gray, 40-44: orange, 45-50: red)
+- Enter to save, Escape to cancel, blur to auto-save
+- Inline validation errors
+
+**Enterprise Modal:**
+- Unified "Session Settings" modal (name + color)
+- Same validation as inline editing
+- Dual save logic (name and color independently)
+
+### Theme Support
+All UI elements support light/dark modes:
+- Session name text: #333 (light) / #e0e0e0 (dark)
+- Timestamp: #999 (light) / #888 (dark)
+- Error background: #fff5f5 (light) / #3a1e1e (dark)
+
+**For complete documentation:** See [features_implementation/06_session_naming.md](features_implementation/06_session_naming.md)
 
 ---
 

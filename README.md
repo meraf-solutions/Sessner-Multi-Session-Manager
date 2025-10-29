@@ -1,6 +1,6 @@
 # 🌐 Sessner – Multi-Session Manager
 
-**Version 3.0.3** - The simple way to manage multiple accounts on any website
+**Version 3.1.0** - The simple way to manage multiple accounts on any website
 
 ---
 
@@ -37,6 +37,7 @@ Each session runs in complete isolation with:
 - **Color-coded badges** - Each session gets a unique color indicator
 - **Dynamic favicon badges** - Session tabs show extension icon with colored badge for easy identification
 - **At-a-glance identification** - Instantly see which tabs have sessions by both badge and favicon
+- **Custom Session Names** (Premium/Enterprise) - Name your sessions for easy identification (e.g., "Work Gmail", "Personal Facebook")
 - **Clean interface** - Simple, distraction-free design
 
 ### 🪟 Intelligent Popup Inheritance
@@ -580,7 +581,19 @@ This extension is open source! The code is documented and structured for readabi
 
 ## 🚀 Version History
 
-### Version 3.0.3 (Current - 2025-10-28)
+### Version 3.1.0 (Current - 2025-10-29)
+- **Feature**: Session Naming/Labeling (Premium/Enterprise exclusive)
+  - Custom names for sessions (max 50 chars, emoji support)
+  - Inline editing via double-click
+  - Enterprise settings modal integration
+  - Full theme support (light/dark modes)
+  - Case-insensitive duplicate detection
+  - Comprehensive validation and error handling
+- **UX**: PRO badge for Free tier users with upgrade prompts
+- **Performance**: No impact on session operations
+- **Testing**: 30+ test scenarios documented and validated
+
+### Version 3.0.3 (2025-10-28)
 - **Feature**: Enterprise-exclusive auto-restore with comprehensive tier enforcement
 - **Feature**: Automatic preference disabling on tier downgrade with notification system
 - **Feature**: Edge browser restore detection with upgrade notifications (Free/Premium)
@@ -677,6 +690,6 @@ You're all set! Start creating isolated sessions and enjoy the freedom of managi
 
 ---
 
-**Sessner – Multi-Session Manager v3.0.2**
+**Sessner – Multi-Session Manager v3.1.0**
 **Made for Microsoft Edge**
 **100% Local, 100% Private**

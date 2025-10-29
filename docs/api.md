@@ -375,6 +375,132 @@ chrome.runtime.sendMessage(
 
 ---
 
+### Session Naming (Premium/Enterprise) - v3.1.0
+
+Custom session names for easier session identification.
+
+#### `setSessionName`
+
+Set or update a custom name for a session.
+
+**Request:**
+```javascript
+chrome.runtime.sendMessage({
+  action: 'setSessionName',
+  sessionId: 'session_1234567890_abc123',
+  name: 'Work Gmail'
+}, response => {
+  console.log(response);
+});
+```
+
+**Response (Success):**
+```javascript
+{
+  success: true,
+  sessionId: 'session_1234567890_abc123',
+  name: 'Work Gmail',
+  tier: 'premium'
+}
+```
+
+**Response (Validation Error):**
+```javascript
+{
+  success: false,
+  message: 'Session name already exists. Please choose a different name.'
+}
+```
+
+**Response (Tier Restricted):**
+```javascript
+{
+  success: false,
+  message: 'Session naming is a Premium feature',
+  requiresUpgrade: true,
+  tier: 'premium'
+}
+```
+
+**Validation Rules:**
+- Max 50 characters (emoji-aware)
+- No duplicates (case-insensitive)
+- No HTML characters: `< > " ' \``
+- Whitespace trimmed and collapsed
+- Premium or Enterprise tier required
+
+#### `getSessionName`
+
+Retrieve the custom name for a session.
+
+**Request:**
+```javascript
+chrome.runtime.sendMessage({
+  action: 'getSessionName',
+  sessionId: 'session_1234567890_abc123'
+}, response => {
+  console.log(response);
+});
+```
+
+**Response (With Name):**
+```javascript
+{
+  success: true,
+  sessionId: 'session_1234567890_abc123',
+  name: 'Work Gmail'
+}
+```
+
+**Response (No Name):**
+```javascript
+{
+  success: true,
+  sessionId: 'session_1234567890_abc123',
+  name: null
+}
+```
+
+#### `clearSessionName`
+
+Clear the custom name for a session (revert to session ID).
+
+**Request:**
+```javascript
+chrome.runtime.sendMessage({
+  action: 'clearSessionName',
+  sessionId: 'session_1234567890_abc123'
+}, response => {
+  console.log(response);
+});
+```
+
+**Response (Success):**
+```javascript
+{
+  success: true,
+  sessionId: 'session_1234567890_abc123'
+}
+```
+
+**Usage Example:**
+```javascript
+// Set session name
+const response = await sendMessage({
+  action: 'setSessionName',
+  sessionId: sessionId,
+  name: '🎨 Personal Account'
+});
+
+if (response.success) {
+  console.log('Name set:', response.name);
+} else {
+  console.error('Error:', response.message);
+}
+```
+
+---
+
 ### Auto-Restore Management
 
 **Status:** ✅ Implemented (2025-10-28) - Enterprise-Only Feature

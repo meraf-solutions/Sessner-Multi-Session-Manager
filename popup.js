@@ -399,16 +399,47 @@ async function showColorChangeModal(sessionId) {
 
   const colors = colorsResponse.colors;
 
+  // Fetch current session name
+  const nameResponse = await sendMessage({
+    action: 'getSessionName',
+    sessionId: sessionId
+  });
+  const currentSessionName = nameResponse?.name || '';
+
   // Create modal HTML
   let modalHTML = `
     <div class="color-modal-overlay" id="colorModalOverlay">
       <div class="color-modal">
         <div class="color-modal-header">
-          <h3>Change Session Color</h3>
+          <h3>Session Settings</h3>
           <button class="color-modal-close" id="colorModalClose">&times;</button>
         </div>
         <div class="color-modal-body">
-          <div class="color-swatches-modal">
+          <!-- Session Name Section -->
+          <div class="session-name-modal-section">
+            <label for="modalSessionNameInput">Session Name:</label>
+            <div class="session-name-modal-input-wrapper">
+              <input
+                type="text"
+                id="modalSessionNameInput"
+                placeholder="e.g., Work Gmail"
+                maxlength="50"
+                value="${escapeHtml(currentSessionName)}"
+              />
+              <span class="session-name-counter session-name-counter-normal" id="modalSessionNameCounter">
+                0/50 characters
+              </span>
+            </div>
+            <div id="modalSessionNameError" class="session-name-error" style="display: none;"></div>
+          </div>
+
+          <!-- Divider -->
+          <div class="modal-section-divider"></div>
+
+          <!-- Session Color Section -->
+          <div class="session-color-modal-section">
+            <label>Session Color:</label>
+            <div class="color-swatches-modal">
   `;
 
   // Add color swatches
@@ -423,21 +454,22 @@ async function showColorChangeModal(sessionId) {
   });
 
   modalHTML += `
-          </div>
-          <div class="custom-color-modal-input">
-            <label for="modalCustomColorInput">Custom HEX Color:</label>
-            <input
-              type="text"
-              id="modalCustomColorInput"
-              placeholder="#FF6B6B"
-              maxlength="7"
-            />
-            <div id="modalCustomColorPreview" class="custom-color-preview"></div>
+            </div>
+            <div class="custom-color-modal-input">
+              <label for="modalCustomColorInput">Custom HEX Color:</label>
+              <input
+                type="text"
+                id="modalCustomColorInput"
+                placeholder="#FF6B6B"
+                maxlength="7"
+              />
+              <div id="modalCustomColorPreview" class="custom-color-preview"></div>
+            </div>
           </div>
         </div>
         <div class="color-modal-footer">
           <button id="colorModalCancel" class="btn-secondary">Cancel</button>
-          <button id="colorModalApply" class="btn-primary">Apply Color</button>
+          <button id="colorModalApply" class="btn-primary">Apply Settings</button>
         </div>
       </div>
     </div>
@@ -450,6 +482,38 @@ async function showColorChangeModal(sessionId) {
 
   // Attach modal event listeners
   let selectedModalColor = null;
+
+  // Initialize character counter
+  const nameInput = $('#modalSessionNameInput');
+  const nameCounter = $('#modalSessionNameCounter');
+  const updateCharCounter = () => {
+    const value = nameInput.value;
+    const length = [...value].length; // Emoji-aware length
+
+    nameCounter.textContent = `${length}/50 characters`;
+
+    // Update color classes based on length
+    nameCounter.className = 'session-name-counter';
+    if (length < 40) {
+      nameCounter.classList.add('session-name-counter-normal');
+    } else if (length < 45) {
+      nameCounter.classList.add('session-name-counter-warning');
+    } else {
+      nameCounter.classList.add('session-name-counter-danger');
+    }
+  };
+
+  // Initialize counter on load
+  updateCharCounter();
+
+  // Session name input handler
+  nameInput.addEventListener('input', (e) => {
+    updateCharCounter();
+
+    // Clear error on input
+    const errorDiv = $('#modalSessionNameError');
+    errorDiv.style.display = 'none';
+  });
 
   // Swatch selection
   document.querySelectorAll('.color-swatch-modal').forEach(swatch => {
@@ -488,35 +552,87 @@ async function showColorChangeModal(sessionId) {
     }
   });
 
-  // Apply color
+  // Apply settings (name + color)
   $('#colorModalApply').addEventListener('click', async () => {
-    if (!selectedModalColor) {
-      alert('Please select a color');
-      return;
-    }
+    const newName = nameInput.value.trim();
+    const newColor = selectedModalColor;
+    const errorDiv = $('#modalSessionNameError');
+
+    // Clear previous errors
+    errorDiv.style.display = 'none';
+
+    // Track if any changes were made
+    let changesMade = false;
 
     try {
-      const response = await sendMessage({
-        action: 'setSessionColor',
-        sessionId: sessionId,
-        color: selectedModalColor
-      });
+      // Save session name if changed
+      if (newName !== currentSessionName) {
+        // Validate and save name (empty name clears custom name)
+        const nameValidation = await sendMessage({
+          action: 'setSessionName',
+          sessionId: sessionId,
+          name: newName
+        });
 
-      if (response && response.success) {
-        console.log('[Color Change] Success:', response.color);
-        closeModal();
-        await refreshSessions(); // Refresh to show new color
-      } else {
-        alert('Failed to change color: ' + (response?.error || 'Unknown error'));
+        if (!nameValidation.success) {
+          // Show validation error
+          errorDiv.textContent = nameValidation.message;
+          errorDiv.style.display = 'block';
+          return; // Don't proceed if name validation fails
+        }
+
+        console.log('[Session Settings] Name saved:', newName || '(cleared)');
+        changesMade = true;
       }
+
+      // Save color if changed
+      if (newColor) {
+        const colorResponse = await sendMessage({
+          action: 'setSessionColor',
+          sessionId: sessionId,
+          color: newColor
+        });
+
+        if (colorResponse && colorResponse.success) {
+          console.log('[Session Settings] Color saved:', newColor);
+          changesMade = true;
+        } else {
+          alert('Failed to change color: ' + (colorResponse?.error || 'Unknown error'));
+          return;
+        }
+      }
+
+      // Close modal and refresh if changes were made
+      if (changesMade) {
+        closeModal();
+        await refreshSessions(); // Refresh to show new name/color
+      } else {
+        // No changes made, just close
+        closeModal();
+      }
+
     } catch (error) {
-      console.error('[Color Change] Error:', error);
-      alert('Error changing color: ' + error.message);
+      console.error('[Session Settings] Error:', error);
+      alert('Error saving settings: ' + error.message);
     }
   });
 }
 
 // ============= Session Management =============
+
+/**
+ * Get current tier from license status
+ * @returns {Promise<string>} Tier ('free', 'premium', 'enterprise')
+ */
+async function getTier() {
+  try {
+    const response = await sendMessage({ action: 'getLicenseStatus' });
+    return response?.licenseData?.tier || 'free';
+  } catch (error) {
+    console.error('[getTier] Error:', error);
+    return 'free';
+  }
+}
 
 /**
  * Create a new session
@@ -678,6 +794,245 @@ async function switchToTab(tabId) {
 }
 
 /**
+ * Show upgrade prompt for Free tier users
+ */
+function showUpgradePrompt() {
+  const message = 'Session naming is a Premium/Enterprise feature.\n\n' +
+                  'Click "View License" to upgrade for unlimited sessions and custom names.';
+
+  if (confirm(message)) {
+    // Open license page
+    window.location.href = 'popup-license.html';
+  }
+}
+
+/**
+ * Show validation error inline
+ * @param {HTMLElement} container - Container to show error in
+ * @param {string} message - Error message
+ */
+function showValidationError(container, message) {
+  // Remove existing error if present
+  const existingError = container.querySelector('.session-name-error');
+  if (existingError) {
+    existingError.remove();
+  }
+
+  // Create error element
+  const errorDiv = document.createElement('div');
+  errorDiv.className = 'session-name-error';
+  // Removed inline styles - let CSS handle styling for proper dark mode support
+  errorDiv.textContent = message;
+
+  // Insert error at the END of the column container (below the input wrapper)
+  // The container has flex-direction: column, so this will stack vertically
+  container.appendChild(errorDiv);
+
+  console.log('[Session Name] Validation error:', message);
+}
+
+/**
+ * Create edit input for session name
+ * @param {string} currentName - Current session name or ID
+ * @param {string} sessionId - Session ID
+ * @returns {HTMLElement} Input element
+ */
+function createEditInput(currentName, sessionId) {
+  const container = document.createElement('div');
+  container.className = 'session-name-edit-container';
+  container.style.cssText = 'display: flex; flex-direction: column; gap: 4px; flex: 1;';
+
+  const inputWrapper = document.createElement('div');
+  inputWrapper.style.cssText = 'display: flex; gap: 4px; align-items: center;';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'session-name-input';
+  input.value = currentName.startsWith('session_') ? '' : currentName; // Clear if it's an ID
+  input.maxLength = 50;
+  input.placeholder = 'Enter session name...';
+  input.style.cssText = 'flex: 1; padding: 6px 8px; border: 2px solid #667eea; border-radius: 4px; font-size: 13px; font-family: inherit; outline: none;';
+  input.dataset.sessionId = sessionId;
+
+  // Character counter
+  const counter = document.createElement('span');
+  counter.className = 'session-name-counter session-name-counter-normal';
+  counter.textContent = `${input.value.length}/50`;
+
+  inputWrapper.appendChild(input);
+  inputWrapper.appendChild(counter);
+  container.appendChild(inputWrapper);
+
+  // Update counter on input
+  input.addEventListener('input', () => {
+    const length = [...input.value].length; // Emoji-aware length
+    counter.textContent = `${length}/50`;
+
+    // Change color if approaching limit using CSS classes
+    counter.className = 'session-name-counter';
+    if (length >= 45) {
+      counter.classList.add('session-name-counter-danger');
+    } else if (length >= 40) {
+      counter.classList.add('session-name-counter-warning');
+    } else {
+      counter.classList.add('session-name-counter-normal');
+    }
+  });
+
+  return container;
+}
+
+/**
+ * Save session name
+ * @param {string} sessionId - Session ID
+ * @param {string} name - New session name
+ * @returns {Promise<boolean>} Success status
+ */
+async function saveSessionName(sessionId, name) {
+  try {
+    console.log('[Session Name] Saving:', sessionId, name);
+
+    const response = await sendMessage({
+      action: 'setSessionName',
+      sessionId: sessionId,
+      name: name.trim()
+    });
+
+    if (!response || !response.success) {
+      console.error('[Session Name] Save failed:', response?.message);
+      return { success: false, message: response?.message || 'Failed to save session name' };
+    }
+
+    console.log('[Session Name] Save successful');
+    return { success: true };
+  } catch (error) {
+    console.error('[Session Name] Error saving:', error);
+    return { success: false, message: error.message };
+  }
+}
+
+/**
+ * Enter edit mode for session name
+ * @param {string} sessionId - Session ID
+ * @param {HTMLElement} nameElement - Session name element
+ * @param {string} currentName - Current session name or ID
+ */
+async function enterEditMode(sessionId, nameElement, currentName) {
+  // Check tier
+  const tier = await getTier();
+
+  if (tier === 'free') {
+    showUpgradePrompt();
+    return;
+  }
+
+  console.log('[Session Name] Entering edit mode for:', sessionId);
+
+  // Create input
+  const editContainer = createEditInput(currentName, sessionId);
+  const input = editContainer.querySelector('.session-name-input');
+
+  // Replace name element with input
+  const parentContainer = nameElement.closest('.session-name-container');
+  if (!parentContainer) {
+    console.error('[Session Name] Parent container not found');
+    return;
+  }
+
+  // Store original for cancel
+  const originalHTML = parentContainer.innerHTML;
+
+  // Replace content
+  parentContainer.innerHTML = '';
+  parentContainer.appendChild(editContainer);
+
+  // Focus and select
+  input.focus();
+  input.select();
+
+  // Cancel edit mode
+  const cancelEdit = () => {
+    console.log('[Session Name] Canceling edit mode');
+    parentContainer.innerHTML = originalHTML;
+    // Re-attach double-click listener
+    const newNameElement = parentContainer.querySelector('.session-name');
+    if (newNameElement) {
+      attachSessionNameListener(newNameElement, sessionId, currentName);
+    }
+  };
+
+  // Save on Enter
+  input.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const newName = input.value.trim();
+
+      if (newName === '') {
+        // Empty name - treat as cancel
+        cancelEdit();
+        return;
+      }
+
+      // Show loading state
+      input.disabled = true;
+      input.style.opacity = '0.5';
+
+      const result = await saveSessionName(sessionId, newName);
+
+      if (result.success) {
+        // Refresh sessions to show new name
+        await refreshSessions();
+      } else {
+        // Show error inline
+        input.disabled = false;
+        input.style.opacity = '1';
+        showValidationError(editContainer, result.message);
+        input.focus();
+      }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelEdit();
+    }
+  });
+
+  // Save on blur (after a short delay to allow clicking buttons)
+  input.addEventListener('blur', async () => {
+    setTimeout(async () => {
+      const newName = input.value.trim();
+
+      // Only save if input still exists and has a value
+      if (document.contains(input) && newName !== '') {
+        const result = await saveSessionName(sessionId, newName);
+        if (result.success) {
+          await refreshSessions();
+        } else {
+          // Re-focus to show error
+          input.focus();
+          showValidationError(editContainer, result.message);
+        }
+      } else if (document.contains(input)) {
+        // Empty name - cancel
+        cancelEdit();
+      }
+    }, 150);
+  });
+}
+
+/**
+ * Attach double-click listener to session name element
+ * @param {HTMLElement} element - Session name element
+ * @param {string} sessionId - Session ID
+ * @param {string} currentName - Current session name
+ */
+function attachSessionNameListener(element, sessionId, currentName) {
+  element.addEventListener('dblclick', async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    await enterEditMode(sessionId, element, currentName);
+  });
+}
+
+/**
  * Refresh the list of active sessions
  */
 async function refreshSessions() {
@@ -781,10 +1136,15 @@ async function refreshSessions() {
       const sessionColor = session.color || '#999';
       const tabs = session.tabs || [];
 
-      // Get session metadata for lastAccessed
+      // Get session metadata for lastAccessed and name
       const metadata = sessionMetadata[session.sessionId] || {};
       const lastAccessed = metadata.lastAccessed || metadata.createdAt || Date.now();
       const lastAccessedText = formatTimeAgo(lastAccessed);
+      const sessionName = metadata.name || ''; // Get session name from metadata
+
+      // Display name: custom name or fallback to session ID
+      const displayName = sessionName || sessionId;
+      const isEditable = status.tier !== 'free';
 
       // Calculate days remaining for free tier
       const daysRemaining = calculateDaysRemaining(lastAccessed, status.tier);
@@ -810,11 +1170,18 @@ async function refreshSessions() {
               </button>
             ` : ''}
 
-            <div class="session-id" style="display: flex; flex-direction: column; gap: 2px;">
-              <span>${truncate(sessionId, 30)}</span>
-              <span style="font-size: 10px; font-weight: normal; color: #999;">
+            <div class="session-info-wrapper">
+              <div class="session-name-container" data-session-id="${sessionId}">
+                <span class="session-name ${isEditable ? 'editable' : ''}"
+                      style="cursor: ${isEditable ? 'pointer' : 'default'};"
+                      title="${isEditable ? 'Double-click to edit session name' : 'Upgrade to Premium/Enterprise to edit session name'}">
+                  ${truncate(displayName, 30)}
+                </span>
+                ${status.tier === 'free' ? '<span class="session-name-pro-badge">PRO</span>' : ''}
+              </div>
+              <div class="session-timestamp">
                 Last used: ${lastAccessedText}${expiresText}
-              </span>
+              </div>
             </div>
           </div>
           <div class="tab-list">
@@ -826,13 +1193,18 @@ async function refreshSessions() {
         const tabId = tab.tabId;
         const favIconUrl = tab.favIconUrl || '';
 
+        // Add session name prefix to tab title if name exists
+        const displayTabTitle = sessionName
+          ? `[${escapeHtml(sessionName)}] ${tabTitle}`
+          : tabTitle;
+
         html += `
           <div class="tab-item" data-tab-id="${tabId}">
             <div class="tab-favicon">
               ${favIconUrl ? `<img src="${escapeHtml(favIconUrl)}" alt="" onerror="this.style.display='none'">` : '📄'}
             </div>
             <div class="tab-info">
-              <div class="tab-title">${truncate(tabTitle, 40)}</div>
+              <div class="tab-title">${truncate(displayTabTitle, 50)}</div>
               <div class="tab-domain">${truncate(tabDomain, 40)}</div>
             </div>
             <div class="tab-actions">
@@ -850,9 +1222,10 @@ async function refreshSessions() {
 
     $('#sessionsList').innerHTML = html;
 
-    // Attach event listeners to tab items and session settings
+    // Attach event listeners to tab items, session settings, and session names
     attachTabListeners();
     attachSessionSettingsListeners();
+    attachSessionNameListeners(sessions, sessionMetadata);
 
     // Update auto-restore UI after sessions are rendered
     await updateAutoRestoreUI();
@@ -901,6 +1274,25 @@ function attachSessionSettingsListeners() {
       console.log('[Session Settings] Opening for session:', sessionId);
       await showColorChangeModal(sessionId);
     });
+  });
+}
+
+/**
+ * Attach event listeners to session name elements for inline editing
+ * @param {Array} sessions - Array of session objects
+ * @param {Object} sessionMetadata - Session metadata from storage
+ */
+function attachSessionNameListeners(sessions, sessionMetadata) {
+  document.querySelectorAll('.session-name').forEach(nameElement => {
+    const container = nameElement.closest('.session-name-container');
+    if (!container) return;
+
+    const sessionId = container.dataset.sessionId;
+    const metadata = sessionMetadata[sessionId] || {};
+    const currentName = metadata.name || sessionId;
+
+    // Attach double-click listener
+    attachSessionNameListener(nameElement, sessionId, currentName);
   });
 }
 

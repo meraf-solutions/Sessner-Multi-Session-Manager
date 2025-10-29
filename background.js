@@ -1325,6 +1325,12 @@ async function loadPersistedSessions() {
       console.log('[Session Restore] Added lastAccessed to session:', sessionId);
     }
 
+    // Ensure all sessions have name field (for backward compatibility with session naming feature)
+    if (session.name === undefined) {
+      session.name = null; // Initialize to null (no custom name)
+      console.log('[Session Restore] Added name field to session:', sessionId);
+    }
+
     // Remove _isCreating flag if present (shouldn't persist across restarts)
     if (session._isCreating) {
       delete session._isCreating;
@@ -2368,6 +2374,7 @@ function createNewSession(url, callback, customColor = null) {
     // Create session object
     sessionStore.sessions[sessionId] = {
       id: sessionId,
+      name: null, // Custom session name (Premium/Enterprise only)
       color: color,
       customColor: validatedCustomColor, // Store custom color if provided (enterprise only)
       createdAt: timestamp,
@@ -2478,9 +2485,11 @@ function getActiveSessions(callback) {
       const sessionId = sessionStore.tabToSession[tab.id];
       if (sessionId) {
         if (!sessionMap[sessionId]) {
+          const session = sessionStore.sessions[sessionId];
           sessionMap[sessionId] = {
             sessionId: sessionId,
-            color: sessionStore.sessions[sessionId]?.color || sessionColor(sessionId),
+            name: session?.name || null, // Include custom name if exists
+            color: session?.color || sessionColor(sessionId),
             tabs: []
           };
         }
@@ -2583,6 +2592,290 @@ async function cleanupSession(sessionId) {
   } else {
     console.warn(`[cleanupSession] Session ${sessionId} not found in sessionStore`);
   }
+}
+
+// ============= Session Naming (Premium/Enterprise Feature) =============
+
+/**
+ * Session name validation rules and error messages
+ */
+const SESSION_NAME_RULES = {
+  MIN_LENGTH: 1,              // After trimming
+  MAX_LENGTH: 50,             // Characters (including emojis)
+  ALLOW_EMOJIS: true,         // ✅ "🎨 Work Gmail"
+  ALLOW_SPACES: true,         // ✅ "Work Gmail"
+  ALLOW_NUMBERS: true,        // ✅ "Client 1"
+  ALLOW_PUNCTUATION: true,    // ✅ "Client A - Facebook"
+  BLOCK_HTML: true,           // ❌ "<script>alert(1)</script>"
+  BLOCK_DANGEROUS_CHARS: ['<', '>', '"', "'", '`'],
+  TRIM_WHITESPACE: true,      // "  Work  " → "Work"
+  COLLAPSE_SPACES: true,      // "Work    Gmail" → "Work Gmail"
+  ALLOW_DUPLICATES: false,    // ❌ Case-insensitive unique names
+  CASE_SENSITIVE_CHECK: false // "Work Gmail" = "work gmail"
+};
+
+const SESSION_NAME_ERRORS = {
+  EMPTY: 'Session name cannot be empty',
+  TOO_LONG: 'Session name must be 50 characters or less',
+  INVALID_CHARS: 'Session name contains invalid characters (< > " \' `)',
+  DUPLICATE: 'Session name already exists. Please choose a different name.',
+  NOT_STRING: 'Session name must be text',
+  SESSION_NOT_FOUND: 'Session not found',
+  TIER_RESTRICTED: 'Session naming is a Premium feature'
+};
+
+/**
+ * Sanitize session name for safe display
+ * Removes dangerous characters and normalizes whitespace
+ * @param {string} name - Session name to sanitize
+ * @returns {string} Sanitized name
+ */
+function sanitizeSessionName(name) {
+  if (typeof name !== 'string') {
+    return '';
+  }
+
+  let sanitized = name;
+
+  // Trim whitespace
+  if (SESSION_NAME_RULES.TRIM_WHITESPACE) {
+    sanitized = sanitized.trim();
+  }
+
+  // Collapse multiple spaces into single space
+  if (SESSION_NAME_RULES.COLLAPSE_SPACES) {
+    sanitized = sanitized.replace(/\s+/g, ' ');
+  }
+
+  // Remove dangerous characters
+  if (SESSION_NAME_RULES.BLOCK_HTML) {
+    SESSION_NAME_RULES.BLOCK_DANGEROUS_CHARS.forEach(char => {
+      sanitized = sanitized.split(char).join('');
+    });
+  }
+
+  return sanitized;
+}
+
+/**
+ * Validate session name
+ * @param {string} name - Session name to validate
+ * @param {string} currentSessionId - Current session ID (to exclude from duplicate check)
+ * @returns {Object} Validation result {valid: boolean, error?: string}
+ */
+function validateSessionName(name, currentSessionId = null) {
+  // Check if name is a string
+  if (typeof name !== 'string') {
+    return { valid: false, error: SESSION_NAME_ERRORS.NOT_STRING };
+  }
+
+  // Sanitize and trim
+  const sanitized = sanitizeSessionName(name);
+
+  // Check if empty after sanitization
+  if (sanitized.length < SESSION_NAME_RULES.MIN_LENGTH) {
+    return { valid: false, error: SESSION_NAME_ERRORS.EMPTY };
+  }
+
+  // Check length (count characters including emojis)
+  // Use spread operator to handle multi-byte characters (emojis) correctly
+  const charCount = [...sanitized].length;
+  if (charCount > SESSION_NAME_RULES.MAX_LENGTH) {
+    return { valid: false, error: SESSION_NAME_ERRORS.TOO_LONG };
+  }
+
+  // Check for dangerous characters
+  if (SESSION_NAME_RULES.BLOCK_HTML) {
+    const hasDangerousChars = SESSION_NAME_RULES.BLOCK_DANGEROUS_CHARS.some(char =>
+      sanitized.includes(char)
+    );
+    if (hasDangerousChars) {
+      return { valid: false, error: SESSION_NAME_ERRORS.INVALID_CHARS };
+    }
+  }
+
+  // Check for duplicates (case-insensitive)
+  if (!SESSION_NAME_RULES.ALLOW_DUPLICATES) {
+    const isDuplicate = isSessionNameDuplicate(sanitized, currentSessionId);
+    if (isDuplicate) {
+      return { valid: false, error: SESSION_NAME_ERRORS.DUPLICATE };
+    }
+  }
+
+  return { valid: true, sanitized: sanitized };
+}
+
+/**
+ * Check if session name is duplicate (case-insensitive)
+ * @param {string} name - Session name to check
+ * @param {string} excludeSessionId - Session ID to exclude from check (for editing)
+ * @returns {boolean} True if duplicate exists
+ */
+function isSessionNameDuplicate(name, excludeSessionId = null) {
+  const normalizedName = SESSION_NAME_RULES.CASE_SENSITIVE_CHECK
+    ? name
+    : name.toLowerCase();
+
+  for (const [sessionId, session] of Object.entries(sessionStore.sessions)) {
+    // Skip the current session if editing
+    if (sessionId === excludeSessionId) {
+      continue;
+    }
+
+    // Check if session has a custom name
+    if (session.name) {
+      const existingName = SESSION_NAME_RULES.CASE_SENSITIVE_CHECK
+        ? session.name
+        : session.name.toLowerCase();
+
+      if (existingName === normalizedName) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Get display name for session (custom name or fallback to session ID)
+ * @param {string} sessionId - Session ID
+ * @returns {string} Display name
+ */
+function getSessionDisplayName(sessionId) {
+  const session = sessionStore.sessions[sessionId];
+  if (!session) {
+    return sessionId; // Fallback to session ID if session not found
+  }
+
+  // Return custom name if exists, otherwise return session ID
+  return session.name || sessionId;
+}
+
+/**
+ * Set custom name for a session (Premium/Enterprise only)
+ * @param {string} sessionId - Session ID
+ * @param {string} name - Custom name (max 50 characters)
+ * @returns {Promise<Object>} Result with success status
+ */
+async function setSessionName(sessionId, name) {
+  console.log('[setSessionName] Request to set name for session:', sessionId);
+  console.log('[setSessionName] Name:', name);
+
+  // Check if session exists
+  const session = sessionStore.sessions[sessionId];
+  if (!session) {
+    console.error('[setSessionName] Session not found:', sessionId);
+    return {
+      success: false,
+      message: SESSION_NAME_ERRORS.SESSION_NOT_FOUND
+    };
+  }
+
+  // Check tier restriction (Premium/Enterprise only)
+  let tier = 'free';
+  try {
+    if (typeof licenseManager !== 'undefined' && licenseManager.isInitialized) {
+      tier = licenseManager.getTier();
+    }
+  } catch (error) {
+    console.error('[setSessionName] Error getting tier:', error);
+  }
+
+  if (tier === 'free') {
+    console.warn('[setSessionName] Session naming not allowed for Free tier');
+    return {
+      success: false,
+      tier: tier,
+      message: SESSION_NAME_ERRORS.TIER_RESTRICTED
+    };
+  }
+
+  // Validate name
+  const validation = validateSessionName(name, sessionId);
+  if (!validation.valid) {
+    console.error('[setSessionName] Validation failed:', validation.error);
+    return {
+      success: false,
+      message: validation.error
+    };
+  }
+
+  // Store sanitized name
+  const sanitizedName = validation.sanitized;
+  session.name = sanitizedName;
+
+  console.log('[setSessionName] ✓ Session name set:', sanitizedName);
+  console.log('[setSessionName] Session:', sessionId);
+
+  // Persist immediately
+  persistSessions(true);
+
+  return {
+    success: true,
+    sessionId: sessionId,
+    name: sanitizedName,
+    tier: tier
+  };
+}
+
+/**
+ * Get session name
+ * @param {string} sessionId - Session ID
+ * @returns {Promise<Object>} Result with session name
+ */
+async function getSessionName(sessionId) {
+  console.log('[getSessionName] Request for session:', sessionId);
+
+  const session = sessionStore.sessions[sessionId];
+  if (!session) {
+    console.error('[getSessionName] Session not found:', sessionId);
+    return {
+      success: false,
+      message: SESSION_NAME_ERRORS.SESSION_NOT_FOUND
+    };
+  }
+
+  const name = session.name || null;
+  console.log('[getSessionName] ✓ Session name:', name);
+
+  return {
+    success: true,
+    sessionId: sessionId,
+    name: name
+  };
+}
+
+/**
+ * Clear session name (revert to session ID)
+ * @param {string} sessionId - Session ID
+ * @returns {Promise<Object>} Result with success status
+ */
+async function clearSessionName(sessionId) {
+  console.log('[clearSessionName] Request to clear name for session:', sessionId);
+
+  const session = sessionStore.sessions[sessionId];
+  if (!session) {
+    console.error('[clearSessionName] Session not found:', sessionId);
+    return {
+      success: false,
+      message: SESSION_NAME_ERRORS.SESSION_NOT_FOUND
+    };
+  }
+
+  // Clear name
+  session.name = null;
+
+  console.log('[clearSessionName] ✓ Session name cleared');
+  console.log('[clearSessionName] Session:', sessionId);
+
+  // Persist immediately
+  persistSessions(true);
+
+  return {
+    success: true,
+    sessionId: sessionId
+  };
 }
 
 // ============= WebRequest Interception =============
@@ -3626,6 +3919,63 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       })();
       return true; // Async response
+
+    } else if (message.action === 'setSessionName') {
+      // Set custom name for session (Premium/Enterprise only)
+      Promise.resolve(setSessionName(message.sessionId, message.name))
+        .then(result => {
+          try {
+            sendResponse(result);
+          } catch (error) {
+            console.error('[setSessionName] sendResponse error:', error);
+          }
+        })
+        .catch(error => {
+          console.error('[setSessionName] Error:', error);
+          sendResponse({
+            success: false,
+            message: error.message
+          });
+        });
+      return true; // Keep message channel open for async response
+
+    } else if (message.action === 'getSessionName') {
+      // Get session name
+      Promise.resolve(getSessionName(message.sessionId))
+        .then(result => {
+          try {
+            sendResponse(result);
+          } catch (error) {
+            console.error('[getSessionName] sendResponse error:', error);
+          }
+        })
+        .catch(error => {
+          console.error('[getSessionName] Error:', error);
+          sendResponse({
+            success: false,
+            message: error.message
+          });
+        });
+      return true; // Keep message channel open for async response
+
+    } else if (message.action === 'clearSessionName') {
+      // Clear session name (revert to session ID)
+      Promise.resolve(clearSessionName(message.sessionId))
+        .then(result => {
+          try {
+            sendResponse(result);
+          } catch (error) {
+            console.error('[clearSessionName] sendResponse error:', error);
+          }
+        })
+        .catch(error => {
+          console.error('[clearSessionName] Error:', error);
+          sendResponse({
+            success: false,
+            message: error.message
+          });
+        });
+      return true; // Keep message channel open for async response
 
     } else if (message.action === 'tierChanged') {
       // Handle tier change notification from license-manager.js

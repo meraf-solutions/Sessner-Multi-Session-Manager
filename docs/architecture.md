@@ -1,8 +1,8 @@
 # System Architecture
 ## Sessner – Multi-Session Manager
 
-**Last Updated:** 2025-10-28
-**Extension Version:** 3.0
+**Last Updated:** 2025-10-29
+**Extension Version:** 3.1.0
 **Architecture Pattern:** SessionBox-Style Isolation
 
 ---
@@ -175,6 +175,24 @@ const licenseCache = {
 - Immediate writes for critical operations (session creation/deletion)
 - Periodic validation (every 7 days online)
 - Grace period handling (30 days offline)
+
+**Session Data Model (Updated v3.1.0)**:
+```javascript
+sessionStore.sessions[sessionId] = {
+  id: 'session_1234567890_abc123',
+  name: null,                    // NEW v3.1.0: Custom session name (Premium/Enterprise)
+  color: '#FF6B6B',              // Session color
+  customColor: null,             // Custom color (Enterprise only)
+  createdAt: 1234567890000,      // Timestamp
+  lastAccessed: 1234567890000,   // Last activity timestamp
+  tabs: [123, 456]               // Tab IDs in this session
+};
+```
+
+**New in v3.1.0:**
+- `name` field: Custom session name (Premium/Enterprise only)
+- Validation: Max 50 chars, no duplicates, emoji support
+- Migration: Automatically added to existing sessions on load
 
 ---
 
