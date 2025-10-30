@@ -877,6 +877,13 @@ function createEditInput(currentName, sessionId) {
     } else {
       counter.classList.add('session-name-counter-normal');
     }
+
+    // Clear validation error on input (user is correcting the error)
+    const existingError = container.querySelector('.session-name-error');
+    if (existingError) {
+      existingError.remove();
+      console.log('[Session Name] Validation error cleared on input');
+    }
   });
 
   return container;

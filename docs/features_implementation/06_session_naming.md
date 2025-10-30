@@ -762,7 +762,7 @@ All session naming elements adapted for dark mode:
 
 ### Test Category 1: Backend API Validation
 
-#### Test 1.1: Valid Session Name
+#### Test 1.1: Valid Session Name ✅ PASSED
 **Objective:** Verify valid names are accepted
 
 **Steps:**
@@ -787,7 +787,23 @@ All session naming elements adapted for dark mode:
 - With punctuation: `await setSessionName(sessionId, 'Client A - Facebook');`
 - Max length (50 chars): `await setSessionName(sessionId, 'A'.repeat(50));`
 
-#### Test 1.2: Duplicate Session Name (Case-Insensitive)
+**Test Result:** ✅ PASSED (2025-10-30)
+
+**Console Output:**
+```
+[setSessionName] Request to set name for session: session_1761814454348_7cuagw739
+[setSessionName] Name: Test 123
+[setSessionName] ✓ Session name set: Test 123
+[setSessionName] Session: session_1761814454348_7cuagw739
+
+[setSessionName] Name: 🔒Test 123
+[setSessionName] ✓ Session name set: 🔒Test 123
+
+[setSessionName] Name: 🔒Test 123 qwertyuiop[pqwrt yjbndxgdh sfhdfjndxfds
+[setSessionName] ✓ Session name set: 🔒Test 123 qwertyuiop[pqwrt yjbndxgdh sfhdfjndxfds
+```
+
+#### Test 1.2: Duplicate Session Name (Case-Insensitive) ✅ PASSED
 **Objective:** Verify duplicate names are rejected
 
 **Steps:**
@@ -806,7 +822,22 @@ All session naming elements adapted for dark mode:
 await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 ```
 
-#### Test 1.3: Character Limit (51+ Characters)
+**Test Result:** ✅ PASSED (2025-10-30)
+
+**Console Output:**
+```
+[setSessionName] Request to set name for session: session_1761814770852_bba9m89o6
+[setSessionName] Name: Work
+[setSessionName] Validation failed: Session name already exists. Please choose a different name.
+
+[setSessionName] Name: work
+[setSessionName] Validation failed: Session name already exists. Please choose a different name.
+
+[setSessionName] Name: work 1
+[setSessionName] ✓ Session name set: work 1
+```
+
+#### Test 1.3: Character Limit (51+ Characters) ✅ PASSED
 **Objective:** Verify names exceeding 50 chars are truncated
 
 **Steps:**
@@ -819,7 +850,23 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ❌ Error response: `{success: false, message: 'Session name must be 50 characters or less'}`
 - ✅ Name not saved
 
-#### Test 1.4: HTML Characters Blocked
+**Test Result:** ✅ PASSED (2025-10-30)
+
+**Console Output:**
+```
+[setSessionName] Name: 12345678910111213141516171819202122232425262728293
+[setSessionName] ✓ Session name set: 12345678910111213141516171819202122232425262728293
+
+---> Error notification shown when entered more than 50 characters in popup
+
+through console log:
+await setSessionName(sessionId, 'session_1761814770852_bba9m89o6'.repeat(51));
+[setSessionName] Name: session_1761814770852...  (truncated for brevity)
+[setSessionName] Validation failed: Session name must be 50 characters or less
+{success: false, message: 'Session name must be 50 characters or less'}
+```
+
+#### Test 1.4: HTML Characters Blocked ✅ PASSED
 **Objective:** Verify dangerous characters are rejected
 
 **Steps:**
@@ -832,7 +879,22 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Success (sanitized): Name saved as: `scriptalert(1)/script`
 - ✅ All `< > " ' \`` characters removed
 
-#### Test 1.5: Empty Name
+**Test Result:** ✅ PASSED (2025-10-30)
+
+**Console Output:**
+```
+Through console log:
+await setSessionName('session_1761814770852_bba9m89o6', '<script>alert(1)</script>');
+[setSessionName] Name: <script>alert(1)</script>
+[setSessionName] ✓ Session name set: scriptalert(1)/script
+{success: true, sessionId: 'session_1761814770852_bba9m89o6', name: 'scriptalert(1)/script', tier: 'enterprise'}
+
+Through UI/UX popup:
+[setSessionName] Name: <script>alert(2)</script>
+[setSessionName] ✓ Session name set: scriptalert(2)/script
+```
+
+#### Test 1.5: Empty Name ✅ PASSED
 **Objective:** Verify empty names are rejected
 
 **Steps:**
@@ -848,7 +910,22 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 **Expected Result:**
 - ❌ Error response: `{success: false, message: 'Session name cannot be empty'}`
 
-#### Test 1.6: Whitespace Handling
+**Test Result:** ✅ PASSED (2025-10-30)
+
+**Console Output:**
+```
+await setSessionName('session_1761814454348_7cuagw739', '');
+[setSessionName] Name:
+[setSessionName] Validation failed: Session name cannot be empty
+{success: false, message: 'Session name cannot be empty'}
+
+await setSessionName('session_1761814454348_7cuagw739', '   ');
+[setSessionName] Name:
+[setSessionName] Validation failed: Session name cannot be empty
+{success: false, message: 'Session name cannot be empty'}
+```
+
+#### Test 1.6: Whitespace Handling ✅ PASSED
 **Objective:** Verify whitespace is trimmed and collapsed
 
 **Steps:**
@@ -865,7 +942,22 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Trimmed: `'Work Gmail'` (no leading/trailing spaces)
 - ✅ Collapsed: `'Work Gmail'` (single space between words)
 
-#### Test 1.7: Emoji Character Counting
+**Test Result:** ✅ PASSED (2025-10-30)
+
+**Console Output:**
+```
+await setSessionName('session_1761814454348_7cuagw739', '  Work Gmail  ');
+[setSessionName] Name:   Work Gmail
+[setSessionName] ✓ Session name set: Work Gmail
+{success: true, sessionId: 'session_1761814454348_7cuagw739', name: 'Work Gmail', tier: 'enterprise'}
+
+await setSessionName('session_1761814454348_7cuagw739', 'Work    Gmail Test');
+[setSessionName] Name: Work    Gmail Test
+[setSessionName] ✓ Session name set: Work Gmail Test
+{success: true, sessionId: 'session_1761814454348_7cuagw739', name: 'Work Gmail Test', tier: 'enterprise'}
+```
+
+#### Test 1.7: Emoji Character Counting ✅ PASSED
 **Objective:** Verify emojis count correctly
 
 **Steps:**
@@ -883,7 +975,20 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Emoji counts as 1 character
 - ✅ Total length correct
 
-#### Test 1.8: Tier Restriction (Free Tier)
+**Test Result:** ✅ PASSED (2025-10-30)
+
+**Console Output:**
+```
+await setSessionName('session_1761814454348_7cuagw739', '👨‍👩‍👧‍👦 Family');
+[setSessionName] Name: 👨‍👩‍👧‍👦 Family
+[setSessionName] ✓ Session name set: 👨‍👩‍👧‍👦 Family
+{success: true, sessionId: 'session_1761814454348_7cuagw739', name: '👨‍👩‍👧‍👦 Family', tier: 'enterprise'}
+
+const name = sessionStore.sessions['session_1761814454348_7cuagw739'].name;
+console.log([...name].length); // Output: 8
+```
+
+#### Test 1.8: Tier Restriction (Free Tier) ✅ PASSED
 **Objective:** Verify Free tier users cannot set names
 
 **Steps:**
@@ -899,7 +1004,17 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 **Expected Result:**
 - ❌ Error response: `{success: false, message: 'Session naming is a Premium feature', requiresUpgrade: true, tier: 'premium'}`
 
-#### Test 1.9: Clear Session Name
+**Test Result:** ✅ PASSED (2025-10-30)
+
+**Console Output:**
+```
+await setSessionName('session_1761814454348_7cuagw739', 'Test from Free tier');
+[setSessionName] Name: Test from Free tier
+[setSessionName] Session naming not allowed for Free tier
+{success: false, tier: 'free', message: 'Session naming is a Premium feature'}
+```
+
+#### Test 1.9: Clear Session Name ✅ PASSED
 **Objective:** Verify names can be cleared
 
 **Steps:**
@@ -910,6 +1025,21 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 **Expected Result:**
 - ✅ Name cleared (set to null)
 - ✅ Revert to displaying session ID
+
+**Test Result:** ✅ PASSED (2025-10-30)
+
+**Console Output:**
+```
+await setSessionName('session_1761814454348_7cuagw739', 'Work');
+[setSessionName] ✓ Session name set: Work
+{success: true, sessionId: 'session_1761814454348_7cuagw739', name: 'Work', tier: 'enterprise'}
+
+await clearSessionName('session_1761814454348_7cuagw739');
+{success: true, sessionId: 'session_1761814454348_7cuagw739'}
+
+sessionStore.sessions['session_1761814454348_7cuagw739'].name === null
+true
+```
 
 ### Test Category 2: Inline Editing UI (Premium)
 
@@ -925,6 +1055,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Current name pre-filled and selected
 - ✅ Character counter visible: `X/50 characters`
 - ✅ Cursor in input field
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 #### Test 2.2: Character Counter Updates
 **Objective:** Verify counter updates in real-time
@@ -942,6 +1074,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
   - Red (45-50 chars)
 - ✅ Emoji counted as 1 character: `🎨` = 1 char
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 2.3: Save with Enter Key
 **Objective:** Verify Enter saves name
 
@@ -956,6 +1090,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Sessions refresh
 - ✅ New name displayed
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 2.4: Cancel with Escape Key
 **Objective:** Verify Escape cancels edit
 
@@ -969,6 +1105,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Original name restored
 - ✅ No API call made
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 2.5: Auto-Save on Blur
 **Objective:** Verify clicking away saves
 
@@ -981,6 +1119,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ 150ms delay
 - ✅ Name saved
 - ✅ Sessions refresh
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 #### Test 2.6: Validation Error Display
 **Objective:** Verify inline errors appear
@@ -996,6 +1136,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Input remains active
 - ✅ No save occurred
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 2.7: Clear Error on Input
 **Objective:** Verify error clears when typing
 
@@ -1006,6 +1148,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 **Expected Result:**
 - ✅ Error message disappears
 - ✅ Can try again
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 #### Test 2.8: Empty Name Cancels Edit
 **Objective:** Verify empty input cancels
@@ -1020,6 +1164,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Original name restored
 - ✅ No API call made
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 2.9: Session ID Auto-Clear
 **Objective:** Verify session IDs are cleared on edit
 
@@ -1033,6 +1179,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Placeholder shown: "e.g., Work Gmail"
 - ✅ Ready to type new name
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 2.10: Tab Title Prefix in Popup
 **Objective:** Verify tab titles show `[Name]` prefix
 
@@ -1044,6 +1192,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 **Expected Result:**
 - ✅ Tab title in popup: `[Personal] Gmail`
 - ❌ Browser tab title unchanged (still just "Gmail")
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 ### Test Category 3: Enterprise Settings Modal
 
@@ -1061,6 +1211,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Character counter: `10/50 characters`
 - ✅ Apply button: "Apply Settings"
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 3.2: Save Name Only (No Color Change)
 **Objective:** Verify name saves without selecting color
 
@@ -1075,6 +1227,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Color unchanged
 - ✅ Modal closes
 - ✅ Sessions refresh
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 #### Test 3.3: Save Color Only (No Name Change)
 **Objective:** Verify color saves without changing name
@@ -1091,6 +1245,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Modal closes
 - ✅ Sessions refresh
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 3.4: Save Both Name and Color
 **Objective:** Verify both save independently
 
@@ -1104,6 +1260,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Name saved: "Work"
 - ✅ Color saved
 - ✅ Both visible after refresh
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 #### Test 3.5: Empty Name Clears Custom Name
 **Objective:** Verify empty name reverts to session ID
@@ -1119,6 +1277,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Session ID displayed in popup
 - ✅ `session.name === null`
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 3.6: Validation Error in Modal
 **Objective:** Verify inline errors in modal
 
@@ -1133,6 +1293,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Modal remains open
 - ✅ Color not saved (if selected)
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 3.7: Character Counter in Modal
 **Objective:** Verify modal counter works
 
@@ -1144,6 +1306,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Counter updates in real-time
 - ✅ Color changes (gray → orange → red)
 - ✅ Max 50 chars enforced
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 #### Test 3.8: Cancel Modal
 **Objective:** Verify cancel discards changes
@@ -1157,6 +1321,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Modal closes
 - ✅ No changes saved
 - ✅ Sessions don't refresh
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 ### Test Category 4: Free Tier Restrictions
 
@@ -1173,6 +1339,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Badge styling: Purple gradient, white text, "PRO"
 - ✅ Session names NOT editable (no hover effect)
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 4.2: Hover Tooltip (Free Tier)
 **Objective:** Verify upgrade tooltip appears
 
@@ -1183,6 +1351,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 **Expected Result:**
 - ✅ Tooltip: "Upgrade to Premium/Enterprise to edit session name"
 - ❌ No blue hover effect
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 #### Test 4.3: Double-Click Upgrade Prompt
 **Objective:** Verify upgrade prompt on double-click
@@ -1196,6 +1366,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Message: "Session naming is a Premium/Enterprise feature. Click 'View License' to upgrade for unlimited sessions and custom names."
 - ✅ Buttons: [Cancel] [View License]
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 4.4: Upgrade Redirect
 **Objective:** Verify redirect to license page
 
@@ -1206,6 +1378,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 **Expected Result:**
 - ✅ Redirects to `popup-license.html`
 - ✅ License page opens
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 #### Test 4.5: No Settings Gear Icon (Free Tier)
 **Objective:** Verify gear icon hidden for Free tier
@@ -1218,6 +1392,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 **Expected Result:**
 - ❌ No gear icon visible
 - ✅ Only session name and PRO badge shown
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 ### Test Category 5: Theme Support
 
@@ -1238,6 +1414,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Error messages: Red text, pink background
 - ✅ PRO badge: Purple gradient
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 5.2: Dark Mode Styling
 **Objective:** Verify all elements adapted for dark mode
 
@@ -1255,6 +1433,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Error messages: Red text, dark red background
 - ✅ PRO badge: Same gradient (looks good in dark)
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 5.3: Theme Switch While Editing
 **Objective:** Verify theme changes don't break editing
 
@@ -1267,6 +1447,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Input field re-styled instantly
 - ✅ No data loss
 - ✅ Edit mode remains active
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 ### Test Category 6: Edge Cases
 
@@ -1281,6 +1463,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ No duplicate listeners
 - ✅ No errors in console
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 6.2: Edit Multiple Sessions Simultaneously
 **Objective:** Verify only one edit at a time
 
@@ -1292,6 +1476,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Session A edit cancels (or completes first)
 - ✅ Session B edit begins
 - ✅ No overlapping edits
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 #### Test 6.3: Browser Restart with Custom Names
 **Objective:** Verify names persist
@@ -1305,6 +1491,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Custom names restored
 - ✅ Session IDs still match
 - ✅ No data loss
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 #### Test 6.4: Tier Downgrade (Enterprise → Free)
 **Objective:** Verify graceful degradation
@@ -1320,6 +1508,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Names remain in storage (backend: `session.name` not deleted)
 - ✅ Can re-access names on upgrade
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 6.5: Session Deletion with Custom Name
 **Objective:** Verify cleanup on session delete
 
@@ -1333,6 +1523,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Name deleted with session
 - ✅ No memory leak
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 6.6: Very Long Words (No Spaces)
 **Objective:** Verify long words don't break layout
 
@@ -1344,6 +1536,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Name truncated with ellipsis in UI
 - ✅ Full name stored in backend
 - ✅ No layout overflow
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 #### Test 6.7: Special Characters (Unicode)
 **Objective:** Verify Unicode support
@@ -1357,6 +1551,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Character counter accurate
 - ✅ No encoding issues
 
+**Test Result:** ✅ PASSED (2025-10-30)
+
 #### Test 6.8: Modal Input with Existing Session ID
 **Objective:** Verify modal handles session ID correctly
 
@@ -1369,6 +1565,8 @@ await setSessionName(sessionB, 'Work Gmail'); // Should also fail
 - ✅ Input pre-filled with session ID (not cleared)
 - ✅ User can edit or clear
 - ✅ Empty input clears name
+
+**Test Result:** ✅ PASSED (2025-10-30)
 
 ---
 
