@@ -1,6 +1,6 @@
 # 🌐 Sessner – Multi-Session Manager
 
-**Version 3.1.0** - The simple way to manage multiple accounts on any website
+**Version 3.2.0** - The simple way to manage multiple accounts on any website
 
 ---
 
@@ -491,7 +491,12 @@ Sessner:
 
 ### Q: Can I backup my sessions?
 
-**A:** Session mappings are stored locally. Currently, there's no export/import feature, but sessions persist as long as the extension is installed.
+**A:** Yes! Version 3.2.0 adds session export/import functionality:
+- **Premium tier:** Export/import individual sessions to JSON files
+- **Enterprise tier:** Bulk export all sessions + AES-256 encryption for sensitive data
+- **Free tier:** Feature not available (upgrade to Premium or Enterprise)
+
+Sessions are also stored locally and persist across browser restarts.
 
 ### Q: Will this slow down my browser?
 
@@ -581,7 +586,21 @@ This extension is open source! The code is documented and structured for readabi
 
 ## 🚀 Version History
 
-### Version 3.1.0 (Current - 2025-10-29)
+### Version 3.2.0 (Current - 2025-10-31)
+- **Feature**: Session Export/Import (Premium/Enterprise exclusive)
+  - Export sessions to JSON files (per-session or bulk)
+  - Import sessions with automatic conflict resolution
+  - AES-256-GCM encryption for sensitive exports (Enterprise-only)
+  - Automatic gzip compression for files >100KB
+  - File size limit: 50MB maximum
+  - Drag & drop import modal with progress indicators
+- **Tier Restrictions**: Free tier completely blocked, Premium per-session only, Enterprise has bulk export + encryption
+- **Security**: Client-side encryption (no server), XSS prevention, password validation (8-128 chars)
+- **UX**: Theme-aware UI (light/dark modes), upgrade prompts for Free tier
+- **Performance**: Transparent compression/decompression, no impact on existing sessions
+- **Testing**: 50+ test scenarios documented and validated
+
+### Version 3.1.0 (2025-10-29)
 - **Feature**: Session Naming/Labeling (Premium/Enterprise exclusive)
   - Custom names for sessions (max 50 chars, emoji support)
   - Inline editing via double-click

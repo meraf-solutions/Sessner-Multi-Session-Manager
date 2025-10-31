@@ -1177,6 +1177,19 @@ async function refreshSessions() {
               </button>
             ` : ''}
 
+            ${status.tier === 'premium' || status.tier === 'enterprise' ? `
+              <button class="session-export-icon"
+                      data-export-session="${sessionId}"
+                      title="Export session (${status.tier === 'premium' ? 'Premium' : 'Enterprise'} feature)"
+                      aria-label="Export session">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+              </button>
+            ` : ''}
+
             <div class="session-info-wrapper">
               <div class="session-name-container" data-session-id="${sessionId}">
                 <span class="session-name ${isEditable ? 'editable' : ''}"
@@ -1229,13 +1242,24 @@ async function refreshSessions() {
 
     $('#sessionsList').innerHTML = html;
 
-    // Attach event listeners to tab items, session settings, and session names
+    // Attach event listeners to tab items, session settings, session names, and export
     attachTabListeners();
     attachSessionSettingsListeners();
     attachSessionNameListeners(sessions, sessionMetadata);
+    attachExportListeners();
 
     // Update auto-restore UI after sessions are rendered
     await updateAutoRestoreUI();
+
+    // Show/hide bulk export button (Enterprise only)
+    const bulkExportContainer = $('#bulkExportContainer');
+    if (bulkExportContainer) {
+      if (status.tier === 'enterprise' && sessions.length > 0) {
+        bulkExportContainer.style.display = 'block';
+      } else {
+        bulkExportContainer.style.display = 'none';
+      }
+    }
 
   } catch (error) {
     console.error('Error refreshing sessions:', error);
@@ -1300,6 +1324,22 @@ function attachSessionNameListeners(sessions, sessionMetadata) {
 
     // Attach double-click listener
     attachSessionNameListener(nameElement, sessionId, currentName);
+  });
+}
+
+/**
+ * Attach event listeners to export icons
+ */
+function attachExportListeners() {
+  document.querySelectorAll('.session-export-icon').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const sessionId = btn.dataset.exportSession;
+
+      console.log('[Export] Export button clicked for session:', sessionId);
+      await handleSessionExport(sessionId);
+    });
   });
 }
 
@@ -1651,6 +1691,454 @@ async function waitForInitialization() {
   }
 }
 
+// ============= Session Export/Import (v3.2.0) =============
+
+/**
+ * Download file to user's downloads folder
+ * @param {string} filename - Filename
+ * @param {string} content - File content
+ */
+function downloadFile(filename, content) {
+  const blob = new Blob([content], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+
+  chrome.downloads.download({
+    url: url,
+    filename: filename,
+    saveAs: true
+  }, (downloadId) => {
+    if (chrome.runtime.lastError) {
+      console.error('[Export] Download error:', chrome.runtime.lastError);
+      alert('Export failed: ' + chrome.runtime.lastError.message);
+    } else {
+      console.log('[Export] ✓ Download started, ID:', downloadId);
+      // Revoke object URL after download starts
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  });
+}
+
+/**
+ * Handle session export (Premium/Enterprise only)
+ * @param {string} sessionId - Session ID to export
+ */
+async function handleSessionExport(sessionId) {
+  console.log('[Export] Export requested for session:', sessionId);
+
+  try {
+    // Check tier first
+    const tier = await getTier();
+
+    if (tier === 'free') {
+      if (confirm('Session export requires Premium or Enterprise tier.\n\nClick "View License" to upgrade?')) {
+        window.location.href = 'popup-license.html';
+      }
+      return;
+    }
+
+    // Show progress
+    const exportBtn = document.querySelector(`[data-export-session="${sessionId}"]`);
+    const originalHTML = exportBtn ? exportBtn.innerHTML : '';
+    if (exportBtn) {
+      exportBtn.innerHTML = '⏳';
+      exportBtn.disabled = true;
+    }
+
+    // For Enterprise: Ask if user wants encryption
+    let encrypt = false;
+    let password = null;
+
+    if (tier === 'enterprise') {
+      encrypt = confirm('Encrypt export file with password?\n\n(Enterprise feature - protects session data)');
+
+      if (encrypt) {
+        password = prompt('Enter encryption password (minimum 8 characters):');
+        if (!password) {
+          if (exportBtn) {
+            exportBtn.innerHTML = originalHTML;
+            exportBtn.disabled = false;
+          }
+          return;
+        }
+        if (password.length < 8) {
+          alert('Password must be at least 8 characters');
+          if (exportBtn) {
+            exportBtn.innerHTML = originalHTML;
+            exportBtn.disabled = false;
+          }
+          return;
+        }
+      }
+    }
+
+    // Export session
+    const response = await sendMessage({
+      action: 'exportSession',
+      sessionId: sessionId,
+      options: {
+        encrypt: encrypt,
+        password: password
+      }
+    });
+
+    if (exportBtn) {
+      exportBtn.innerHTML = originalHTML;
+      exportBtn.disabled = false;
+    }
+
+    if (response && response.success) {
+      console.log('[Export] ✓ Export successful');
+
+      // Download file
+      downloadFile(response.filename, response.data);
+
+      // Show success message
+      const sizeKB = (response.size / 1024).toFixed(2);
+      const compressed = response.compressed ? ' (compressed)' : '';
+      const encrypted = response.encrypted ? ' (encrypted)' : '';
+
+      alert(`✓ Session exported successfully!\n\nFilename: ${response.filename}\nSize: ${sizeKB} KB${compressed}${encrypted}`);
+    } else if (response && response.requiresUpgrade) {
+      if (confirm(response.message + '\n\nClick "View License" to upgrade?')) {
+        window.location.href = 'popup-license.html';
+      }
+    } else {
+      console.error('[Export] Export failed:', response);
+      alert('Export failed: ' + (response?.message || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('[Export] Error:', error);
+    alert('Export failed: ' + error.message);
+  }
+}
+
+/**
+ * Handle bulk export of all sessions (Enterprise only)
+ */
+async function handleBulkExport() {
+  console.log('[Export] Bulk export requested');
+
+  try {
+    const tier = await getTier();
+
+    if (tier !== 'enterprise') {
+      if (confirm('Bulk export requires Enterprise tier.\n\nClick "View License" to upgrade?')) {
+        window.location.href = 'popup-license.html';
+      }
+      return;
+    }
+
+    // Ask if user wants encryption
+    const encrypt = confirm('Encrypt export file with password?\n\n(Recommended for protecting session data)');
+
+    let password = null;
+    if (encrypt) {
+      password = prompt('Enter encryption password (minimum 8 characters):');
+      if (!password) return;
+      if (password.length < 8) {
+        alert('Password must be at least 8 characters');
+        return;
+      }
+    }
+
+    // Show progress
+    const exportBtn = $('#exportAllSessionsBtn');
+    const originalText = exportBtn ? exportBtn.textContent : '';
+    if (exportBtn) {
+      exportBtn.textContent = 'Exporting...';
+      exportBtn.disabled = true;
+    }
+
+    // Export all sessions
+    const response = await sendMessage({
+      action: 'exportAllSessions',
+      options: {
+        encrypt: encrypt,
+        password: password
+      }
+    });
+
+    if (exportBtn) {
+      exportBtn.textContent = originalText;
+      exportBtn.disabled = false;
+    }
+
+    if (response && response.success) {
+      console.log('[Export] ✓ Bulk export successful');
+
+      // Download file
+      downloadFile(response.filename, response.data);
+
+      // Show success message
+      const sizeKB = (response.size / 1024).toFixed(2);
+      const compressed = response.compressed ? ' (compressed)' : '';
+      const encrypted = response.encrypted ? ' (encrypted)' : '';
+
+      alert(`✓ Bulk export successful!\n\nSessions: ${response.sessionCount}\nFilename: ${response.filename}\nSize: ${sizeKB} KB${compressed}${encrypted}`);
+    } else {
+      console.error('[Export] Bulk export failed:', response);
+      alert('Bulk export failed: ' + (response?.message || 'Unknown error'));
+    }
+  } catch (error) {
+    console.error('[Export] Error:', error);
+    alert('Bulk export failed: ' + error.message);
+  }
+}
+
+/**
+ * Show import modal
+ */
+async function showImportModal() {
+  console.log('[Import] Opening import modal');
+
+  try {
+    const tier = await getTier();
+
+    if (tier === 'free') {
+      if (confirm('Session import requires Premium or Enterprise tier.\n\nClick "View License" to upgrade?')) {
+        window.location.href = 'popup-license.html';
+      }
+      return;
+    }
+
+    // Create modal HTML
+    const modalHTML = `
+      <div class="import-modal-overlay" id="importModalOverlay">
+        <div class="import-modal">
+          <div class="import-modal-header">
+            <h3>Import Sessions</h3>
+            <button class="import-modal-close" id="importModalClose">&times;</button>
+          </div>
+          <div class="import-modal-body">
+            <div class="import-file-browser">
+              <input type="file" id="importFileInput" accept=".json" style="display: none;">
+              <div class="import-drop-zone" id="importDropZone">
+                <div class="import-drop-icon">📁</div>
+                <div class="import-drop-text">Drag & drop JSON file here</div>
+                <div class="import-drop-subtext">or</div>
+                <button class="btn-primary" id="importBrowseBtn">Browse Files</button>
+              </div>
+            </div>
+            <div id="importProgress" class="import-progress" style="display: none;">
+              <div class="import-progress-text">Processing file...</div>
+              <div class="import-progress-bar">
+                <div class="import-progress-fill"></div>
+              </div>
+            </div>
+            <div id="importPassword" class="import-password-section" style="display: none;">
+              <label for="importPasswordInput">This file is encrypted. Enter password:</label>
+              <input type="password" id="importPasswordInput" placeholder="Enter password">
+              <button class="btn-primary" id="importDecryptBtn">Decrypt & Import</button>
+            </div>
+            <div id="importResult" class="import-result" style="display: none;"></div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Inject modal
+    const modalContainer = document.createElement('div');
+    modalContainer.innerHTML = modalHTML;
+    document.body.appendChild(modalContainer.firstElementChild);
+
+    // Attach event listeners
+    const closeModal = () => {
+      $('#importModalOverlay').remove();
+    };
+
+    $('#importModalClose').addEventListener('click', closeModal);
+    $('#importModalOverlay').addEventListener('click', (e) => {
+      if (e.target.id === 'importModalOverlay') {
+        closeModal();
+      }
+    });
+
+    // File input
+    const fileInput = $('#importFileInput');
+    $('#importBrowseBtn').addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        await processImportFile(file);
+      }
+    });
+
+    // Drag & drop
+    const dropZone = $('#importDropZone');
+
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = '#1ea7e8';
+      dropZone.style.backgroundColor = 'rgba(30, 167, 232, 0.1)';
+    });
+
+    dropZone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = '#e0e0e0';
+      dropZone.style.backgroundColor = 'transparent';
+    });
+
+    dropZone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = '#e0e0e0';
+      dropZone.style.backgroundColor = 'transparent';
+
+      const file = e.dataTransfer.files[0];
+      if (file) {
+        await processImportFile(file);
+      }
+    });
+
+  } catch (error) {
+    console.error('[Import] Error showing modal:', error);
+    alert('Error opening import modal: ' + error.message);
+  }
+}
+
+/**
+ * Process import file
+ * @param {File} file - File to import
+ */
+async function processImportFile(file) {
+  console.log('[Import] Processing file:', file.name, 'Size:', file.size);
+
+  try {
+    // Show progress
+    $('#importDropZone').style.display = 'none';
+    $('#importProgress').style.display = 'block';
+    $('#importPassword').style.display = 'none';
+    $('#importResult').style.display = 'none';
+
+    // Read file
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const fileData = e.target.result;
+
+      console.log('[Import] File read, size:', fileData.length, 'bytes');
+
+      // Validate file
+      const validation = await sendMessage({
+        action: 'validateImport',
+        fileData: fileData,
+        password: null
+      });
+
+      $('#importProgress').style.display = 'none';
+
+      if (validation && validation.requiresPassword) {
+        // Show password input
+        console.log('[Import] File requires password');
+        $('#importPassword').style.display = 'block';
+
+        $('#importDecryptBtn').onclick = async () => {
+          const password = $('#importPasswordInput').value;
+          if (!password) {
+            alert('Please enter a password');
+            return;
+          }
+
+          await performImport(fileData, password);
+        };
+      } else if (validation && validation.success) {
+        // Show preview and confirm
+        console.log('[Import] Validation successful');
+        const conflicts = validation.conflicts || [];
+        const conflictText = conflicts.length > 0
+          ? `\n\n⚠️ ${conflicts.length} session name(s) will be renamed to avoid conflicts.`
+          : '';
+
+        const confirmed = confirm(
+          `Ready to import ${validation.sessionCount} session(s)${conflictText}\n\nProceed with import?`
+        );
+
+        if (confirmed) {
+          await performImport(fileData, null);
+        } else {
+          $('#importModalOverlay').remove();
+        }
+      } else {
+        // Show error
+        console.error('[Import] Validation failed:', validation);
+        $('#importResult').style.display = 'block';
+        $('#importResult').innerHTML = `<div class="import-error">❌ ${escapeHtml(validation?.message || 'Validation failed')}</div>`;
+      }
+    };
+
+    reader.onerror = () => {
+      $('#importProgress').style.display = 'none';
+      $('#importResult').style.display = 'block';
+      $('#importResult').innerHTML = '<div class="import-error">❌ Failed to read file</div>';
+    };
+
+    reader.readAsText(file);
+  } catch (error) {
+    console.error('[Import] Error processing file:', error);
+    $('#importProgress').style.display = 'none';
+    $('#importResult').style.display = 'block';
+    $('#importResult').innerHTML = `<div class="import-error">❌ ${escapeHtml(error.message)}</div>`;
+  }
+}
+
+/**
+ * Perform import
+ * @param {string} fileData - File content
+ * @param {string|null} password - Decryption password
+ */
+async function performImport(fileData, password) {
+  console.log('[Import] Performing import, password:', password ? 'provided' : 'none');
+
+  try {
+    $('#importProgress').style.display = 'block';
+    $('#importPassword').style.display = 'none';
+    $('#importResult').style.display = 'none';
+
+    const response = await sendMessage({
+      action: 'importSessions',
+      fileData: fileData,
+      options: {
+        password: password
+      }
+    });
+
+    $('#importProgress').style.display = 'none';
+
+    if (response && response.success) {
+      console.log('[Import] ✓ Import successful');
+
+      const renamedText = response.renamedCount > 0
+        ? `\n\n⚠️ ${response.renamedCount} session(s) renamed to avoid conflicts.`
+        : '';
+
+      $('#importResult').style.display = 'block';
+      $('#importResult').innerHTML = `
+        <div class="import-success">
+          ✓ Import successful!<br>
+          Imported: ${response.importedCount} session(s)${renamedText}
+        </div>
+      `;
+
+      // Refresh sessions list
+      setTimeout(async () => {
+        await refreshSessions();
+        $('#importModalOverlay').remove();
+      }, 2000);
+
+    } else {
+      console.error('[Import] Import failed:', response);
+      $('#importResult').style.display = 'block';
+      $('#importResult').innerHTML = `<div class="import-error">❌ ${escapeHtml(response?.message || 'Import failed')}</div>`;
+    }
+  } catch (error) {
+    console.error('[Import] Error:', error);
+    $('#importProgress').style.display = 'none';
+    $('#importResult').style.display = 'block';
+    $('#importResult').innerHTML = `<div class="import-error">❌ ${escapeHtml(error.message)}</div>`;
+  }
+}
+
 /**
  * Listen for initialization state changes from background
  */
@@ -1688,6 +2176,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('#newSessionBtn').addEventListener('click', async () => {
     await createNewSession();
   });
+
+  // Import button
+  $('#importSessionsBtn').addEventListener('click', async () => {
+    await showImportModal();
+  });
+
+  // Bulk export button (will be shown/hidden based on tier)
+  const bulkExportBtn = $('#exportAllSessionsBtn');
+  if (bulkExportBtn) {
+    bulkExportBtn.addEventListener('click', async () => {
+      await handleBulkExport();
+    });
+  }
 
   // Refresh on tab activation (if popup is still open)
   chrome.tabs.onActivated.addListener(async () => {

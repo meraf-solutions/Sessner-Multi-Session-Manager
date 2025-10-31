@@ -1,8 +1,8 @@
 # Technical Implementation
 ## Sessner  Multi-Session Manager
 
-**Last Updated:** 2025-10-29
-**Extension Version:** 3.1.0
+**Last Updated:** 2025-10-31
+**Extension Version:** 3.2.0
 **Language:** JavaScript (ES6+)
 
 ---

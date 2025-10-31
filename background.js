@@ -2878,6 +2878,745 @@ async function clearSessionName(sessionId) {
   };
 }
 
+// ============= Session Export/Import (v3.2.0) =============
+
+/**
+ * File size limit for imports (50MB)
+ */
+const MAX_IMPORT_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+
+/**
+ * Compression threshold (auto-compress files larger than 100KB)
+ */
+const COMPRESSION_THRESHOLD = 100 * 1024; // 100KB
+
+/**
+ * Export schema version
+ */
+const EXPORT_SCHEMA_VERSION = '1.0';
+
+/**
+ * Sanitize session data for export (remove sensitive/temporary fields)
+ * @param {Object} session - Session object
+ * @returns {Object} Sanitized session data
+ */
+function sanitizeExportData(session) {
+  const sanitized = {
+    id: session.id,
+    name: session.name || null,
+    color: session.color,
+    customColor: session.customColor || null,
+    createdAt: session.createdAt,
+    lastAccessed: session.lastAccessed,
+    cookies: {},
+    persistedTabs: []
+  };
+
+  // Copy cookies (if exist in sessionStore.cookieStore)
+  const sessionCookies = sessionStore.cookieStore[session.id] || {};
+  sanitized.cookies = JSON.parse(JSON.stringify(sessionCookies)); // Deep clone
+
+  // Copy persisted tabs from tabMetadata (for URL restoration)
+  const tabMeta = sessionStore.tabMetadata || {};
+  session.tabs.forEach(tabId => {
+    const meta = tabMeta[tabId];
+    if (meta) {
+      sanitized.persistedTabs.push({
+        url: meta.url,
+        domain: meta.domain,
+        path: meta.path,
+        title: meta.title || 'Untitled'
+      });
+    }
+  });
+
+  return sanitized;
+}
+
+/**
+ * Generate unique session name if conflicts exist
+ * @param {string} baseName - Base session name
+ * @param {string} excludeSessionId - Session ID to exclude from check
+ * @returns {string} Unique session name
+ */
+function generateUniqueSessionName(baseName, excludeSessionId = null) {
+  let uniqueName = baseName;
+  let counter = 2;
+
+  while (isSessionNameDuplicate(uniqueName, excludeSessionId)) {
+    uniqueName = `${baseName} (${counter})`;
+    counter++;
+  }
+
+  if (uniqueName !== baseName) {
+    console.log(`[Export/Import] Name conflict resolved: "${baseName}" → "${uniqueName}"`);
+  }
+
+  return uniqueName;
+}
+
+/**
+ * Compress data using pako (gzip)
+ * @param {string} data - Data to compress
+ * @returns {string} Base64-encoded compressed data
+ */
+function compressData(data) {
+  console.log('[Export/Import] Compressing data...');
+  console.log('[Export/Import] Original size:', data.length, 'bytes');
+
+  try {
+    // Check if pako is loaded
+    if (typeof pako === 'undefined') {
+      console.warn('[Export/Import] Pako not loaded, skipping compression');
+      return data;
+    }
+
+    // Compress with pako.gzip
+    const compressed = pako.gzip(data);
+
+    // Convert to base64
+    const base64 = btoa(String.fromCharCode.apply(null, compressed));
+
+    console.log('[Export/Import] Compressed size:', base64.length, 'bytes');
+    console.log('[Export/Import] Compression ratio:', (base64.length / data.length * 100).toFixed(2) + '%');
+
+    return base64;
+  } catch (error) {
+    console.error('[Export/Import] Compression error:', error);
+    // Fallback to uncompressed
+    return data;
+  }
+}
+
+/**
+ * Decompress data using pako (gzip)
+ * @param {string} compressedData - Base64-encoded compressed data
+ * @returns {string} Decompressed data
+ */
+function decompressData(compressedData) {
+  console.log('[Export/Import] Decompressing data...');
+
+  try {
+    // Check if pako is loaded
+    if (typeof pako === 'undefined') {
+      console.warn('[Export/Import] Pako not loaded, assuming uncompressed');
+      return compressedData;
+    }
+
+    // Convert base64 to Uint8Array
+    const binaryString = atob(compressedData);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    // Decompress with pako.ungzip
+    const decompressed = pako.ungzip(bytes, { to: 'string' });
+
+    console.log('[Export/Import] Decompressed size:', decompressed.length, 'bytes');
+
+    return decompressed;
+  } catch (error) {
+    console.error('[Export/Import] Decompression error:', error);
+    // Fallback to treating as uncompressed
+    return compressedData;
+  }
+}
+
+/**
+ * Export a single session to JSON
+ * @param {string} sessionId - Session ID to export
+ * @param {Object} options - Export options
+ * @param {boolean} options.encrypt - Encrypt export (Enterprise only)
+ * @param {string} options.password - Encryption password (if encrypt=true)
+ * @returns {Promise<Object>} Export result
+ */
+async function exportSession(sessionId, options = {}) {
+  console.log('[exportSession] ================================================');
+  console.log('[exportSession] Export request for session:', sessionId);
+  console.log('[exportSession] Options:', JSON.stringify(options));
+
+  try {
+    // Check tier (Premium/Enterprise only)
+    let tier = 'free';
+    try {
+      if (typeof licenseManager !== 'undefined' && licenseManager.isInitialized) {
+        tier = licenseManager.getTier();
+      }
+    } catch (error) {
+      console.error('[exportSession] Error getting tier:', error);
+    }
+
+    if (tier === 'free') {
+      console.warn('[exportSession] Export not allowed for Free tier');
+      return {
+        success: false,
+        requiresUpgrade: true,
+        tier: tier,
+        message: 'Session export requires Premium or Enterprise tier. Upgrade to unlock this feature.'
+      };
+    }
+
+    // Check if session exists
+    const session = sessionStore.sessions[sessionId];
+    if (!session) {
+      console.error('[exportSession] Session not found:', sessionId);
+      return {
+        success: false,
+        message: 'Session not found: ' + sessionId
+      };
+    }
+
+    // Check encryption option (Enterprise only)
+    if (options.encrypt && tier !== 'enterprise') {
+      console.warn('[exportSession] Encryption requires Enterprise tier');
+      return {
+        success: false,
+        requiresUpgrade: true,
+        tier: tier,
+        message: 'Session encryption requires Enterprise tier. Upgrade to unlock this feature.'
+      };
+    }
+
+    // Sanitize session data
+    const exportData = sanitizeExportData(session);
+
+    // Build export file structure
+    const exportFile = {
+      version: chrome.runtime.getManifest().version, // Extension version
+      schemaVersion: EXPORT_SCHEMA_VERSION,
+      exportType: 'complete', // cookies + metadata + URLs
+      exportedAt: new Date().toISOString(),
+      encrypted: options.encrypt || false,
+      sessionCount: 1,
+      sessions: [exportData]
+    };
+
+    // Serialize to JSON
+    let jsonData = JSON.stringify(exportFile, null, 2);
+    let originalSize = jsonData.length;
+
+    console.log('[exportSession] Export file size:', originalSize, 'bytes');
+
+    // Compress if needed (>100KB)
+    let compressed = false;
+    if (originalSize > COMPRESSION_THRESHOLD) {
+      const compressedData = compressData(jsonData);
+      if (compressedData !== jsonData) {
+        jsonData = compressedData;
+        compressed = true;
+        console.log('[exportSession] ✓ Data compressed');
+      }
+    }
+
+    // Encrypt if requested (Enterprise only)
+    if (options.encrypt && options.password) {
+      console.log('[exportSession] Encrypting export...');
+
+      // Validate password
+      if (typeof cryptoUtils !== 'undefined') {
+        const passwordValidation = cryptoUtils.validatePassword(options.password);
+        if (!passwordValidation.valid) {
+          return {
+            success: false,
+            message: passwordValidation.error
+          };
+        }
+
+        // Encrypt
+        const encryptedData = await cryptoUtils.encryptData(jsonData, options.password);
+
+        // Wrap in encrypted container
+        exportFile.encryptedData = encryptedData;
+        exportFile.encrypted = true;
+        exportFile.compressed = compressed;
+
+        // Remove plaintext data
+        delete exportFile.sessions;
+
+        jsonData = JSON.stringify(exportFile, null, 2);
+
+        console.log('[exportSession] ✓ Data encrypted');
+      } else {
+        console.error('[exportSession] Crypto utils not loaded');
+        return {
+          success: false,
+          message: 'Encryption utilities not available'
+        };
+      }
+    } else if (compressed) {
+      // Store compression flag
+      exportFile.compressed = true;
+      jsonData = JSON.stringify(exportFile, null, 2);
+    }
+
+    // Generate filename
+    const sessionName = session.name || 'session';
+    const safeName = sessionName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const filename = `sessner_${safeName}_${timestamp}.json`;
+
+    console.log('[exportSession] ✓ Export successful');
+    console.log('[exportSession] Filename:', filename);
+    console.log('[exportSession] Final size:', jsonData.length, 'bytes');
+    console.log('[exportSession] Compressed:', compressed);
+    console.log('[exportSession] Encrypted:', options.encrypt || false);
+    console.log('[exportSession] ================================================');
+
+    return {
+      success: true,
+      sessionId: sessionId,
+      sessionName: session.name || null,
+      filename: filename,
+      data: jsonData,
+      size: jsonData.length,
+      originalSize: originalSize,
+      compressed: compressed,
+      encrypted: options.encrypt || false,
+      tier: tier
+    };
+  } catch (error) {
+    console.error('[exportSession] ================================================');
+    console.error('[exportSession] Export error:', error);
+    console.error('[exportSession] Stack:', error.stack);
+    console.error('[exportSession] ================================================');
+    return {
+      success: false,
+      message: 'Export failed: ' + error.message
+    };
+  }
+}
+
+/**
+ * Export all active sessions (Enterprise only)
+ * @param {Object} options - Export options
+ * @param {boolean} options.encrypt - Encrypt export
+ * @param {string} options.password - Encryption password (if encrypt=true)
+ * @returns {Promise<Object>} Export result
+ */
+async function exportAllSessions(options = {}) {
+  console.log('[exportAllSessions] ================================================');
+  console.log('[exportAllSessions] Bulk export request');
+  console.log('[exportAllSessions] Options:', JSON.stringify(options));
+
+  try {
+    // Check tier (Enterprise only)
+    let tier = 'free';
+    try {
+      if (typeof licenseManager !== 'undefined' && licenseManager.isInitialized) {
+        tier = licenseManager.getTier();
+      }
+    } catch (error) {
+      console.error('[exportAllSessions] Error getting tier:', error);
+    }
+
+    if (tier !== 'enterprise') {
+      console.warn('[exportAllSessions] Bulk export requires Enterprise tier');
+      return {
+        success: false,
+        requiresUpgrade: true,
+        tier: tier,
+        message: 'Bulk session export requires Enterprise tier. Upgrade to unlock this feature.'
+      };
+    }
+
+    // Get all active sessions
+    const sessions = Object.values(sessionStore.sessions).filter(session =>
+      session.tabs && session.tabs.length > 0
+    );
+
+    if (sessions.length === 0) {
+      console.warn('[exportAllSessions] No active sessions to export');
+      return {
+        success: false,
+        message: 'No active sessions available for export'
+      };
+    }
+
+    console.log('[exportAllSessions] Exporting', sessions.length, 'sessions');
+
+    // Sanitize all session data
+    const exportSessions = sessions.map(session => sanitizeExportData(session));
+
+    // Build export file structure
+    const exportFile = {
+      version: chrome.runtime.getManifest().version,
+      schemaVersion: EXPORT_SCHEMA_VERSION,
+      exportType: 'complete',
+      exportedAt: new Date().toISOString(),
+      encrypted: options.encrypt || false,
+      sessionCount: sessions.length,
+      sessions: exportSessions
+    };
+
+    // Serialize to JSON
+    let jsonData = JSON.stringify(exportFile, null, 2);
+    let originalSize = jsonData.length;
+
+    console.log('[exportAllSessions] Export file size:', originalSize, 'bytes');
+
+    // Compress if needed (>100KB)
+    let compressed = false;
+    if (originalSize > COMPRESSION_THRESHOLD) {
+      const compressedData = compressData(jsonData);
+      if (compressedData !== jsonData) {
+        jsonData = compressedData;
+        compressed = true;
+        console.log('[exportAllSessions] ✓ Data compressed');
+      }
+    }
+
+    // Encrypt if requested
+    if (options.encrypt && options.password) {
+      console.log('[exportAllSessions] Encrypting export...');
+
+      if (typeof cryptoUtils !== 'undefined') {
+        const passwordValidation = cryptoUtils.validatePassword(options.password);
+        if (!passwordValidation.valid) {
+          return {
+            success: false,
+            message: passwordValidation.error
+          };
+        }
+
+        const encryptedData = await cryptoUtils.encryptData(jsonData, options.password);
+
+        exportFile.encryptedData = encryptedData;
+        exportFile.encrypted = true;
+        exportFile.compressed = compressed;
+        delete exportFile.sessions;
+
+        jsonData = JSON.stringify(exportFile, null, 2);
+
+        console.log('[exportAllSessions] ✓ Data encrypted');
+      } else {
+        return {
+          success: false,
+          message: 'Encryption utilities not available'
+        };
+      }
+    } else if (compressed) {
+      exportFile.compressed = true;
+      jsonData = JSON.stringify(exportFile, null, 2);
+    }
+
+    // Generate filename
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `sessner_ALL-SESSIONS_${timestamp}_${sessions.length}sessions.json`;
+
+    console.log('[exportAllSessions] ✓ Bulk export successful');
+    console.log('[exportAllSessions] Filename:', filename);
+    console.log('[exportAllSessions] Final size:', jsonData.length, 'bytes');
+    console.log('[exportAllSessions] Compressed:', compressed);
+    console.log('[exportAllSessions] Encrypted:', options.encrypt || false);
+    console.log('[exportAllSessions] ================================================');
+
+    return {
+      success: true,
+      sessionCount: sessions.length,
+      filename: filename,
+      data: jsonData,
+      size: jsonData.length,
+      originalSize: originalSize,
+      compressed: compressed,
+      encrypted: options.encrypt || false,
+      tier: tier
+    };
+  } catch (error) {
+    console.error('[exportAllSessions] ================================================');
+    console.error('[exportAllSessions] Export error:', error);
+    console.error('[exportAllSessions] Stack:', error.stack);
+    console.error('[exportAllSessions] ================================================');
+    return {
+      success: false,
+      message: 'Export failed: ' + error.message
+    };
+  }
+}
+
+/**
+ * Validate import file
+ * @param {string} fileData - File content (JSON string)
+ * @param {string} password - Password for decryption (if encrypted)
+ * @returns {Promise<Object>} Validation result
+ */
+async function validateImportFile(fileData, password = null) {
+  console.log('[validateImport] ================================================');
+  console.log('[validateImport] Validating import file...');
+  console.log('[validateImport] File size:', fileData.length, 'bytes');
+
+  try {
+    // Check file size limit (50MB)
+    if (fileData.length > MAX_IMPORT_FILE_SIZE) {
+      console.error('[validateImport] File too large:', fileData.length, 'bytes');
+      return {
+        success: false,
+        message: `File exceeds 50MB limit (size: ${(fileData.length / 1024 / 1024).toFixed(2)}MB)`
+      };
+    }
+
+    // Parse JSON
+    let importFile;
+    try {
+      importFile = JSON.parse(fileData);
+    } catch (error) {
+      console.error('[validateImport] Invalid JSON:', error);
+      return {
+        success: false,
+        message: 'Invalid export file format (not valid JSON)'
+      };
+    }
+
+    // Check if encrypted
+    if (importFile.encrypted && importFile.encryptedData) {
+      console.log('[validateImport] File is encrypted');
+
+      if (!password) {
+        return {
+          success: false,
+          requiresPassword: true,
+          message: 'This file is encrypted. Please provide a password.'
+        };
+      }
+
+      // Decrypt
+      if (typeof cryptoUtils === 'undefined') {
+        return {
+          success: false,
+          message: 'Encryption utilities not available'
+        };
+      }
+
+      try {
+        const decryptedData = await cryptoUtils.decryptData(importFile.encryptedData, password);
+
+        // Check if compressed
+        if (importFile.compressed) {
+          const decompressed = decompressData(decryptedData);
+          importFile = JSON.parse(decompressed);
+        } else {
+          importFile = JSON.parse(decryptedData);
+        }
+
+        console.log('[validateImport] ✓ File decrypted successfully');
+      } catch (error) {
+        console.error('[validateImport] Decryption error:', error);
+        return {
+          success: false,
+          message: 'Decryption failed: ' + error.message
+        };
+      }
+    } else if (importFile.compressed) {
+      // Decompress without decryption
+      console.log('[validateImport] File is compressed');
+      try {
+        const decompressed = decompressData(importFile.sessions || fileData);
+        if (decompressed !== (importFile.sessions || fileData)) {
+          importFile.sessions = JSON.parse(decompressed);
+        }
+      } catch (error) {
+        console.error('[validateImport] Decompression error:', error);
+        // Continue anyway, might be false positive
+      }
+    }
+
+    // Validate schema
+    if (!importFile.version || !importFile.schemaVersion) {
+      return {
+        success: false,
+        message: 'Invalid export file format (missing version information)'
+      };
+    }
+
+    if (!importFile.sessions || !Array.isArray(importFile.sessions)) {
+      return {
+        success: false,
+        message: 'Invalid export file format (no sessions data)'
+      };
+    }
+
+    if (importFile.sessions.length === 0) {
+      return {
+        success: false,
+        message: 'Export file contains no sessions'
+      };
+    }
+
+    // Check for name conflicts
+    const conflicts = [];
+    importFile.sessions.forEach((session, index) => {
+      if (session.name) {
+        if (isSessionNameDuplicate(session.name, null)) {
+          conflicts.push({
+            index: index,
+            originalName: session.name,
+            newName: generateUniqueSessionName(session.name, null)
+          });
+        }
+      }
+    });
+
+    console.log('[validateImport] ✓ File validation passed');
+    console.log('[validateImport] Sessions:', importFile.sessions.length);
+    console.log('[validateImport] Conflicts:', conflicts.length);
+    console.log('[validateImport] ================================================');
+
+    return {
+      success: true,
+      sessionCount: importFile.sessions.length,
+      conflicts: conflicts,
+      version: importFile.version,
+      schemaVersion: importFile.schemaVersion,
+      exportedAt: importFile.exportedAt
+    };
+  } catch (error) {
+    console.error('[validateImport] ================================================');
+    console.error('[validateImport] Validation error:', error);
+    console.error('[validateImport] Stack:', error.stack);
+    console.error('[validateImport] ================================================');
+    return {
+      success: false,
+      message: 'File validation failed: ' + error.message
+    };
+  }
+}
+
+/**
+ * Import sessions from file
+ * @param {string} fileData - File content (JSON string)
+ * @param {Object} options - Import options
+ * @param {string} options.password - Password for decryption (if encrypted)
+ * @returns {Promise<Object>} Import result
+ */
+async function importSessions(fileData, options = {}) {
+  console.log('[importSessions] ================================================');
+  console.log('[importSessions] Import request');
+  console.log('[importSessions] File size:', fileData.length, 'bytes');
+
+  try {
+    // Check tier (Premium/Enterprise only)
+    let tier = 'free';
+    try {
+      if (typeof licenseManager !== 'undefined' && licenseManager.isInitialized) {
+        tier = licenseManager.getTier();
+      }
+    } catch (error) {
+      console.error('[importSessions] Error getting tier:', error);
+    }
+
+    if (tier === 'free') {
+      console.warn('[importSessions] Import not allowed for Free tier');
+      return {
+        success: false,
+        requiresUpgrade: true,
+        tier: tier,
+        message: 'Session import requires Premium or Enterprise tier. Upgrade to unlock this feature.'
+      };
+    }
+
+    // Validate file
+    const validation = await validateImportFile(fileData, options.password);
+    if (!validation.success) {
+      return validation;
+    }
+
+    // Parse file (re-parse after validation/decryption)
+    let importFile = JSON.parse(fileData);
+
+    if (importFile.encrypted && importFile.encryptedData) {
+      const decryptedData = await cryptoUtils.decryptData(importFile.encryptedData, options.password);
+      if (importFile.compressed) {
+        const decompressed = decompressData(decryptedData);
+        importFile = JSON.parse(decompressed);
+      } else {
+        importFile = JSON.parse(decryptedData);
+      }
+    } else if (importFile.compressed) {
+      const decompressed = decompressData(importFile.sessions || fileData);
+      if (decompressed !== (importFile.sessions || fileData)) {
+        importFile.sessions = JSON.parse(decompressed);
+      }
+    }
+
+    const sessionsToImport = importFile.sessions;
+    console.log('[importSessions] Importing', sessionsToImport.length, 'sessions');
+
+    // Import sessions
+    const imported = [];
+    const renamed = [];
+
+    for (const sessionData of sessionsToImport) {
+      // Generate new session ID (never reuse imported IDs)
+      const newSessionId = generateSessionId();
+
+      // Handle name conflicts (auto-rename)
+      let sessionName = sessionData.name || null;
+      if (sessionName) {
+        const uniqueName = generateUniqueSessionName(sessionName, null);
+        if (uniqueName !== sessionName) {
+          renamed.push({
+            originalName: sessionName,
+            newName: uniqueName
+          });
+          sessionName = uniqueName;
+        }
+      }
+
+      // Create session in sessionStore
+      sessionStore.sessions[newSessionId] = {
+        id: newSessionId,
+        name: sessionName,
+        color: sessionData.color || sessionColors[Object.keys(sessionStore.sessions).length % sessionColors.length],
+        customColor: sessionData.customColor || null,
+        createdAt: Date.now(), // Use current timestamp
+        lastAccessed: Date.now(),
+        tabs: [] // No tabs initially (sessions are imported without active tabs)
+      };
+
+      // Import cookies
+      if (sessionData.cookies) {
+        sessionStore.cookieStore[newSessionId] = JSON.parse(JSON.stringify(sessionData.cookies));
+      } else {
+        sessionStore.cookieStore[newSessionId] = {};
+      }
+
+      imported.push({
+        sessionId: newSessionId,
+        name: sessionName,
+        originalId: sessionData.id
+      });
+
+      console.log('[importSessions] ✓ Imported session:', newSessionId, 'Name:', sessionName || '(none)');
+    }
+
+    // Persist immediately
+    persistSessions(true);
+
+    console.log('[importSessions] ✓ Import successful');
+    console.log('[importSessions] Imported:', imported.length, 'sessions');
+    console.log('[importSessions] Renamed:', renamed.length, 'sessions');
+    console.log('[importSessions] ================================================');
+
+    return {
+      success: true,
+      imported: imported,
+      renamed: renamed,
+      importedCount: imported.length,
+      renamedCount: renamed.length,
+      tier: tier
+    };
+  } catch (error) {
+    console.error('[importSessions] ================================================');
+    console.error('[importSessions] Import error:', error);
+    console.error('[importSessions] Stack:', error.stack);
+    console.error('[importSessions] ================================================');
+    return {
+      success: false,
+      message: 'Import failed: ' + error.message
+    };
+  }
+}
+
 // ============= WebRequest Interception =============
 
 /**
@@ -3970,6 +4709,82 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         })
         .catch(error => {
           console.error('[clearSessionName] Error:', error);
+          sendResponse({
+            success: false,
+            message: error.message
+          });
+        });
+      return true; // Keep message channel open for async response
+
+    } else if (message.action === 'exportSession') {
+      // Export session to JSON file (Premium/Enterprise only)
+      Promise.resolve(exportSession(message.sessionId, message.options || {}))
+        .then(result => {
+          try {
+            sendResponse(result);
+          } catch (error) {
+            console.error('[exportSession] sendResponse error:', error);
+          }
+        })
+        .catch(error => {
+          console.error('[exportSession] Error:', error);
+          sendResponse({
+            success: false,
+            message: error.message
+          });
+        });
+      return true; // Keep message channel open for async response
+
+    } else if (message.action === 'exportAllSessions') {
+      // Export all sessions to JSON file (Enterprise only)
+      Promise.resolve(exportAllSessions(message.options || {}))
+        .then(result => {
+          try {
+            sendResponse(result);
+          } catch (error) {
+            console.error('[exportAllSessions] sendResponse error:', error);
+          }
+        })
+        .catch(error => {
+          console.error('[exportAllSessions] Error:', error);
+          sendResponse({
+            success: false,
+            message: error.message
+          });
+        });
+      return true; // Keep message channel open for async response
+
+    } else if (message.action === 'validateImport') {
+      // Validate import file
+      Promise.resolve(validateImportFile(message.fileData, message.password || null))
+        .then(result => {
+          try {
+            sendResponse(result);
+          } catch (error) {
+            console.error('[validateImport] sendResponse error:', error);
+          }
+        })
+        .catch(error => {
+          console.error('[validateImport] Error:', error);
+          sendResponse({
+            success: false,
+            message: error.message
+          });
+        });
+      return true; // Keep message channel open for async response
+
+    } else if (message.action === 'importSessions') {
+      // Import sessions from JSON file (Premium/Enterprise only)
+      Promise.resolve(importSessions(message.fileData, message.options || {}))
+        .then(result => {
+          try {
+            sendResponse(result);
+          } catch (error) {
+            console.error('[importSessions] sendResponse error:', error);
+          }
+        })
+        .catch(error => {
+          console.error('[importSessions] Error:', error);
           sendResponse({
             success: false,
             message: error.message

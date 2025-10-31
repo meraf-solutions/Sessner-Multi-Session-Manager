@@ -146,6 +146,9 @@
       font-size: 13px;
       color: #666;
       font-weight: normal;
+      margin-top: 8px;
+      margin-bottom: 12px;
+      display: block;
     }
 
 
@@ -1365,6 +1368,375 @@
         color: #888;
       }
     }
+
+    /* ========== Export/Import Styles (v3.2.0) ========== */
+
+    /* Import button in header */
+    .import-sessions-btn {
+      padding: 6px 12px;
+      border: 2px solid #1ea7e8;
+      border-radius: 6px;
+      background: white;
+      color: #1ea7e8;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+    }
+
+    .import-sessions-btn:hover {
+      background: #1ea7e8;
+      color: white;
+    }
+
+    .import-sessions-btn svg {
+      display: block;
+    }
+
+    /* Export icon next to session name */
+    .session-export-icon {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 6px;
+      margin-left: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      border-radius: 4px;
+      opacity: 0.6;
+    }
+
+    .session-export-icon:hover {
+      opacity: 1;
+      background-color: rgba(30, 167, 232, 0.1);
+      transform: scale(1.1);
+    }
+
+    .session-export-icon:active {
+      transform: scale(0.95);
+    }
+
+    .session-export-icon svg {
+      display: block;
+      color: var(--picker-text, #333);
+    }
+
+    /* Bulk export button */
+    .bulk-export-container {
+      padding: 12px;
+      text-align: center;
+      border-top: 1px solid #e0e0e0;
+      margin-top: 8px;
+    }
+
+    .export-all-btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+    }
+
+    .export-all-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.5);
+    }
+
+    .export-all-btn:active {
+      transform: translateY(0);
+    }
+
+    /* Import Modal */
+    .import-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10001;
+    }
+
+    .import-modal {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      width: 400px;
+      max-height: 500px;
+      overflow-y: auto;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    .import-modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .import-modal-header h3 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+      margin: 0;
+    }
+
+    .import-modal-close {
+      background: none;
+      border: none;
+      font-size: 28px;
+      color: #999;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+      width: 28px;
+      height: 28px;
+    }
+
+    .import-modal-close:hover {
+      color: #333;
+    }
+
+    .import-modal-body {
+      margin-bottom: 16px;
+    }
+
+    /* Import drop zone */
+    .import-drop-zone {
+      border: 2px dashed #e0e0e0;
+      border-radius: 8px;
+      padding: 40px 20px;
+      text-align: center;
+      transition: all 0.2s;
+    }
+
+    .import-drop-zone:hover {
+      border-color: #1ea7e8;
+      background-color: rgba(30, 167, 232, 0.05);
+    }
+
+    .import-drop-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+      opacity: 0.5;
+    }
+
+    .import-drop-text {
+      font-size: 14px;
+      font-weight: 600;
+      color: #666;
+      margin-bottom: 8px;
+    }
+
+    .import-drop-subtext {
+      font-size: 12px;
+      color: #999;
+      margin-bottom: 16px;
+    }
+
+    /* Import progress */
+    .import-progress {
+      padding: 20px;
+      text-align: center;
+    }
+
+    .import-progress-text {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 12px;
+    }
+
+    .import-progress-bar {
+      width: 100%;
+      height: 4px;
+      background: #e0e0e0;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .import-progress-fill {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(90deg, #1ea7e8, #0066cc);
+      animation: progress-animation 1.5s infinite;
+    }
+
+    @keyframes progress-animation {
+      0% {
+        transform: translateX(-100%);
+      }
+      100% {
+        transform: translateX(100%);
+      }
+    }
+
+    /* Import password section */
+    .import-password-section {
+      padding: 20px;
+    }
+
+    .import-password-section label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #666;
+      margin-bottom: 8px;
+    }
+
+    .import-password-section input {
+      width: 100%;
+      padding: 10px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 14px;
+      margin-bottom: 12px;
+      box-sizing: border-box;
+    }
+
+    .import-password-section input:focus {
+      outline: none;
+      border-color: #1ea7e8;
+    }
+
+    /* Import result */
+    .import-result {
+      padding: 20px;
+      text-align: center;
+    }
+
+    .import-success {
+      padding: 16px;
+      background: #d4edda;
+      border: 1px solid #c3e6cb;
+      border-radius: 6px;
+      color: #155724;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .import-error {
+      padding: 16px;
+      background: #f8d7da;
+      border: 1px solid #f5c6cb;
+      border-radius: 6px;
+      color: #721c24;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    /* Dark Mode Support for Export/Import */
+    @media (prefers-color-scheme: dark) {
+      .import-sessions-btn {
+        background: #2d2d2d;
+        color: #1ea7e8;
+        border-color: #1ea7e8;
+      }
+
+      .import-sessions-btn:hover {
+        background: #1ea7e8;
+        color: white;
+      }
+
+      .session-export-icon:hover {
+        background-color: rgba(30, 167, 232, 0.2);
+      }
+
+      .bulk-export-container {
+        border-top-color: #444;
+        background: #242424;
+      }
+
+      .import-modal {
+        background: #2d2d2d;
+        color: #e0e0e0;
+      }
+
+      .import-modal-header h3 {
+        color: #e0e0e0;
+      }
+
+      .import-modal-close {
+        color: #aaa;
+      }
+
+      .import-modal-close:hover {
+        color: #e0e0e0;
+      }
+
+      .import-drop-zone {
+        border-color: #444;
+        background: #1a1a1a;
+      }
+
+      .import-drop-zone:hover {
+        border-color: #1ea7e8;
+        background-color: rgba(30, 167, 232, 0.1);
+      }
+
+      .import-drop-text {
+        color: #aaa;
+      }
+
+      .import-drop-subtext {
+        color: #888;
+      }
+
+      .import-progress {
+        background: #242424;
+      }
+
+      .import-progress-text {
+        color: #aaa;
+      }
+
+      .import-progress-bar {
+        background: #444;
+      }
+
+      .import-password-section {
+        background: #242424;
+      }
+
+      .import-password-section label {
+        color: #aaa;
+      }
+
+      .import-password-section input {
+        background: #1a1a1a;
+        color: #e0e0e0;
+        border-color: #444;
+      }
+
+      .import-password-section input:focus {
+        border-color: #1ea7e8;
+      }
+
+      .import-success {
+        background: #1a3d2e;
+        border-color: #2d5f4a;
+        color: #a3e6c8;
+      }
+
+      .import-error {
+        background: #3a1e1e;
+        border-color: #663333;
+        color: #ff9999;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1405,10 +1777,23 @@
     <div class="sessions-section">
       <h3>
         Active Sessions
-        <span class="session-count" id="sessionCount">0 sessions</span>
+        <button id="importSessionsBtn" class="import-sessions-btn" title="Import sessions from file">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          Import
+        </button>
       </h3>
+      <div class="session-count" id="sessionCount">0 sessions</div>
       <div id="sessionsList" class="sessions-list">
         <div class="loading">Loading sessions...</div>
+      </div>
+      <div id="bulkExportContainer" class="bulk-export-container" style="display: none;">
+        <button id="exportAllSessionsBtn" class="export-all-btn">
+          📥 Export All Sessions
+        </button>
       </div>
     </div>
   </div>

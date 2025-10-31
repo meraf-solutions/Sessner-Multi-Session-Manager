@@ -1752,6 +1752,68 @@ sessionStore.sessions[sessionId] = {
 
 ---
 
+### Session Export/Import (✅ Complete 2025-10-31)
+
+**Status:** Production Ready - v3.2.0
+
+**Implementation Overview:**
+- Premium: Per-session export/import (unencrypted JSON files)
+- Enterprise: Per-session + bulk export + AES-256 encryption
+- Free tier: Completely blocked (no UI elements shown)
+- Automatic compression for files >100KB (transparent decompression)
+- File format: JSON with optional encryption and compression layers
+
+**Key Features:**
+- **Export Types:** Complete (cookies + metadata + URLs), Cookies-only, Sanitized
+- **File Compression:** Automatic gzip compression using pako library (transparent to user)
+- **Encryption:** AES-256-GCM with PBKDF2 key derivation (Enterprise-only, 100,000 iterations)
+- **Conflict Resolution:** Auto-rename with notification ("Work Gmail" → "Work Gmail (2)")
+- **File Size Limit:** 50MB maximum
+- **Session ID Handling:** Import generates new session IDs (never reuses imported IDs)
+
+**Key Functions:**
+- `exportSession(sessionId, options)` - Export single session with optional encryption (background.js:3034)
+- `exportAllSessions(options)` - Bulk export for Enterprise tier (background.js:3196)
+- `importSessions(fileData, options)` - Import sessions with auto-rename (background.js:3491)
+- `validateImportFile(fileData, password)` - Validate and parse import file (background.js:3397)
+- `encryptData(data, password)` - AES-256 encryption (crypto-utils.js:16)
+- `decryptData(encryptedData, password)` - AES-256 decryption (crypto-utils.js:112)
+- `compressData(data)` - gzip compression (background.js:2963)
+- `decompressData(compressedData)` - gzip decompression (background.js:2997)
+
+**API Endpoints:**
+- `exportSession` - Export single session
+- `exportAllSessions` - Bulk export (Enterprise-only)
+- `importSessions` - Import sessions from file
+- `validateImportFile` - Validate file before import
+
+**File Naming Convention:**
+- **Single session:** `sessner_[session-name]_YYYY-MM-DD.json`
+- **Single session (encrypted):** `sessner_[session-name]_YYYY-MM-DD.encrypted.json`
+- **Bulk export:** `sessner_ALL-SESSIONS_YYYY-MM-DD_Xsessions.json`
+- **Bulk export (encrypted):** `sessner_ALL-SESSIONS_YYYY-MM-DD_Xsessions.encrypted.json`
+
+**UI Features:**
+- **Import button:** Header-level (all tiers see button, Free prompts upgrade)
+- **Per-session export icon:** Icon button with tooltip (Premium/Enterprise only)
+- **Bulk export button:** Bottom of sessions list (Enterprise only)
+- **Import modal:** Drag & drop support with progress indicators
+- **Theme-aware:** Full light/dark mode support (verified 2025-10-31)
+
+**Security:**
+- **Client-side only:** Encryption/decryption happens entirely in browser
+- **No password recovery:** Encrypted files cannot be recovered without password
+- **Password validation:** 8-128 characters required for encryption
+- **XSS prevention:** HTML sanitization in session names and cookie values
+
+**Libraries:**
+- **pako v2.1.0:** gzip compression/decompression (libs/pako.min.js, 46KB)
+- **Web Crypto API:** Native browser encryption (no external dependencies)
+
+**For detailed implementation:** See [docs/features_implementation/07_session_export_import.md](docs/features_implementation/07_session_export_import.md)
+
+---
+
 ### License Validation Error Handling (2025-10-21)
 
 1. **IS_DEVELOPMENT Constant** (license-manager.js line 54)

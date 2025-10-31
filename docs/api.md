@@ -1,8 +1,8 @@
 # Extension API Documentation
 ## Sessner  Multi-Session Manager
 
-**Last Updated:** 2025-10-28
-**Extension Version:** 3.0
+**Last Updated:** 2025-10-31
+**Extension Version:** 3.2.0
 **Manifest Version:** 2
 
 ---
@@ -496,6 +496,269 @@ if (response.success) {
   console.log('Name set:', response.name);
 } else {
   console.error('Error:', response.message);
+}
+```
+
+---
+
+### Session Export/Import (Premium/Enterprise) - v3.2.0
+
+Export and import sessions to/from JSON files with optional encryption and compression.
+
+#### `exportSession`
+
+Export a single session to a JSON file.
+
+**Request:**
+```javascript
+chrome.runtime.sendMessage({
+  action: 'exportSession',
+  sessionId: 'session_1234567890_abc123',
+  options: {
+    encrypt: true,           // Optional: Enable AES-256 encryption (Enterprise only)
+    password: 'myPassword123' // Required if encrypt is true
+  }
+}, response => {
+  console.log(response);
+});
+```
+
+**Response (Success):**
+```javascript
+{
+  success: true,
+  filename: 'sessner_Work-Gmail_2025-10-31.json',
+  data: '{"version":"3.2.0",...}',  // JSON string
+  size: 15234,                       // File size in bytes
+  compressed: true,                  // true if file was compressed
+  encrypted: false                   // true if file was encrypted
+}
+```
+
+**Response (Tier Restricted):**
+```javascript
+{
+  success: false,
+  message: 'Session export requires Premium or Enterprise tier',
+  requiresUpgrade: true,
+  tier: 'premium'
+}
+```
+
+**Response (Encryption Tier Restricted):**
+```javascript
+{
+  success: false,
+  message: 'Encryption requires Enterprise tier',
+  requiresUpgrade: true,
+  tier: 'enterprise'
+}
+```
+
+**Usage Example:**
+```javascript
+// Export with encryption (Enterprise only)
+const response = await sendMessage({
+  action: 'exportSession',
+  sessionId: sessionId,
+  options: {
+    encrypt: true,
+    password: 'SecurePassword123!'
+  }
+});
+
+if (response.success) {
+  // Download file
+  downloadFile(response.filename, response.data);
+  console.log(`Exported: ${response.filename} (${response.size} bytes)`);
+} else if (response.requiresUpgrade) {
+  showUpgradePrompt(response.message, response.tier);
+} else {
+  console.error('Export failed:', response.message);
+}
+```
+
+---
+
+#### `exportAllSessions`
+
+Export all sessions in bulk (Enterprise-only).
+
+**Request:**
+```javascript
+chrome.runtime.sendMessage({
+  action: 'exportAllSessions',
+  options: {
+    encrypt: true,           // Optional: Enable AES-256 encryption
+    password: 'myPassword123' // Required if encrypt is true
+  }
+}, response => {
+  console.log(response);
+});
+```
+
+**Response (Success):**
+```javascript
+{
+  success: true,
+  filename: 'sessner_ALL-SESSIONS_2025-10-31_5sessions.json',
+  data: '{"version":"3.2.0",...}',
+  size: 45678,
+  sessionCount: 5,
+  compressed: true,
+  encrypted: true
+}
+```
+
+**Response (Tier Restricted):**
+```javascript
+{
+  success: false,
+  message: 'Bulk export requires Enterprise tier',
+  requiresUpgrade: true,
+  tier: 'enterprise'
+}
+```
+
+---
+
+#### `importSessions`
+
+Import sessions from a JSON file.
+
+**Request:**
+```javascript
+chrome.runtime.sendMessage({
+  action: 'importSessions',
+  fileData: '{"version":"3.2.0",...}',  // JSON string from file
+  options: {
+    password: 'myPassword123'  // Required if file is encrypted
+  }
+}, response => {
+  console.log(response);
+});
+```
+
+**Response (Success):**
+```javascript
+{
+  success: true,
+  imported: ['Work Gmail', 'Personal Gmail', 'Client Account'],
+  renamed: [
+    { original: 'Work Gmail', renamed: 'Work Gmail (2)' }
+  ],
+  importedCount: 3,
+  renamedCount: 1
+}
+```
+
+**Response (Tier Restricted):**
+```javascript
+{
+  success: false,
+  message: 'Session import requires Premium or Enterprise tier',
+  requiresUpgrade: true,
+  tier: 'premium'
+}
+```
+
+**Response (Validation Error):**
+```javascript
+{
+  success: false,
+  message: 'Invalid file format: Missing schemaVersion',
+  validationError: true
+}
+```
+
+**Response (Encryption Error):**
+```javascript
+{
+  success: false,
+  message: 'Decryption failed: Incorrect password or corrupted data',
+  decryptionError: true
+}
+```
+
+**Usage Example:**
+```javascript
+// Read file
+const fileInput = document.getElementById('importFileInput');
+const file = fileInput.files[0];
+const fileData = await file.text();
+
+// Import with password for encrypted files
+const response = await sendMessage({
+  action: 'importSessions',
+  fileData: fileData,
+  options: {
+    password: prompt('Enter encryption password:')
+  }
+});
+
+if (response.success) {
+  console.log(`Imported ${response.importedCount} sessions`);
+  if (response.renamedCount > 0) {
+    console.log(`${response.renamedCount} sessions renamed to avoid conflicts`);
+    response.renamed.forEach(r => {
+      console.log(`  "${r.original}" → "${r.renamed}"`);
+    });
+  }
+  refreshSessions();
+} else if (response.requiresUpgrade) {
+  showUpgradePrompt(response.message, response.tier);
+} else {
+  console.error('Import failed:', response.message);
+}
+```
+
+---
+
+#### `validateImportFile`
+
+Validate an import file before importing (used internally by import modal).
+
+**Request:**
+```javascript
+chrome.runtime.sendMessage({
+  action: 'validateImportFile',
+  fileData: '{"version":"3.2.0",...}',
+  password: 'myPassword123'  // Optional: Only if file is encrypted
+}, response => {
+  console.log(response);
+});
+```
+
+**Response (Valid):**
+```javascript
+{
+  success: true,
+  valid: true,
+  sessionCount: 3,
+  encrypted: true,
+  compressed: false,
+  schemaVersion: '1.0',
+  exportedAt: '2025-10-31T10:30:00Z'
+}
+```
+
+**Response (Invalid):**
+```javascript
+{
+  success: false,
+  valid: false,
+  message: 'Invalid JSON format'
+}
+```
+
+**Response (File Size Exceeded):**
+```javascript
+{
+  success: false,
+  message: 'File size exceeds 50MB limit',
+  sizeExceeded: true,
+  actualSize: 52428800,
+  maxSize: 52428800
 }
 ```
 
