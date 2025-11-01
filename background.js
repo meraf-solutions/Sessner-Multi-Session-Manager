@@ -2509,6 +2509,160 @@ function getActiveSessions(callback) {
 }
 
 /**
+ * Get all sessions (active with tabs + dormant without tabs)
+ * @param {Function} callback - Callback with activeSessions and dormantSessions arrays
+ */
+function getAllSessions(callback) {
+  console.log('[getAllSessions] Fetching all sessions (active + dormant)');
+
+  chrome.tabs.query({}, (tabs) => {
+    if (chrome.runtime.lastError) {
+      console.error('[getAllSessions] tabs.query error:', chrome.runtime.lastError);
+      callback({ success: false, error: chrome.runtime.lastError.message });
+      return;
+    }
+
+    // Build map of sessionId to tab info (active sessions)
+    const activeSessionMap = {};
+    const tabSessionIds = new Set();
+
+    for (const tab of tabs) {
+      const sessionId = sessionStore.tabToSession[tab.id];
+      if (sessionId) {
+        tabSessionIds.add(sessionId);
+
+        if (!activeSessionMap[sessionId]) {
+          const session = sessionStore.sessions[sessionId];
+          activeSessionMap[sessionId] = {
+            sessionId: sessionId,
+            name: session?.name || null,
+            color: session?.color || sessionColor(sessionId),
+            customColor: session?.customColor || null,
+            createdAt: session?.createdAt || null,
+            lastAccessed: session?.lastAccessed || null,
+            tabs: []
+          };
+        }
+
+        activeSessionMap[sessionId].tabs.push({
+          tabId: tab.id,
+          title: tab.title || 'Untitled',
+          url: tab.url || '',
+          domain: extractDomain(tab.url || ''),
+          favIconUrl: tab.favIconUrl
+        });
+      }
+    }
+
+    // Find dormant sessions (sessions without tabs)
+    const dormantSessions = [];
+
+    for (const sessionId in sessionStore.sessions) {
+      if (!tabSessionIds.has(sessionId)) {
+        const session = sessionStore.sessions[sessionId];
+        dormantSessions.push({
+          sessionId: sessionId,
+          name: session?.name || null,
+          color: session?.color || sessionColor(sessionId),
+          customColor: session?.customColor || null,
+          createdAt: session?.createdAt || null,
+          lastAccessed: session?.lastAccessed || null,
+          isDormant: true
+        });
+      }
+    }
+
+    console.log(`[getAllSessions] Found ${Object.keys(activeSessionMap).length} active sessions, ${dormantSessions.length} dormant sessions`);
+
+    callback({
+      success: true,
+      activeSessions: Object.values(activeSessionMap),
+      dormantSessions: dormantSessions
+    });
+  });
+}
+
+/**
+ * Open a dormant session by creating a new tab for it
+ * @param {string} sessionId - Session ID to open
+ * @param {string} url - URL to open (defaults to 'about:blank')
+ * @param {Function} callback - Callback with result
+ */
+function openDormantSession(sessionId, url, callback) {
+  console.log('[openDormantSession] url parameter:', url, 'type:', typeof url);
+  console.log(`[openDormantSession] Opening dormant session ${sessionId} with URL: ${url || 'about:blank'}`);
+
+  // Validate session exists
+  if (!sessionStore.sessions[sessionId]) {
+    console.error(`[openDormantSession] Session ${sessionId} not found`);
+    callback({ success: false, error: 'Session not found' });
+    return;
+  }
+
+  // Determine URL to open: explicit URL > persistedTabs URL > about:blank
+  let targetUrl = url || 'about:blank';
+  const session = sessionStore.sessions[sessionId];
+
+  console.log(`[openDormantSession] Session persistedTabs:`, session.persistedTabs);
+  console.log('[openDormantSession] !url evaluates to:', !url);
+  console.log('[openDormantSession] Condition check: !url=', !url, 'persistedTabs=', session.persistedTabs, 'length=', session.persistedTabs?.length);
+
+  if (!url && session.persistedTabs && session.persistedTabs.length > 0) {
+    const firstPersistedTab = session.persistedTabs[0];
+    console.log(`[openDormantSession] First persisted tab:`, firstPersistedTab);
+    if (firstPersistedTab && firstPersistedTab.url) {
+      targetUrl = firstPersistedTab.url;
+      console.log(`[openDormantSession] Using persisted URL: ${targetUrl}`);
+    }
+  }
+
+  console.log(`[openDormantSession] Final target URL: ${targetUrl}`);
+
+  // Create new tab
+  chrome.tabs.create({ url: targetUrl, active: true }, (tab) => {
+    if (chrome.runtime.lastError) {
+      console.error('[openDormantSession] tabs.create error:', chrome.runtime.lastError);
+      callback({ success: false, error: chrome.runtime.lastError.message });
+      return;
+    }
+
+    console.log(`[openDormantSession] Created tab ${tab.id} for session ${sessionId}`);
+
+    // Assign session to tab
+    sessionStore.tabToSession[tab.id] = sessionId;
+
+    // Update session's tabs array
+    if (!sessionStore.sessions[sessionId].tabs) {
+      sessionStore.sessions[sessionId].tabs = [];
+    }
+    sessionStore.sessions[sessionId].tabs.push(tab.id);
+
+    // Update lastAccessed timestamp
+    sessionStore.sessions[sessionId].lastAccessed = Date.now();
+
+    // Get session color
+    const session = sessionStore.sessions[sessionId];
+    const color = session.customColor || session.color || sessionColor(sessionId);
+
+    // Set badge
+    chrome.browserAction.setBadgeText({ text: '●', tabId: tab.id });
+    chrome.browserAction.setBadgeBackgroundColor({ color: color, tabId: tab.id });
+
+    // Persist changes immediately
+    persistSessions(true);
+
+    console.log(`[openDormantSession] Successfully opened session ${sessionId} in tab ${tab.id}`);
+
+    callback({
+      success: true,
+      sessionId: sessionId,
+      tabId: tab.id,
+      color: color
+    });
+  });
+}
+
+/**
  * Extract domain from URL
  * @param {string} url
  * @returns {string}
@@ -2898,9 +3052,9 @@ const EXPORT_SCHEMA_VERSION = '1.0';
 /**
  * Sanitize session data for export (remove sensitive/temporary fields)
  * @param {Object} session - Session object
- * @returns {Object} Sanitized session data
+ * @returns {Promise<Object>} Sanitized session data
  */
-function sanitizeExportData(session) {
+async function sanitizeExportData(session) {
   const sanitized = {
     id: session.id,
     name: session.name || null,
@@ -2916,19 +3070,39 @@ function sanitizeExportData(session) {
   const sessionCookies = sessionStore.cookieStore[session.id] || {};
   sanitized.cookies = JSON.parse(JSON.stringify(sessionCookies)); // Deep clone
 
-  // Copy persisted tabs from tabMetadata (for URL restoration)
-  const tabMeta = sessionStore.tabMetadata || {};
-  session.tabs.forEach(tabId => {
-    const meta = tabMeta[tabId];
-    if (meta) {
-      sanitized.persistedTabs.push({
-        url: meta.url,
-        domain: meta.domain,
-        path: meta.path,
-        title: meta.title || 'Untitled'
+  // Query tabs directly from Chrome Tabs API
+  if (session.tabs && session.tabs.length > 0) {
+    try {
+      const tabs = await new Promise((resolve) => {
+        chrome.tabs.query({}, (allTabs) => {
+          // Filter to only include tabs in this session
+          const sessionTabs = allTabs.filter(tab => session.tabs.includes(tab.id));
+          resolve(sessionTabs);
+        });
       });
+
+      // Extract tab metadata for persistence
+      tabs.forEach(tab => {
+        if (tab.url && tab.url !== 'about:blank' && tab.url !== 'chrome://newtab/') {
+          try {
+            const urlObj = new URL(tab.url);
+            sanitized.persistedTabs.push({
+              url: tab.url,
+              title: tab.title || 'Untitled',
+              domain: urlObj.hostname,
+              path: urlObj.pathname
+            });
+          } catch (error) {
+            console.warn(`[sanitizeExportData] Invalid URL for tab ${tab.id}:`, tab.url);
+          }
+        }
+      });
+
+      console.log(`[sanitizeExportData] Collected ${sanitized.persistedTabs.length} persisted tabs for session ${session.id}`);
+    } catch (error) {
+      console.error(`[sanitizeExportData] Failed to query tabs:`, error);
     }
-  });
+  }
 
   return sanitized;
 }
@@ -3079,7 +3253,7 @@ async function exportSession(sessionId, options = {}) {
     }
 
     // Sanitize session data
-    const exportData = sanitizeExportData(session);
+    const exportData = await sanitizeExportData(session);
 
     // Build export file structure
     const exportFile = {
@@ -3236,7 +3410,11 @@ async function exportAllSessions(options = {}) {
     console.log('[exportAllSessions] Exporting', sessions.length, 'sessions');
 
     // Sanitize all session data
-    const exportSessions = sessions.map(session => sanitizeExportData(session));
+    const exportSessions = [];
+    for (const session of sessions) {
+      const sanitized = await sanitizeExportData(session);
+      exportSessions.push(sanitized);
+    }
 
     // Build export file structure
     const exportFile = {
@@ -3570,8 +3748,11 @@ async function importSessions(fileData, options = {}) {
         customColor: sessionData.customColor || null,
         createdAt: Date.now(), // Use current timestamp
         lastAccessed: Date.now(),
-        tabs: [] // No tabs initially (sessions are imported without active tabs)
+        tabs: [], // No tabs initially (sessions are imported without active tabs)
+        persistedTabs: sessionData.persistedTabs || [] // Import persisted tab metadata
       };
+
+      console.log('[importSessions] Session persistedTabs:', sessionStore.sessions[newSessionId].persistedTabs);
 
       // Import cookies
       if (sessionData.cookies) {
@@ -4000,6 +4181,47 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       getActiveSessions((result) => {
         if (result.success) {
           sendResponse({ success: true, sessions: result.sessions });
+        } else {
+          sendResponse({ success: false, error: result.error });
+        }
+      });
+      return true; // Keep channel open for async response
+
+    } else if (message.action === 'getAllSessions') {
+      // Get all sessions (active + dormant) with callback
+      getAllSessions((result) => {
+        if (result.success) {
+          sendResponse({
+            success: true,
+            activeSessions: result.activeSessions,
+            dormantSessions: result.dormantSessions
+          });
+        } else {
+          sendResponse({ success: false, error: result.error });
+        }
+      });
+      return true; // Keep channel open for async response
+
+    } else if (message.action === 'openDormantSession') {
+      // Open a dormant session by creating a new tab
+      const sessionId = message.sessionId;
+      const url = message.url; // DO NOT set default - let openDormantSession extract from persistedTabs
+
+      if (!sessionId) {
+        sendResponse({ success: false, error: 'No session ID provided' });
+        return false;
+      }
+
+      console.log('[Message Handler] openDormantSession - sessionId:', sessionId, 'url:', url, 'url type:', typeof url);
+
+      openDormantSession(sessionId, url, (result) => {
+        if (result.success) {
+          sendResponse({
+            success: true,
+            sessionId: result.sessionId,
+            tabId: result.tabId,
+            color: result.color
+          });
         } else {
           sendResponse({ success: false, error: result.error });
         }

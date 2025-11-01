@@ -379,6 +379,103 @@
       color: #bbb;
     }
 
+    /* Dormant Sessions Styles */
+    .sessions-section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 12px;
+      margin-top: 20px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e0e0e0;
+    }
+
+    .sessions-section-title:first-child {
+      margin-top: 0;
+    }
+
+    .dormant-title {
+      color: #666;
+    }
+
+    .dormant-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .dormant-session-card {
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 12px;
+      background: #f9f9f9;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: all 0.2s;
+    }
+
+    .dormant-session-card:hover {
+      border-color: #1ea7e8;
+      background: white;
+    }
+
+    .dormant-session-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .dormant-session-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .dormant-session-name {
+      font-weight: 600;
+      font-size: 13px;
+      color: #333;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .dormant-session-timestamp {
+      font-size: 10px;
+      color: #999;
+    }
+
+    .open-dormant-session-btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .open-dormant-session-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .open-dormant-session-btn:active {
+      transform: translateY(0);
+    }
+
+    .open-dormant-session-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
     .loading {
       text-align: center;
       padding: 20px;
@@ -1237,6 +1334,34 @@
 
       .empty-state-hint {
         color: #666;
+      }
+
+      /* Dormant Sessions Dark Mode */
+      .sessions-section-title {
+        color: #e0e0e0;
+        border-bottom-color: #444;
+      }
+
+      .dormant-title {
+        color: #999;
+      }
+
+      .dormant-session-card {
+        background: #242424;
+        border-color: #444;
+      }
+
+      .dormant-session-card:hover {
+        border-color: #1ea7e8;
+        background: #2d2d2d;
+      }
+
+      .dormant-session-name {
+        color: #e0e0e0;
+      }
+
+      .dormant-session-timestamp {
+        color: #888;
       }
 
       .sessions-list::-webkit-scrollbar-track {

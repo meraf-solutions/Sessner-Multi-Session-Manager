@@ -5,8 +5,15 @@
 Successfully implemented **Session Export/Import** feature for Premium and Enterprise tier users, enabling backup, restore, and migration of browser sessions with cookies and metadata.
 
 **Status:** ✅ Complete (2025-10-31)
+**Dormant Sessions Update:** ✅ Added 2025-11-01
 **Version:** 3.2.0
 **Tier Restrictions:** Premium (export/import per session), Enterprise (+ bulk export + encryption)
+
+**Latest Update (2025-11-01):**
+- Added dormant sessions display for imported sessions with no active tabs
+- Users can now see and open imported sessions via "Imported Sessions" section
+- "Open Session" button creates tab and activates dormant sessions
+- Session count excludes dormant sessions (tier limits apply only to active sessions)
 
 ---
 
@@ -72,6 +79,14 @@ Successfully implemented **Session Export/Import** feature for Premium and Enter
 - Base64 encoding for storage
 - Transparent decompression on import
 - ~60-80% size reduction
+
+✅ **Dormant Sessions Display** (2025-11-01 Update)
+- Imported sessions with no tabs shown in "Imported Sessions" section
+- "Open Session" button creates tab and activates session
+- Sessions move to "Active Sessions" after opening
+- Dormant sessions excluded from tier limits
+- Full theme support (light/dark modes)
+- Closing all tabs moves session back to dormant
 
 ---
 
@@ -572,6 +587,141 @@ async function importSessions(fileData, options = {}) {
 **Request:** `{ action: 'importSessions', fileData: '...', options: { password: '...' } }`
 
 **Response:** `{ success: true, imported: ['Work Gmail', 'Personal Facebook'], renamed: [{ original: 'Work Gmail', renamed: 'Work Gmail (2)' }], importedCount: 2, renamedCount: 1 }`
+
+---
+
+**9. `getAllSessions(callback)` (lines 2511-2583)** - 2025-11-01 Update
+
+Fetches all sessions including dormant sessions (no active tabs) for popup display.
+
+```javascript
+function getAllSessions(callback) {
+  chrome.tabs.query({}, (tabs) => {
+    const activeSessions = {};
+    const dormantSessions = {};
+
+    // Build active sessions (sessions with tabs)
+    const sessionIdsWithTabs = new Set();
+    for (const tab of tabs) {
+      const sessionId = sessionStore.tabToSession[tab.id];
+      if (sessionId) {
+        sessionIdsWithTabs.add(sessionId);
+        if (!activeSessions[sessionId]) {
+          const session = sessionStore.sessions[sessionId];
+          activeSessions[sessionId] = {
+            sessionId: sessionId,
+            name: session.name,
+            color: session.color,
+            customColor: session.customColor,
+            createdAt: session.createdAt,
+            lastAccessed: session.lastAccessed,
+            tabs: []
+          };
+        }
+        activeSessions[sessionId].tabs.push({
+          tabId: tab.id,
+          title: tab.title,
+          url: tab.url,
+          domain: extractDomain(tab.url)
+        });
+      }
+    }
+
+    // Find dormant sessions (sessions with NO tabs)
+    for (const sessionId in sessionStore.sessions) {
+      if (!sessionIdsWithTabs.has(sessionId)) {
+        const session = sessionStore.sessions[sessionId];
+        dormantSessions[sessionId] = {
+          sessionId: sessionId,
+          name: session.name,
+          color: session.color,
+          customColor: session.customColor,
+          createdAt: session.createdAt,
+          lastAccessed: session.lastAccessed,
+          tabs: [],
+          isDormant: true
+        };
+      }
+    }
+
+    callback({
+      success: true,
+      activeSessions: Object.values(activeSessions),
+      dormantSessions: Object.values(dormantSessions)
+    });
+  });
+}
+```
+
+**Request:** `{ action: 'getAllSessions' }`
+
+**Response:** `{ success: true, activeSessions: [...], dormantSessions: [...] }`
+
+**Key Points:**
+- Replaces `getActiveSessions()` for popup UI
+- Returns both active AND dormant sessions
+- Dormant sessions have `isDormant: true` flag
+- Session count for tier limits only uses activeSessions.length
+- Enables display of imported sessions with no tabs
+
+---
+
+**10. `openDormantSession(sessionId, url, callback)` (lines 2585-2647)** - 2025-11-01 Update
+
+Creates a new tab and assigns a dormant session to it, activating the session.
+
+```javascript
+function openDormantSession(sessionId, url, callback) {
+  console.log(`[openDormantSession] Opening dormant session: ${sessionId}`);
+
+  // 1. Validate session exists
+  const session = sessionStore.sessions[sessionId];
+  if (!session) {
+    console.error(`[openDormantSession] Session not found: ${sessionId}`);
+    callback({ success: false, error: 'Session not found' });
+    return;
+  }
+
+  // 2. Check if session already has tabs (should be dormant)
+  if (session.tabs && session.tabs.length > 0) {
+    console.warn(`[openDormantSession] Session ${sessionId} already has ${session.tabs.length} tabs`);
+    callback({ success: false, error: 'Session already has active tabs' });
+    return;
+  }
+
+  // 3. Create new tab
+  chrome.tabs.create({ url: url || 'about:blank', active: true }, (tab) => {
+    // 4. Assign session to tab
+    sessionStore.tabToSession[tab.id] = sessionId;
+    session.tabs.push(tab.id);
+    session.lastAccessed = Date.now();
+
+    // 5. Set badge and favicon
+    const color = session.customColor || session.color;
+    chrome.browserAction.setBadgeText({ text: '●', tabId: tab.id });
+    chrome.browserAction.setBadgeBackgroundColor({ color: color, tabId: tab.id });
+    updateFaviconBadge(tab.id, color);
+
+    // 6. Persist changes
+    persistSessions(true);
+
+    console.log(`[openDormantSession] ✓ Created tab ${tab.id} for session ${sessionId}`);
+    callback({ success: true, sessionId: sessionId, tabId: tab.id });
+  });
+}
+```
+
+**Request:** `{ action: 'openDormantSession', sessionId: 'session_...', url: 'about:blank' }`
+
+**Response:** `{ success: true, sessionId: 'session_...', tabId: 456 }`
+
+**Key Points:**
+- Opens dormant session with "Open Session" button
+- Creates tab with specified URL (defaults to 'about:blank')
+- Assigns session cookies to new tab
+- Sets badge and favicon indicators
+- Session moves from dormant to active state
+- Updates lastAccessed timestamp
 
 ---
 
@@ -2089,6 +2239,8 @@ Enterprise Features:
 - ✅ Export icon NOT shown on any session
 - ✅ Only color palette and settings icons visible
 
+**Test Result:** ✅ PASSED (2025-11-01)
+
 ---
 
 **Test 1.2: Free Tier - Import Button Shows Upgrade Prompt**
@@ -2101,6 +2253,8 @@ Enterprise Features:
 - ✅ Message: "Session export/import requires Premium or Enterprise tier"
 - ✅ No file browser opens
 
+**Test Result:** ✅ PASSED (2025-11-01)
+
 ---
 
 **Test 1.3: Free Tier - Bulk Export Button Hidden**
@@ -2110,6 +2264,8 @@ Enterprise Features:
 
 **Expected Result:**
 - ✅ "Export All Sessions" button NOT visible
+
+**Test Result:** ✅ PASSED (2025-11-01)
 
 ---
 
@@ -2529,6 +2685,250 @@ Enterprise Features:
 
 ---
 
+## Test Category 7: Dormant Sessions Display & Management
+
+**Background:** Imported sessions have no active tabs and need special UI to become accessible.
+
+**Test 7.1: Dormant Session Appears After Import**
+1. Export a session from one browser profile
+2. Switch to another profile (or Premium tier)
+3. Import the exported JSON file
+4. Observe popup UI
+
+**Expected Result:**
+- ✅ Import succeeds with notification: "✓ Successfully imported 1 session"
+- ✅ Popup shows two sections:
+  - "Active Sessions" (if any exist)
+  - "Imported Sessions (No Active Tabs)"
+- ✅ Imported session appears in "Imported Sessions" section
+- ✅ Session card shows:
+  - Color dot matching session color
+  - Session name (or session ID if no custom name)
+  - "Last used: [timestamp]" below name
+  - "Open Session" button on the right
+- ✅ Session count at top EXCLUDES dormant sessions (only counts active)
+- ✅ Console logs: "Active sessions: [X]" (dormant NOT included in active count)
+
+---
+
+**Test 7.2: Open Dormant Session Button**
+1. Import a session (should appear in "Imported Sessions" section)
+2. Click "Open Session" button
+
+**Expected Result:**
+- ✅ Button text changes to "Opening..." and button disabled
+- ✅ New tab opens with URL: "about:blank"
+- ✅ Tab has colored badge matching session color
+- ✅ Tab has favicon badge with extension icon + session color
+- ✅ Session moves from "Imported Sessions" to "Active Sessions" section
+- ✅ Session card now shows tab list with "about:blank" entry
+- ✅ Session count increments by 1
+- ✅ Background console logs:
+  ```
+  [openDormantSession] Opening dormant session: session_...
+  [openDormantSession] ✓ Created tab X for session session_...
+  ```
+- ✅ Popup console logs:
+  ```
+  [Popup] ✓ Opened dormant session: session_...
+  Refreshing sessions...
+  Active sessions: [1]
+  ```
+
+---
+
+**Test 7.3: Session Moves to Active Section After Opening**
+1. Import two sessions (both appear in "Imported Sessions")
+2. Open first session (click "Open Session")
+3. Leave second session dormant
+
+**Expected Result:**
+- ✅ First session moves to "Active Sessions" section
+- ✅ Second session remains in "Imported Sessions" section
+- ✅ "Active Sessions" section appears at top
+- ✅ "Imported Sessions" section appears below active sessions
+- ✅ Session count shows 1 (only active session)
+
+---
+
+**Test 7.4: Session Count Excludes Dormant Sessions**
+1. Create 2 active sessions (Free tier limit = 3)
+2. Import 5 sessions (all dormant)
+3. Check session count display
+4. Try to create a new session
+
+**Expected Result:**
+- ✅ Session count shows: "2 / 3 sessions" (dormant NOT counted)
+- ✅ "New Session" button is ENABLED (under limit)
+- ✅ Can create 1 more active session successfully
+- ✅ After creating 3rd active session: "3 / 3 sessions" shown
+- ✅ "New Session" button now DISABLED
+- ✅ Warning banner appears: "Session limit reached"
+- ✅ Dormant sessions still visible and accessible
+
+---
+
+**Test 7.5: Multiple Dormant Sessions Display**
+1. Export 5 sessions with different names and colors
+2. Import all 5 sessions in new profile
+3. Observe popup UI
+
+**Expected Result:**
+- ✅ All 5 sessions appear in "Imported Sessions" section
+- ✅ Each session card has unique color dot
+- ✅ Each session card has unique name
+- ✅ Sessions ordered by lastAccessed timestamp (most recent first)
+- ✅ Each session has "Open Session" button
+- ✅ Scrolling works if list exceeds popup height
+- ✅ Session count shows 0 (no active sessions yet)
+
+---
+
+**Test 7.6: Dormant Session with Custom Name**
+1. Create session with custom name: "Work Gmail"
+2. Export session
+3. Import session in new profile
+
+**Expected Result:**
+- ✅ Dormant session card shows: "Work Gmail" (NOT session ID)
+- ✅ Custom name preserved after import
+- ✅ Opening session preserves custom name in "Active Sessions" section
+
+---
+
+**Test 7.7: Dormant Section Title Styling**
+1. Import session (creates dormant session)
+2. Observe section title styling
+
+**Expected Result (Light Mode):**
+- ✅ Title text: "Imported Sessions (No Active Tabs)"
+- ✅ Title color: #999 (lighter gray than "Active Sessions")
+- ✅ Border below title: 1px solid #e0e0e0
+
+**Expected Result (Dark Mode):**
+- ✅ Title text: "Imported Sessions (No Active Tabs)"
+- ✅ Title color: #666 (darker than "Active Sessions")
+- ✅ Border below title: 1px solid #444
+
+---
+
+**Test 7.8: Dormant Session Card Hover Effect**
+1. Import session
+2. Hover over dormant session card
+
+**Expected Result (Light Mode):**
+- ✅ Border color changes to #667eea (purple)
+- ✅ Box shadow appears: 0 2px 8px rgba(102, 126, 234, 0.1)
+- ✅ Smooth transition (0.2s)
+
+**Expected Result (Dark Mode):**
+- ✅ Border color changes to #667eea (purple)
+- ✅ Box shadow appears: 0 2px 8px rgba(102, 126, 234, 0.2) (brighter)
+- ✅ Smooth transition (0.2s)
+
+---
+
+**Test 7.9: Empty Dormant Section Not Displayed**
+1. Create 2 active sessions
+2. Do NOT import any sessions
+3. Observe popup UI
+
+**Expected Result:**
+- ✅ ONLY "Active Sessions" section shown
+- ✅ "Imported Sessions" section NOT shown
+- ✅ No empty section or placeholder
+
+---
+
+**Test 7.10: Dormant Session Error Handling**
+1. Import session
+2. In background console, manually delete session:
+   ```javascript
+   delete sessionStore.sessions['session_...'];
+   ```
+3. In popup, click "Open Session"
+
+**Expected Result:**
+- ✅ Alert shows: "Failed to open session: Session not found"
+- ✅ Button text reverts to "Open Session"
+- ✅ Button re-enabled
+- ✅ Console error: "[Popup] Failed to open dormant session: {success: false, error: 'Session not found'}"
+
+---
+
+**Test 7.11: Opening Session with Existing Tabs (Edge Case)**
+1. Import session A
+2. Open session A (creates tab)
+3. In background console, manually call:
+   ```javascript
+   openDormantSession('session_A_id', 'about:blank', console.log);
+   ```
+
+**Expected Result:**
+- ✅ Response: `{success: false, error: 'Session already has active tabs'}`
+- ✅ No new tab created
+- ✅ Existing session tab unaffected
+
+---
+
+**Test 7.12: Dormant Session Dark Mode Theme**
+1. Enable OS dark mode
+2. Import session
+3. Observe dormant session card styling
+
+**Expected Result:**
+- ✅ Card background: #242424 (dark)
+- ✅ Session name text: #e0e0e0 (light)
+- ✅ Timestamp text: #999 (medium gray)
+- ✅ Border: #444 (dark gray)
+- ✅ Hover border: #667eea (purple, same as light mode)
+- ✅ "Open Session" button: Purple gradient (same as light mode)
+
+---
+
+**Test 7.13: Multiple Sessions Opening Sequentially**
+1. Import 3 sessions
+2. Click "Open Session" on first session
+3. Wait for tab to open
+4. Click "Open Session" on second session
+5. Wait for tab to open
+6. Click "Open Session" on third session
+
+**Expected Result:**
+- ✅ Each session opens in new tab sequentially
+- ✅ Each session moves to "Active Sessions" after opening
+- ✅ "Imported Sessions" section disappears after last session opened
+- ✅ Session count increments: 0 → 1 → 2 → 3
+- ✅ All tabs have correct colored badges
+
+---
+
+**Test 7.14: Closing Tab Moves Session Back to Dormant**
+1. Import session
+2. Open session (creates tab, moves to "Active Sessions")
+3. Close the tab
+
+**Expected Result:**
+- ✅ Session disappears from "Active Sessions"
+- ✅ Session reappears in "Imported Sessions (No Active Tabs)"
+- ✅ Session count decrements by 1
+- ✅ "Open Session" button available again
+
+---
+
+**Test 7.15: Bulk Import Creates Multiple Dormant Sessions**
+1. Export all sessions (Enterprise: 5 sessions in one file)
+2. Import bulk file in new profile
+
+**Expected Result:**
+- ✅ Import notification: "✓ Successfully imported 5 sessions"
+- ✅ All 5 sessions appear in "Imported Sessions" section
+- ✅ Each session card has unique color and name
+- ✅ Session count shows 0
+- ✅ Can open each session individually
+
+---
+
 ### Testing Checklist Summary
 
 **Tier Restrictions:**
@@ -2572,6 +2972,20 @@ Enterprise Features:
 - [ ] Modal auto-closes after import
 - [ ] Dark mode support
 - [ ] Responsive layout
+
+**Dormant Sessions:**
+- [ ] Imported sessions appear in "Imported Sessions" section
+- [ ] "Open Session" button creates tab and assigns session
+- [ ] Session moves from dormant to active after opening
+- [ ] Session count excludes dormant sessions (tier limits)
+- [ ] Multiple dormant sessions display correctly
+- [ ] Custom names preserved in dormant sessions
+- [ ] Section titles styled correctly (light/dark modes)
+- [ ] Card hover effects work (light/dark modes)
+- [ ] Empty dormant section not displayed
+- [ ] Error handling for invalid sessions
+- [ ] Closing tab moves session back to dormant
+- [ ] Bulk import creates multiple dormant sessions
 
 ---
 
@@ -2765,6 +3179,110 @@ Enterprise Features:
 
 ---
 
+#### 5. `getAllSessions`
+
+**Purpose:** Fetches all sessions (both active and dormant) for display in popup UI.
+
+**Request:**
+```javascript
+{
+  action: 'getAllSessions'
+}
+```
+
+**Response (Success):**
+```javascript
+{
+  success: true,
+  activeSessions: [
+    {
+      sessionId: 'session_1234567890_abc123',
+      name: 'Work Gmail',
+      color: '#FF6B6B',
+      customColor: null,
+      createdAt: 1698765432000,
+      lastAccessed: 1698765432000,
+      tabs: [
+        {
+          tabId: 123,
+          title: 'Gmail - Inbox',
+          url: 'https://mail.google.com/mail/u/0/#inbox',
+          domain: 'mail.google.com'
+        }
+      ]
+    }
+  ],
+  dormantSessions: [
+    {
+      sessionId: 'session_1698765432000_xyz789',
+      name: 'Personal Facebook',
+      color: '#4ECDC4',
+      customColor: null,
+      createdAt: 1698765432000,
+      lastAccessed: 1698765432000,
+      tabs: [],
+      isDormant: true
+    }
+  ]
+}
+```
+
+**Notes:**
+- **activeSessions:** Sessions with at least one active tab
+- **dormantSessions:** Sessions with no active tabs (imported but not opened)
+- **Session count for tier limits:** Only includes activeSessions.length
+- **isDormant flag:** Only present in dormant sessions (always true)
+
+---
+
+#### 6. `openDormantSession`
+
+**Purpose:** Creates a new tab and assigns a dormant session to it, activating the session.
+
+**Request:**
+```javascript
+{
+  action: 'openDormantSession',
+  sessionId: 'session_1698765432000_xyz789',
+  url: 'about:blank'  // Optional: defaults to 'about:blank'
+}
+```
+
+**Response (Success):**
+```javascript
+{
+  success: true,
+  sessionId: 'session_1698765432000_xyz789',
+  tabId: 456
+}
+```
+
+**Response (Error - Session Not Found):**
+```javascript
+{
+  success: false,
+  error: 'Session not found'
+}
+```
+
+**Response (Error - Session Already Active):**
+```javascript
+{
+  success: false,
+  error: 'Session already has active tabs'
+}
+```
+
+**Notes:**
+- Creates new tab with specified URL (defaults to 'about:blank')
+- Assigns dormant session to the new tab
+- Sets badge indicator and favicon color
+- Updates session.lastAccessed timestamp
+- Persists changes immediately
+- Session moves from dormant to active state
+
+---
+
 ### Usage Examples
 
 **Export Session (Premium):**
@@ -2851,6 +3369,101 @@ reader.onload = async (e) => {
 };
 
 reader.readAsText(file);
+```
+
+---
+
+**Get All Sessions (Active + Dormant):**
+```javascript
+// Fetch all sessions for popup display
+const response = await chrome.runtime.sendMessage({
+  action: 'getAllSessions'
+});
+
+if (response.success) {
+  const activeCount = response.activeSessions.length;
+  const dormantCount = response.dormantSessions.length;
+
+  console.log(`Active sessions: ${activeCount}`);
+  console.log(`Dormant sessions: ${dormantCount}`);
+
+  // Display active sessions
+  response.activeSessions.forEach(session => {
+    console.log(`Session: ${session.name || session.sessionId}`);
+    console.log(`  Tabs: ${session.tabs.length}`);
+  });
+
+  // Display dormant sessions (imported but not opened)
+  response.dormantSessions.forEach(session => {
+    console.log(`Dormant: ${session.name || session.sessionId}`);
+    console.log(`  Last used: ${new Date(session.lastAccessed).toLocaleString()}`);
+  });
+}
+```
+
+---
+
+**Open Dormant Session:**
+```javascript
+// Open dormant session with "Open Session" button
+async function handleOpenDormantSession(sessionId) {
+  const response = await chrome.runtime.sendMessage({
+    action: 'openDormantSession',
+    sessionId: sessionId,
+    url: 'about:blank'
+  });
+
+  if (response.success) {
+    console.log(`✓ Opened session ${sessionId} in tab ${response.tabId}`);
+
+    // Refresh sessions list to show session moved to active
+    await refreshSessions();
+  } else {
+    console.error(`Failed to open session: ${response.error}`);
+    alert(`Error: ${response.error}`);
+  }
+}
+```
+
+---
+
+**Complete Import-to-Open Workflow:**
+```javascript
+// Step 1: Import session
+const importResponse = await chrome.runtime.sendMessage({
+  action: 'importSessions',
+  fileData: fileData,
+  options: {}
+});
+
+if (importResponse.success) {
+  console.log(`✓ Imported ${importResponse.importedCount} sessions`);
+
+  // Step 2: Fetch all sessions (including newly imported dormant sessions)
+  const sessionsResponse = await chrome.runtime.sendMessage({
+    action: 'getAllSessions'
+  });
+
+  // Step 3: Display dormant sessions with "Open Session" buttons
+  const dormantSessions = sessionsResponse.dormantSessions || [];
+  dormantSessions.forEach(session => {
+    const button = document.createElement('button');
+    button.textContent = 'Open Session';
+    button.onclick = () => {
+      // Step 4: Open dormant session when button clicked
+      chrome.runtime.sendMessage({
+        action: 'openDormantSession',
+        sessionId: session.sessionId,
+        url: 'about:blank'
+      }).then(response => {
+        if (response.success) {
+          console.log(`✓ Session ${session.name} is now active`);
+          // Refresh UI to show session in "Active Sessions" section
+        }
+      });
+    };
+  });
+}
 ```
 
 ---

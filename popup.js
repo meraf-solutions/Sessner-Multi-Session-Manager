@@ -119,6 +119,21 @@ function truncate(text, maxLength) {
 }
 
 /**
+ * Extract domain from URL
+ * @param {string} url - URL to extract domain from
+ * @returns {string} Domain name or fallback text
+ */
+function extractDomain(url) {
+  if (!url || url === 'about:blank') return 'No domain';
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch (error) {
+    return 'Invalid URL';
+  }
+}
+
+/**
  * Format time ago from timestamp
  * @param {number} timestamp - Timestamp in milliseconds
  * @returns {string} Human-readable time ago
@@ -1040,12 +1055,12 @@ function attachSessionNameListener(element, sessionId, currentName) {
 }
 
 /**
- * Refresh the list of active sessions
+ * Refresh the list of active sessions and dormant sessions
  */
 async function refreshSessions() {
   try {
     console.log('Refreshing sessions...');
-    const response = await sendMessage({ action: 'getActiveSessions' });
+    const response = await sendMessage({ action: 'getAllSessions' });
 
     if (!response || !response.success) {
       console.error('Failed to get sessions:', response);
@@ -1053,8 +1068,10 @@ async function refreshSessions() {
       return;
     }
 
-    const sessions = response.sessions || [];
-    console.log('Active sessions:', sessions);
+    const activeSessions = response.activeSessions || [];
+    const dormantSessions = response.dormantSessions || [];
+    console.log('Active sessions:', activeSessions);
+    console.log('Dormant sessions:', dormantSessions);
 
     // Get session metadata from storage to access lastAccessed timestamps
     const sessionMetadata = await new Promise((resolve) => {
@@ -1076,34 +1093,35 @@ async function refreshSessions() {
 
     // Ensure we have a valid status object with proper defaults
     const status = statusResponse && statusResponse.success ? {
-      activeCount: statusResponse.activeCount ?? sessions.length,
+      activeCount: statusResponse.activeCount ?? activeSessions.length,
       limit: statusResponse.limit ?? 3,
       tier: statusResponse.tier || 'free',
-      canCreateNew: statusResponse.canCreateNew ?? (sessions.length < 3)
+      canCreateNew: statusResponse.canCreateNew ?? (activeSessions.length < 3)
     } : {
-      activeCount: sessions.length,
+      activeCount: activeSessions.length,
       limit: 3,
       tier: 'free',
-      canCreateNew: sessions.length < 3
+      canCreateNew: activeSessions.length < 3
     };
 
     // Update session count with limit info
     // Use activeCount from status for accurate count (matches backend logic)
+    // ONLY count active sessions (not dormant)
     const count = status.activeCount;
     const limitDisplay = formatSessionLimit(status.limit);
     $('#sessionCount').textContent = `${count} / ${limitDisplay} sessions`;
 
     // Verify consistency between popup sessions and backend active count
-    if (sessions.length !== count) {
-      console.warn('[Popup] Session count mismatch: popup shows', sessions.length, 'sessions but backend reports', count, 'active sessions');
+    if (activeSessions.length !== count) {
+      console.warn('[Popup] Session count mismatch: popup shows', activeSessions.length, 'sessions but backend reports', count, 'active sessions');
     }
 
     // Update button state based on limits
     updateSessionButtonState(status);
 
     // Check for expiring sessions (free tier only, approaching 7-day limit)
-    if (status.tier === 'free' && sessions.length > 0) {
-      const expiringSoon = sessions.filter(session => {
+    if (status.tier === 'free' && activeSessions.length > 0) {
+      const expiringSoon = activeSessions.filter(session => {
         const metadata = sessionMetadata[session.sessionId] || {};
         const lastAccessed = metadata.lastAccessed || metadata.createdAt || Date.now();
         const daysRemaining = calculateDaysRemaining(lastAccessed, status.tier);
@@ -1124,7 +1142,7 @@ async function refreshSessions() {
       }
     }
 
-    if (sessions.length === 0) {
+    if (activeSessions.length === 0 && dormantSessions.length === 0) {
       $('#sessionsList').innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">📂</div>
@@ -1138,7 +1156,12 @@ async function refreshSessions() {
     // Build HTML for sessions
     let html = '';
 
-    sessions.forEach(session => {
+    // Active Sessions Section
+    if (activeSessions.length > 0) {
+      html += '<div class="sessions-section-title">Active Sessions</div>';
+    }
+
+    activeSessions.forEach(session => {
       const sessionId = escapeHtml(session.sessionId);
       const sessionColor = session.color || '#999';
       const tabs = session.tabs || [];
@@ -1240,13 +1263,26 @@ async function refreshSessions() {
       `;
     });
 
+    // Dormant Sessions Section
+    if (dormantSessions.length > 0) {
+      html += '<div class="sessions-section-title dormant-title">Imported Sessions</div>';
+      html += '<div class="dormant-section">';
+
+      dormantSessions.forEach(session => {
+        html += buildDormantSessionHTML(session, sessionMetadata, status.tier);
+      });
+
+      html += '</div>';
+    }
+
     $('#sessionsList').innerHTML = html;
 
     // Attach event listeners to tab items, session settings, session names, and export
     attachTabListeners();
     attachSessionSettingsListeners();
-    attachSessionNameListeners(sessions, sessionMetadata);
+    attachSessionNameListeners(activeSessions, sessionMetadata);
     attachExportListeners();
+    attachDormantSessionListeners();
 
     // Update auto-restore UI after sessions are rendered
     await updateAutoRestoreUI();
@@ -1254,7 +1290,7 @@ async function refreshSessions() {
     // Show/hide bulk export button (Enterprise only)
     const bulkExportContainer = $('#bulkExportContainer');
     if (bulkExportContainer) {
-      if (status.tier === 'enterprise' && sessions.length > 0) {
+      if (status.tier === 'enterprise' && activeSessions.length > 0) {
         bulkExportContainer.style.display = 'block';
       } else {
         bulkExportContainer.style.display = 'none';
@@ -1265,6 +1301,132 @@ async function refreshSessions() {
     console.error('Error refreshing sessions:', error);
     $('#sessionsList').innerHTML = '<div class="empty-state"><div class="empty-state-text">Error loading sessions</div></div>';
   }
+}
+
+/**
+ * Build HTML for a dormant session (session without tabs)
+ * @param {Object} session - Dormant session object
+ * @param {Object} sessionMetadata - Session metadata from storage
+ * @param {string} tier - User's license tier
+ * @returns {string} HTML string
+ */
+function buildDormantSessionHTML(session, sessionMetadata, tier) {
+  const sessionId = escapeHtml(session.sessionId);
+  const sessionColor = session.customColor || session.color || '#999';
+
+  // Get session metadata for lastAccessed and name
+  const metadata = sessionMetadata[session.sessionId] || {};
+  const lastAccessed = metadata.lastAccessed || metadata.createdAt || Date.now();
+  const lastAccessedText = formatTimeAgo(lastAccessed);
+  const sessionName = metadata.name || '';
+
+  // Display name: custom name or fallback to session ID
+  const displayName = sessionName || sessionId;
+
+  // Calculate days remaining for free tier
+  const daysRemaining = calculateDaysRemaining(lastAccessed, tier);
+  const expiresText = daysRemaining !== null
+    ? ` <span style="color: ${daysRemaining <= 2 ? '#f5576c' : '#999'};">(expires in ${daysRemaining}d)</span>`
+    : ' <span style="color: #4ECDC4;">(permanent)</span>';
+
+  // Build persisted tab info (similar to active session tabs)
+  let persistedTabHTML = '';
+  if (session.persistedTabs && session.persistedTabs.length > 0) {
+    const tab = session.persistedTabs[0];
+    const domain = extractDomain(tab.url);
+    const title = escapeHtml(tab.title || domain || 'Untitled');
+    const displayTitle = sessionName
+      ? `[${escapeHtml(sessionName)}] ${title}`
+      : title;
+
+    persistedTabHTML = `
+      <div class="tab-item">
+        <div class="tab-favicon">📄</div>
+        <div class="tab-info">
+          <div class="tab-title">${truncate(displayTitle, 50)}</div>
+          <div class="tab-domain">${truncate(escapeHtml(domain), 40)}</div>
+        </div>
+        <div class="tab-actions">
+          <button class="open-dormant-session-btn" data-session-id="${sessionId}">Open Session</button>
+        </div>
+      </div>
+    `;
+  } else {
+    persistedTabHTML = `
+      <div class="tab-item">
+        <div class="tab-favicon">📄</div>
+        <div class="tab-info">
+          <div class="tab-title">No saved page</div>
+          <div class="tab-domain">about:blank</div>
+        </div>
+        <div class="tab-actions">
+          <button class="open-dormant-session-btn" data-session-id="${sessionId}">Open Session</button>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="dormant-session-card">
+      <div class="dormant-session-header">
+        <div class="session-color-dot" style="background-color: ${sessionColor}"></div>
+        <div class="dormant-session-info">
+          <div class="dormant-session-name">${truncate(displayName, 35)}</div>
+          <div class="dormant-session-timestamp">
+            Last used: ${lastAccessedText}${expiresText}
+          </div>
+        </div>
+      </div>
+      <div class="tab-list">
+        ${persistedTabHTML}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Attach event listeners to dormant session "Open Session" buttons
+ */
+function attachDormantSessionListeners() {
+  document.querySelectorAll('.open-dormant-session-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const sessionId = btn.dataset.sessionId;
+
+      console.log('[Dormant Session] Opening session:', sessionId);
+
+      // Disable button and show loading state
+      btn.disabled = true;
+      btn.textContent = 'Opening...';
+
+      try {
+        const response = await sendMessage({
+          action: 'openDormantSession',
+          sessionId: sessionId
+          // url parameter omitted - allows persistedTabs extraction in background.js
+        });
+
+        if (response && response.success) {
+          console.log('[Dormant Session] Successfully opened session:', sessionId);
+          // Refresh sessions to show updated state
+          await refreshSessions();
+        } else {
+          console.error('[Dormant Session] Failed to open session:', response?.error);
+          alert('Failed to open session: ' + (response?.error || 'Unknown error'));
+          // Re-enable button
+          btn.disabled = false;
+          btn.textContent = 'Open Session';
+        }
+      } catch (error) {
+        console.error('[Dormant Session] Error opening session:', error);
+        alert('Error opening session: ' + error.message);
+        // Re-enable button
+        btn.disabled = false;
+        btn.textContent = 'Open Session';
+      }
+    });
+  });
 }
 
 /**
