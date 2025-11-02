@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Singleton Guard Test</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .test-section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      border-bottom: 2px solid #667eea;
+      padding-bottom: 10px;
+    }
+    h2 {
+      color: #667eea;
+      margin-top: 0;
+    }
+    .log {
+      background: #1a1a1a;
+      color: #e0e0e0;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+    }
+    .log-entry {
+      margin: 2px 0;
+      padding: 2px 0;
+    }
+    .log-entry.duplicate {
+      background: #ff6b6b;
+      color: white;
+      font-weight: bold;
+      padding: 4px;
+      border-radius: 2px;
+    }
+    .log-entry.success {
+      color: #4ecdc4;
+    }
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 5px;
+    }
+    button:hover {
+      background: #5568d3;
+    }
+    .status {
+      padding: 10px;
+      border-radius: 4px;
+      margin: 10px 0;
+      font-weight: bold;
+    }
+    .status.pass {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .status.fail {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+  </style>
+</head>
+<body>
+  <h1>Singleton Guard Test - Race Condition Prevention</h1>
+
+  <div class="test-section">
+    <h2>Test Description</h2>
+    <p>This test simulates the race condition where <code>chrome.runtime.onStartup</code> and <code>chrome.runtime.onInstalled</code> fire simultaneously on browser restart.</p>
+    <p><strong>Expected Behavior:</strong> Only ONE initialization should execute. The second call should return the existing promise.</p>
+    <p><strong>Bug Behavior:</strong> BOTH calls execute simultaneously, causing duplicate session deletion.</p>
+  </div>
+
+  <div class="test-section">
+    <h2>Test Controls</h2>
+    <button onclick="runTest()">Run Test</button>
+    <button onclick="clearLog()">Clear Log</button>
+    <div id="status"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>Test Log</h2>
+    <div id="log" class="log"></div>
+  </div>
+
+  <script>
+    // Simulate the initializationManager with singleton guard
+    const testInitManager = {
+      isInitializing: false,
+      initPromise: null,
+      currentState: 'LOADING',
+      callCount: 0,
+      executionCount: 0,
+
+      async initialize() {
+        this.callCount++;
+        const callNumber = this.callCount;
+
+        log(`[Call ${callNumber}] initialize() called`);
+
+        // CRITICAL: Singleton guard - return existing promise if already initializing
+        if (this.isInitializing && this.initPromise) {
+          log(`[Call ${callNumber}] Already initializing, returning existing promise (prevents race condition)`, 'success');
+          return this.initPromise;
+        }
+
+        // Prevent duplicate initialization - if already READY, skip
+        if (this.currentState === 'READY') {
+          log(`[Call ${callNumber}] Already initialized and ready, skipping duplicate initialization`, 'success');
+          return Promise.resolve();
+        }
+
+        // Set flag and create promise BEFORE starting async work (critical for race prevention)
+        this.isInitializing = true;
+        this.initPromise = this._doInitialize(callNumber);
+
+        try {
+          await this.initPromise;
+        } catch (error) {
+          log(`[Call ${callNumber}] Initialization failed: ${error}`, 'error');
+          throw error;
+        } finally {
+          // Clear flags after completion
+          this.isInitializing = false;
+          this.initPromise = null;
+        }
+      },
+
+      async _doInitialize(callNumber) {
+        this.executionCount++;
+        const execNumber = this.executionCount;
+
+        if (execNumber > 1) {
+          log(`[Call ${callNumber}] DUPLICATE EXECUTION DETECTED! This is the ${execNumber} execution`, 'duplicate');
+        } else {
+          log(`[Call ${callNumber}] Starting initialization (execution ${execNumber})...`, 'success');
+        }
+
+        // Simulate initialization phases
+        log(`[Call ${callNumber}] Phase 1: License initialization...`);
+        await sleep(100);
+
+        log(`[Call ${callNumber}] Phase 2: Session loading...`);
+        await sleep(100);
+
+        log(`[Call ${callNumber}] Phase 3: Cleanup...`);
+        await sleep(100);
+
+        this.currentState = 'READY';
+        log(`[Call ${callNumber}] Initialization complete`, 'success');
+      }
+    };
+
+    function log(message, type = 'normal') {
+      const logDiv = document.getElementById('log');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      logDiv.appendChild(entry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function clearLog() {
+      document.getElementById('log').innerHTML = '';
+      document.getElementById('status').innerHTML = '';
+
+      // Reset test manager
+      testInitManager.isInitializing = false;
+      testInitManager.initPromise = null;
+      testInitManager.currentState = 'LOADING';
+      testInitManager.callCount = 0;
+      testInitManager.executionCount = 0;
+    }
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    async function runTest() {
+      clearLog();
+
+      log('=== Starting Race Condition Test ===', 'success');
+      log('Simulating simultaneous onStartup and onInstalled calls...');
+
+      // Simulate simultaneous calls (no await - fire both at once)
+      const promise1 = testInitManager.initialize();
+      const promise2 = testInitManager.initialize();
+
+      log('Both initialize() calls fired simultaneously');
+
+      // Wait for both to complete
+      await Promise.all([promise1, promise2]);
+
+      log('=== Test Complete ===', 'success');
+      log(`Total initialize() calls: ${testInitManager.callCount}`);
+      log(`Total _doInitialize() executions: ${testInitManager.executionCount}`);
+
+      // Check results
+      const statusDiv = document.getElementById('status');
+      if (testInitManager.executionCount === 1) {
+        statusDiv.className = 'status pass';
+        statusDiv.textContent = '✓ PASS: Only one initialization executed (singleton guard working)';
+        log('✓ Test PASSED: Singleton guard prevented duplicate execution', 'success');
+      } else {
+        statusDiv.className = 'status fail';
+        statusDiv.textContent = `✗ FAIL: ${testInitManager.executionCount} initializations executed (race condition detected)`;
+        log(`✗ Test FAILED: ${testInitManager.executionCount} executions (expected 1)`, 'duplicate');
+      }
+    }
+
+    // Run test on page load
+    window.addEventListener('load', () => {
+      log('Test page loaded. Click "Run Test" to start.');
+    });
+  </script>
+</body>
+</html>

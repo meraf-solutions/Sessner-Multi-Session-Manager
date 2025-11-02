@@ -71,6 +71,10 @@ const initializationManager = {
   initializationError: null,
   startTime: Date.now(),
 
+  // CRITICAL: Singleton guard to prevent duplicate initialization
+  isInitializing: false,
+  initPromise: null,
+
   /**
    * Set initialization state and broadcast to popup
    * @param {string} state - New state
@@ -129,12 +133,19 @@ const initializationManager = {
 
   /**
    * Run complete initialization sequence
+   * CRITICAL: Singleton guard prevents duplicate initialization from onStartup + onInstalled
    */
   async initialize() {
-    // Prevent duplicate initialization - if already READY or in progress, skip
+    // CRITICAL: Singleton guard - return existing promise if already initializing
+    if (this.isInitializing && this.initPromise) {
+      console.log('[INIT] Already initializing, returning existing promise (prevents race condition)');
+      return this.initPromise;
+    }
+
+    // Prevent duplicate initialization - if already READY, skip
     if (this.currentState === this.STATES.READY) {
       console.log('[INIT] Already initialized and ready, skipping duplicate initialization');
-      return;
+      return Promise.resolve();
     }
 
     // If already initializing, wait for completion instead of starting new initialization
@@ -144,6 +155,27 @@ const initializationManager = {
       return;
     }
 
+    // Set flag and create promise BEFORE starting async work (critical for race prevention)
+    this.isInitializing = true;
+    this.initPromise = this._doInitialize();
+
+    try {
+      await this.initPromise;
+    } catch (error) {
+      console.error('[INIT] Initialization failed:', error);
+      throw error;
+    } finally {
+      // Clear flags after completion
+      this.isInitializing = false;
+      this.initPromise = null;
+    }
+  },
+
+  /**
+   * Internal initialization logic (extracted to allow singleton guard)
+   * @private
+   */
+  async _doInitialize() {
     try {
       console.log('[INIT] ========================================');
       console.log('[INIT] Starting extension initialization...');
@@ -212,7 +244,7 @@ const initializationManager = {
       this.setState(this.STATES.SESSION_LOAD);
       console.log('[INIT] Phase 3: Loading persisted sessions...');
 
-      loadPersistedSessions();
+      await loadPersistedSessions();
 
       console.log('[INIT] ✓ Sessions loaded successfully');
 
@@ -1341,11 +1373,55 @@ async function loadPersistedSessions() {
   // ========== STEP 4: TIER-BASED SESSION RESTORATION ==========
 
   if (!shouldAutoRestore) {
-    // ========== FREE/PREMIUM TIER: Immediate Cleanup (No Tab Restoration) ==========
-    console.log('[Session Restore] FREE/PREMIUM TIER: No auto-restore, applying immediate cleanup...');
+    // ========== FREE/PREMIUM TIER: Dormant Session Preservation (No Tab Restoration) ==========
+    console.log('[Session Restore] FREE/PREMIUM TIER: No auto-restore, preserving sessions as dormant...');
 
-    // Clear tab mappings immediately (no tabs to restore)
+    // CRITICAL FIX: Wait for Edge to restore tabs before cleanup
+    // Edge assigns NEW tab IDs on restart and restores tabs asynchronously
+    // Without this delay, chrome.tabs.query() returns 0 tabs → all sessions deleted!
+    console.log('[Session Restore] Waiting 2 seconds for Edge to restore tabs...');
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Retry logic: Try up to 3 times to get restored tabs (same as Enterprise tier)
+    let tabs = [];
+    let attempt = 0;
+    const maxAttempts = 3;
+
+    while (attempt < maxAttempts) {
+      tabs = await new Promise((resolve) => {
+        chrome.tabs.query({}, (result) => {
+          if (chrome.runtime.lastError) {
+            console.error('[Session Restore] Failed to query tabs:', chrome.runtime.lastError);
+            resolve([]);
+          } else {
+            resolve(result || []);
+          }
+        });
+      });
+
+      console.log(`[Session Restore] Tab query attempt ${attempt + 1}: Found ${tabs.length} tabs`);
+
+      // If we found tabs, break out of retry loop
+      if (tabs.length > 0) {
+        break;
+      }
+
+      // If no tabs found, wait and retry
+      if (attempt < maxAttempts - 1) {
+        console.log(`[Session Restore] No tabs found, waiting 1 second before retry...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      attempt++;
+    }
+
+    const existingTabIds = new Set(tabs.map(t => t.id));
+    console.log('[Session Restore] Found', existingTabIds.size, 'existing tabs in browser');
+
+    // Clear tab mappings immediately (no tab restoration for Free/Premium)
+    // Tab IDs have changed after restart, old mappings are invalid
     sessionStore.tabToSession = {};
+    console.log('[Session Restore] Tab mappings cleared (tabs have new IDs after restart)');
 
     // Cleanup sessions with invalid/missing tabs
     const sessionsToDelete = [];
@@ -1353,21 +1429,6 @@ async function loadPersistedSessions() {
     // For Free/Premium: Any session with tabs should be validated
     // Since we're not restoring tabs, sessions from previous browser session have stale tab IDs
     // We need to check if those tab IDs still exist in current browser
-
-    // Query current tabs to check if any session tabs still exist
-    const tabs = await new Promise((resolve) => {
-      chrome.tabs.query({}, (result) => {
-        if (chrome.runtime.lastError) {
-          console.error('[Session Restore] Failed to query tabs:', chrome.runtime.lastError);
-          resolve([]);
-        } else {
-          resolve(result || []);
-        }
-      });
-    });
-
-    const existingTabIds = new Set(tabs.map(t => t.id));
-    console.log('[Session Restore] Found', existingTabIds.size, 'existing tabs in browser');
 
     // Validate each session's tab list
     Object.keys(loadedSessions).forEach(sessionId => {
@@ -1388,16 +1449,29 @@ async function loadPersistedSessions() {
         session.tabs = validTabs;
       }
 
-      // If no valid tabs remain, mark session for deletion
+      // CRITICAL FIX: Check persistedTabs, not just tabs!
+      // Sessions with persistedTabs are DORMANT (preserve them)
+      // Sessions without persistedTabs are ORPHANED (delete them)
+      console.log(`[Session Restore] Checking session ${sessionId}`);
+      console.log(`[Session Restore]   - tabs: ${session.tabs.length}`);
+      console.log(`[Session Restore]   - persistedTabs: ${session.persistedTabs?.length || 0}`);
+
       if (validTabs.length === 0) {
-        console.log('[Session Restore] Marking empty session for deletion:', sessionId);
-        sessionsToDelete.push(sessionId);
+        // No active tabs - check if session has persistedTabs metadata
+        if (session.persistedTabs && session.persistedTabs.length > 0) {
+          // Session has persisted tab metadata → DORMANT (preserve it!)
+          console.log(`[Session Restore] ✓ Session ${sessionId} preserved as DORMANT (${session.persistedTabs.length} persisted tabs)`);
+        } else {
+          // Session has no persisted tab metadata → ORPHANED (delete it!)
+          console.log(`[Session Restore] ✗ Session ${sessionId} marked as ORPHANED (no persistedTabs)`);
+          sessionsToDelete.push(sessionId);
+        }
       }
     });
 
-    // Delete orphaned sessions (no valid tabs)
+    // Delete orphaned sessions (no persistedTabs metadata)
     if (sessionsToDelete.length > 0) {
-      console.log('[Session Restore] Deleting', sessionsToDelete.length, 'orphaned sessions');
+      console.log(`[Session Restore] Deleting ${sessionsToDelete.length} orphaned sessions (no persistedTabs)`);
       sessionsToDelete.forEach(sessionId => {
         console.log('[Session Restore] Deleting session:', sessionId);
 
@@ -1427,6 +1501,8 @@ async function loadPersistedSessions() {
         delete loadedSessions[sessionId];
         delete loadedCookieStore[sessionId];
       });
+    } else {
+      console.log('[Session Restore] ✓ No orphaned sessions found, all sessions have persistedTabs or active tabs');
     }
 
     // Apply cleaned data to sessionStore IMMEDIATELY
@@ -1442,9 +1518,11 @@ async function loadPersistedSessions() {
     // Log final state
     const activeCount = getActiveSessionCount();
     const totalCount = Object.keys(sessionStore.sessions).length;
+    const dormantCount = totalCount - activeCount;
 
-    console.log('[Session Restore] ✓ FREE/PREMIUM cleanup complete');
+    console.log('[Session Restore] ✓ FREE/PREMIUM session preservation complete');
     console.log('[Session Restore] Active sessions (with tabs):', activeCount);
+    console.log('[Session Restore] Dormant sessions (no tabs):', dormantCount);
     console.log('[Session Restore] Total sessions in storage:', totalCount);
     console.log('[Session Restore] Tier:', tier);
     console.log('[Session Restore] ================================================');
@@ -1456,7 +1534,11 @@ async function loadPersistedSessions() {
   console.log('[Session Restore] ENTERPRISE TIER: Starting auto-restore with tab matching...');
   console.log('[Session Restore] Waiting for Edge to restore tabs...');
 
-  setTimeout(async () => {
+  // CRITICAL FIX: Wrap setTimeout in Promise to make it awaitable
+  // This prevents chrome.tabs.onRemoved from firing before URL-based matching completes
+  // NOTE: Promise executor must NOT be async - it needs to block until resolve() is called
+  await new Promise((resolve) => {
+    setTimeout(async () => {
     // Retry logic: Try up to 3 times to get restored tabs
     let tabs = [];
     let attempt = 0;
@@ -1643,7 +1725,11 @@ async function loadPersistedSessions() {
     }
 
     console.log('[Session Restore] ================================================');
-  }, 2000); // 2 second delay before tab validation
+
+    // Resolve the Promise to signal completion (allows await to continue)
+    resolve();
+    }, 2000); // 2 second delay before tab validation
+  });
 }
 
 // ============= Session Persistence Configuration =============
@@ -5325,10 +5411,12 @@ chrome.tabs.onCreated.addListener((tab) => {
 
 /**
  * Initialize on install
+ * IMPORTANT: onInstalled fires on browser restart (reason: browser_update/chrome_update)
+ * Singleton guard in initializationManager prevents duplicate initialization with onStartup
  */
 chrome.runtime.onInstalled.addListener(async (details) => {
-  console.log('Multi-Session Manager installed/updated');
-  console.log('[onInstalled] Reason:', details.reason);
+  console.log('[Extension Event] Extension installed/updated');
+  console.log('[Extension Event] Reason:', details.reason);
 
   // Run migration logic on extension update
   if (details.reason === 'update') {
@@ -5416,15 +5504,15 @@ chrome.runtime.onInstalled.addListener(async (details) => {
  * Initialize on startup
  */
 chrome.runtime.onStartup.addListener(() => {
-  console.log('Multi-Session Manager started');
-  // Trigger full initialization
+  console.log('[Browser Startup] Browser restarted, initializing...');
+  // Trigger full initialization (singleton guard prevents duplicate from onInstalled)
   initializationManager.initialize().catch(error => {
     console.error('[INIT] Failed to initialize on startup:', error);
   });
 });
 
 // Initialize when background script loads
-console.log('Multi-Session Manager background script loaded');
+console.log('[Background Script] Multi-Session Manager background script loaded');
 initializationManager.initialize().catch(error => {
   console.error('[INIT] Failed to initialize on script load:', error);
 });

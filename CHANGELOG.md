@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.2.1] - 2025-11-02 - CRITICAL HOTFIX
+
+### Bug Fixes
+
+#### CRITICAL: Premium Tier Session Deletion on Browser Restart
+
+**Issue:** Premium tier sessions were being deleted on browser restart despite being correctly persisted before closing the browser.
+
+**Root Cause:**
+- Free/Premium cleanup logic executed **immediately** without waiting for Edge tab restoration
+- `chrome.tabs.query()` returned empty array (0 tabs) because Edge hadn't restored tabs yet
+- All sessions marked as "orphaned" and deleted immediately
+- Expected behavior: Sessions should be preserved as "dormant" (no tabs, but saved)
+
+**Fix Applied:**
+- Added 2-second delay + retry logic (3 attempts) to Free/Premium tier cleanup
+- Matches the timing already implemented for Enterprise tier auto-restore
+- Sessions now properly preserved as "dormant" when Edge restores tabs
+- Users can manually reopen dormant sessions from popup
+
+**Impact:**
+- Affects: Free tier, Premium tier
+- No impact to Enterprise auto-restore functionality
+- Extension startup delayed by 2-4 seconds on browser restart (acceptable trade-off)
+
+**Files Modified:**
+- `background.js` (lines 1343-1481) - Added delay + retry logic, improved logging
+- `CLAUDE.md` (lines 884-993) - Updated "Browser Restart Persistence" section
+- `docs/fixes/2025-11-02_premium_session_deletion_bug.md` - Complete fix documentation
+
+**Evidence:**
+
+Before Fix (Sessions Lost):
+```
+[Session Restore] Found 0 existing tabs in browser  ← BUG! Edge hasn't restored yet
+[Session Restore] Deleting 3 orphaned sessions  ← ALL SESSIONS LOST!
+```
+
+After Fix (Sessions Preserved):
+```
+[Session Restore] Waiting 2 seconds for Edge to restore tabs...
+[Session Restore] Tab query attempt 2: Found 3 tabs  ← Success!
+[Session Restore] Dormant sessions (no tabs): 2  ← Sessions preserved!
+```
+
+### Technical Details
+
+**Tab Restoration Race Condition:**
+1. Extension loads before Edge restores tabs
+2. Without delay: `chrome.tabs.query()` returns 0 tabs → sessions deleted
+3. With delay: Wait 2 seconds + retry up to 3 times → tabs found → sessions preserved
+
+**Dormant Session Behavior:**
+- Free/Premium: No auto-restore (Enterprise-only feature)
+- Sessions preserved without tab mappings
+- Tab IDs change on restart (old mappings invalid)
+- Users manually reopen dormant sessions from popup
+- All cookies and metadata preserved
+
+**Related Issues:**
+- v3.0.0 (2025-10-25): Original Enterprise auto-restore race condition fix
+- v3.2.1 (2025-11-02): Extended fix to Free/Premium tiers
+
+---
+
 ## [3.0.3] - 2025-10-21
 
 ### Added - License Error Handling & UX Improvements

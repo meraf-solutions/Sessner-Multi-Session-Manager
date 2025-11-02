@@ -96,6 +96,23 @@ document.addEventListener('DOMContentLoaded', () => {
   el.textContent = new Date().getFullYear();
 });
 
+/** Get extension version from manifest and display in footer */
+document.addEventListener('DOMContentLoaded', () => {
+  const versionEl = document.getElementById('version');
+  if (!versionEl) {
+    console.error('Version element not found');
+    return;
+  }
+
+  try {
+    const manifest = chrome.runtime.getManifest();
+    versionEl.textContent = `Version ${manifest.version}`;
+  } catch (error) {
+    console.error('Failed to get manifest version:', error);
+    versionEl.textContent = 'Version —';
+  }
+});
+
 /**
  * Escape HTML to prevent XSS
  * @param {string} text
