@@ -1282,7 +1282,14 @@ async function refreshSessions() {
 
     // Dormant Sessions Section
     if (dormantSessions.length > 0) {
-      html += '<div class="sessions-section-title dormant-title">Imported Sessions</div>';
+      html += `
+        <div class="sessions-section-title dormant-title">
+          <span>Imported Sessions</span>
+          <button id="deleteAllDormantBtn" class="delete-all-dormant-btn" title="Delete all dormant sessions">
+            🗑️ Delete All
+          </button>
+        </div>
+      `;
       html += '<div class="dormant-section">';
 
       dormantSessions.forEach(session => {
@@ -1414,6 +1421,80 @@ function buildDormantSessionHTML(session, sessionMetadata, tier) {
  * Attach event listeners to dormant session "Open Session" and "Delete" buttons
  */
 function attachDormantSessionListeners() {
+  // Delete All button
+  const deleteAllBtn = $('#deleteAllDormantBtn');
+  if (deleteAllBtn) {
+    deleteAllBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+
+      console.log('[Dormant Sessions] Delete All button clicked');
+
+      // Get count of dormant sessions
+      const dormantCards = document.querySelectorAll('.dormant-session-card');
+      const count = dormantCards.length;
+
+      if (count === 0) {
+        console.log('[Dormant Sessions] No dormant sessions to delete');
+        return;
+      }
+
+      // Confirmation dialog with warning
+      const confirmed = confirm(
+        `⚠️ WARNING: Delete ALL ${count} dormant session(s)?\n\n` +
+        'This will permanently remove all session data including:\n' +
+        '• Session cookies and storage\n' +
+        '• Session settings and names\n' +
+        '• All saved session information\n\n' +
+        'This action CANNOT be undone.\n\n' +
+        'Are you absolutely sure?'
+      );
+
+      if (!confirmed) {
+        console.log('[Dormant Sessions] Delete All cancelled by user');
+        return;
+      }
+
+      // Disable button and show loading state
+      deleteAllBtn.disabled = true;
+      deleteAllBtn.textContent = 'Deleting...';
+      deleteAllBtn.style.opacity = '0.5';
+
+      try {
+        const response = await sendMessage({
+          action: 'deleteAllDormantSessions'
+        });
+
+        if (response && response.success) {
+          console.log('[Dormant Sessions] ✓ Successfully deleted all dormant sessions');
+          console.log('[Dormant Sessions] Deleted count:', response.deletedCount);
+
+          // Show success message
+          alert(`✓ Successfully deleted ${response.deletedCount} dormant session(s)`);
+
+          // Refresh sessions to show updated state
+          await refreshSessions();
+        } else {
+          console.error('[Dormant Sessions] Delete All failed:', response?.error);
+          alert('Failed to delete dormant sessions: ' + (response?.error || 'Unknown error'));
+
+          // Re-enable button
+          deleteAllBtn.disabled = false;
+          deleteAllBtn.textContent = '🗑️ Delete All';
+          deleteAllBtn.style.opacity = '';
+        }
+      } catch (error) {
+        console.error('[Dormant Sessions] Error deleting all dormant sessions:', error);
+        alert('Error deleting dormant sessions: ' + error.message);
+
+        // Re-enable button
+        deleteAllBtn.disabled = false;
+        deleteAllBtn.textContent = '🗑️ Delete All';
+        deleteAllBtn.style.opacity = '';
+      }
+    });
+  }
+
   // Open session buttons
   document.querySelectorAll('.open-dormant-session-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {

@@ -2964,6 +2964,140 @@ async function deleteDormantSession(sessionId) {
   }
 }
 
+/**
+ * Delete ALL dormant sessions (sessions without active tabs)
+ * Comprehensive multi-layer deletion across all storage systems
+ * @returns {Promise<Object>} Result with success status and deleted count
+ */
+async function deleteAllDormantSessions() {
+  console.log(`[deleteAllDormantSessions] ================================================`);
+  console.log(`[deleteAllDormantSessions] Starting bulk deletion of all dormant sessions`);
+
+  try {
+    // 1. Identify all dormant sessions
+    const dormantSessionIds = [];
+    for (const sessionId in sessionStore.sessions) {
+      const session = sessionStore.sessions[sessionId];
+
+      // Check if session is dormant (no active tabs or empty tabs array)
+      if (!session.tabs || session.tabs.length === 0) {
+        dormantSessionIds.push(sessionId);
+      }
+    }
+
+    console.log(`[deleteAllDormantSessions] Found ${dormantSessionIds.length} dormant session(s) to delete`);
+
+    if (dormantSessionIds.length === 0) {
+      console.log(`[deleteAllDormantSessions] No dormant sessions found`);
+      console.log(`[deleteAllDormantSessions] ================================================`);
+      return {
+        success: true,
+        deletedCount: 0,
+        message: 'No dormant sessions to delete'
+      };
+    }
+
+    // 2. Delete each dormant session using the existing deletion logic
+    let successCount = 0;
+    const errors = [];
+
+    for (const sessionId of dormantSessionIds) {
+      console.log(`[deleteAllDormantSessions] Deleting session: ${sessionId}`);
+
+      try {
+        // Step 2a: Delete from in-memory store
+        console.log(`[deleteAllDormantSessions] - Deleting ${sessionId} from in-memory store...`);
+        delete sessionStore.sessions[sessionId];
+        delete sessionStore.cookieStore[sessionId];
+
+        // Step 2b: Remove from tabMetadataCache (defense against stale cache entries)
+        if (typeof tabMetadataCache !== 'undefined' && tabMetadataCache.size > 0) {
+          let removedCacheEntries = 0;
+          for (const [tabId, metadata] of tabMetadataCache.entries()) {
+            if (metadata && metadata.sessionId === sessionId) {
+              tabMetadataCache.delete(tabId);
+              removedCacheEntries++;
+            }
+          }
+          if (removedCacheEntries > 0) {
+            console.log(`[deleteAllDormantSessions] - Removed ${removedCacheEntries} cache entries for ${sessionId}`);
+          }
+        }
+
+        console.log(`[deleteAllDormantSessions] ✓ Successfully deleted ${sessionId} from memory`);
+        successCount++;
+
+      } catch (error) {
+        console.error(`[deleteAllDormantSessions] ✗ Error deleting ${sessionId}:`, error);
+        errors.push({ sessionId, error: error.message });
+      }
+    }
+
+    // 3. Persist changes to storage (single batch operation)
+    console.log(`[deleteAllDormantSessions] Step 3: Persisting deletions to storage...`);
+
+    if (storagePersistenceManager && storagePersistenceManager.isInitialized) {
+      console.log(`[deleteAllDormantSessions] Using storagePersistenceManager for batch deletion...`);
+
+      try {
+        // Delete all dormant sessions in batch
+        for (const sessionId of dormantSessionIds) {
+          try {
+            const deleteResults = await storagePersistenceManager.deleteSession(sessionId);
+            console.log(`[deleteAllDormantSessions] - ✓ Deleted ${sessionId} from storage:`, deleteResults);
+
+            if (deleteResults.errors && deleteResults.errors.length > 0) {
+              console.error(`[deleteAllDormantSessions] - ⚠️ Errors for ${sessionId}:`, deleteResults.errors);
+            }
+          } catch (error) {
+            console.error(`[deleteAllDormantSessions] - ✗ Storage deletion error for ${sessionId}:`, error);
+            errors.push({ sessionId, error: error.message, phase: 'storage' });
+          }
+        }
+
+        console.log(`[deleteAllDormantSessions] ✓ Batch storage deletion completed`);
+      } catch (error) {
+        console.error('[deleteAllDormantSessions] ✗ Batch storage deletion error:', error);
+
+        // Fallback: persist current state (without deleted sessions)
+        console.log('[deleteAllDormantSessions] Using fallback persistSessions()');
+        persistSessions(true);
+      }
+    } else {
+      console.warn('[deleteAllDormantSessions] ⚠️ storagePersistenceManager not available');
+      console.log('[deleteAllDormantSessions] Using fallback persistSessions()');
+      persistSessions(true);
+    }
+
+    // 4. Summary
+    console.log(`[deleteAllDormantSessions] ================================================`);
+    console.log(`[deleteAllDormantSessions] ✓ Bulk deletion complete`);
+    console.log(`[deleteAllDormantSessions] - Total dormant sessions found: ${dormantSessionIds.length}`);
+    console.log(`[deleteAllDormantSessions] - Successfully deleted: ${successCount}`);
+    console.log(`[deleteAllDormantSessions] - Errors: ${errors.length}`);
+    console.log(`[deleteAllDormantSessions] ================================================`);
+
+    return {
+      success: true,
+      deletedCount: successCount,
+      totalFound: dormantSessionIds.length,
+      errors: errors.length > 0 ? errors : undefined,
+      message: `Successfully deleted ${successCount} of ${dormantSessionIds.length} dormant session(s)`
+    };
+
+  } catch (error) {
+    console.error(`[deleteAllDormantSessions] ✗ Unexpected error:`, error);
+    console.error(`[deleteAllDormantSessions] Stack trace:`, error.stack);
+    console.log(`[deleteAllDormantSessions] ================================================`);
+
+    return {
+      success: false,
+      deletedCount: 0,
+      error: error.message || 'Unknown error occurred'
+    };
+  }
+}
+
 // ============= Session Naming (Premium/Enterprise Feature) =============
 
 /**
@@ -4989,6 +5123,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           console.error('[Message Handler] deleteDormantSession error:', error);
           sendResponse({
             success: false,
+            error: error.message || 'Unknown error occurred'
+          });
+        });
+      return true; // Keep message channel open for async response
+
+    } else if (message.action === 'deleteAllDormantSessions') {
+      // Delete ALL dormant sessions (ALL TIERS)
+      console.log('[Message Handler] deleteAllDormantSessions - Deleting all dormant sessions');
+
+      Promise.resolve(deleteAllDormantSessions())
+        .then(result => {
+          try {
+            sendResponse(result);
+          } catch (error) {
+            console.error('[Message Handler] deleteAllDormantSessions sendResponse error:', error);
+          }
+        })
+        .catch(error => {
+          console.error('[Message Handler] deleteAllDormantSessions error:', error);
+          sendResponse({
+            success: false,
+            deletedCount: 0,
             error: error.message || 'Unknown error occurred'
           });
         });

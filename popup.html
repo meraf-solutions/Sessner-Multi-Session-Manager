@@ -396,6 +396,38 @@
 
     .dormant-title {
       color: #666;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .delete-all-dormant-btn {
+      padding: 6px 12px;
+      border: 2px solid #ff6b6b;
+      border-radius: 6px;
+      background: white;
+      color: #ff6b6b;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .delete-all-dormant-btn:hover {
+      background: #ff6b6b;
+      color: white;
+      transform: translateY(-1px);
+    }
+
+    .delete-all-dormant-btn:active {
+      transform: translateY(0);
+    }
+
+    .delete-all-dormant-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
     }
 
     .dormant-section {
@@ -1375,6 +1407,17 @@
 
       .dormant-title {
         color: #999;
+      }
+
+      .delete-all-dormant-btn {
+        background: #2d2d2d;
+        color: #ff6b6b;
+        border-color: #ff6b6b;
+      }
+
+      .delete-all-dormant-btn:hover {
+        background: #ff6b6b;
+        color: white;
       }
 
       .dormant-session-card {

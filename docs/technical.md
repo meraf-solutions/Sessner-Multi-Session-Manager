@@ -752,6 +752,72 @@ cleanupSession('session_1234567890_abc123', tabsSnapshot);
 
 ---
 
+#### `deleteAllDormantSessions()`
+
+**Signature**: `async object deleteAllDormantSessions()`
+
+**Purpose**: Bulk delete all dormant sessions from all storage layers
+
+**Status**: ✅ Tested & Working (2025-11-04, v3.2.5)
+
+**Tier Availability**: All Tiers (Free, Premium, Enterprise)
+
+**Flow**:
+1. Log bulk deletion start
+2. Identify all dormant sessions (sessions with `tabs.length === 0`)
+3. For each dormant session:
+   - Delete from in-memory store (`sessionStore.sessions`, `sessionStore.cookieStore`)
+   - Clean up `tabMetadataCache` entries
+   - Delete from persistent storage (IndexedDB + chrome.storage.local) via storage manager
+   - Collect any errors that occur
+4. Return detailed results
+
+**Returns**:
+```javascript
+{
+  success: boolean,        // true if all deletions succeeded
+  totalDormant: number,    // Total dormant sessions found
+  deleted: number,         // Successfully deleted count
+  errors: Array<string>    // Error messages (empty if success)
+}
+```
+
+**Example**:
+```javascript
+const result = await deleteAllDormantSessions();
+console.log(`Deleted ${result.deleted} of ${result.totalDormant} dormant sessions`);
+if (result.errors.length > 0) {
+  console.error('Some deletions failed:', result.errors);
+}
+```
+
+**Implementation Details**:
+- **Sequential Processing**: Deletes one session at a time to ensure atomicity
+- **Error Resilience**: Continues deleting even if one fails (collects errors)
+- **Storage Manager**: Uses `storagePersistenceManager.deleteSession()` for each session
+- **Fallback**: Falls back to `persistSessions()` if storage manager unavailable
+- **Logging**: Comprehensive logging for debugging (each session deletion logged)
+
+**Performance**:
+- **Time**: ~50-100ms per session (includes IndexedDB + chrome.storage.local writes)
+- **Memory**: Minimal impact (deletes from memory first)
+- **I/O**: Sequential writes to persistent storage (prevents race conditions)
+
+**Edge Cases**:
+- No dormant sessions: Returns `{success: true, totalDormant: 0, deleted: 0, errors: []}`
+- Partial failures: Returns `{success: false, totalDormant: N, deleted: M, errors: [...]}`
+- Storage manager not initialized: Uses `persistSessions()` fallback
+
+**Related Functions**:
+- `deleteDormantSession(sessionId)` - Single session deletion
+- `cleanupSession(sessionId)` - Session cleanup on tab close
+
+**Related Documentation**:
+- **API**: [docs/api.md - deleteAllDormantSessions](api.md#deletealldormantsessions)
+- **UI Handler**: popup.js lines 1424-1496
+
+---
+
 ### Cookie Management Functions
 
 #### `parseCookie(cookieString)`

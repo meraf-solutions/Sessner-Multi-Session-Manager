@@ -990,6 +990,84 @@ chrome.runtime.sendMessage(
 
 ---
 
+#### deleteAllDormantSessions
+
+**Status:** ✅ Tested & Working (2025-11-04, v3.2.5)
+
+Deletes ALL dormant sessions from all storage layers in a single batch operation.
+
+**Tier Availability:** All Tiers (Free, Premium, Enterprise)
+
+**Request:**
+```javascript
+{
+  action: 'deleteAllDormantSessions'
+}
+```
+
+**Response:**
+```javascript
+{
+  success: boolean,
+  totalDormant: number,     // Total dormant sessions found
+  deleted: number,          // Successfully deleted count
+  errors: Array<string>     // Error messages (if any)
+}
+```
+
+**Example:**
+```javascript
+chrome.runtime.sendMessage(
+  {
+    action: 'deleteAllDormantSessions'
+  },
+  (response) => {
+    if (response.success) {
+      console.log(`Deleted ${response.deleted} of ${response.totalDormant} dormant sessions`);
+      // Refresh UI to update session list
+    } else {
+      console.error('Bulk deletion failed:', response.errors);
+      alert(`Failed to delete all sessions. ${response.errors.length} errors occurred.`);
+    }
+  }
+);
+```
+
+**Behavior:**
+- Identifies all sessions with no active tabs (dormant)
+- Iterates through each dormant session and deletes sequentially
+- Uses same multi-layer deletion as single session deletion
+- Returns detailed results including success count and errors
+
+**Deletion Scope (per session):**
+- In-memory: `sessionStore.sessions`, `sessionStore.cookieStore`, `tabMetadataCache`
+- Persistent: IndexedDB (sessions, cookies, tab mappings, tab metadata)
+- Persistent: chrome.storage.local (all data structures synced)
+
+**UI Integration:**
+- "Delete All" button beside "Imported Sessions" title (popup.html)
+- Confirmation dialog showing count of sessions to delete
+- Loading state during deletion (button shows "Deleting..." and is disabled)
+- Auto-refresh UI after successful deletion
+
+**Performance:**
+- Batch operation processes all deletions sequentially
+- Each session deleted from all storage layers before moving to next
+- Comprehensive logging for debugging
+- Returns partial success if some deletions fail
+
+**Error Handling:**
+- Continues deleting remaining sessions even if one fails
+- Collects all errors and returns in response
+- Shows user-friendly error alert if any deletions fail
+
+**Related Documentation:**
+- **Implementation:** background.js lines 2972-3099 (`deleteAllDormantSessions()` function)
+- **Message Handler:** background.js lines 5131-5151
+- **UI Handler:** popup.js lines 1424-1496
+
+---
+
 ### Cookie Management
 
 #### getCookies

@@ -1008,6 +1008,65 @@ deleteDormantSession() → Multi-layer deletion → UI refresh
 
 ---
 
+### 5a. Bulk Dormant Session Deletion (New v3.2.5)
+
+```
+User clicks "Delete All" button → Confirmation dialog → If confirmed:
+deleteAllDormantSessions() → Sequential multi-layer deletion → UI refresh
+```
+
+**Tier Availability**: All Tiers (Free, Premium, Enterprise)
+
+**Flow**:
+1. User clicks "Delete All" button (beside "Imported Sessions" title)
+2. Confirmation dialog shows count: "Are you sure you want to delete ALL dormant sessions? This will permanently delete all saved cookies and session data for X sessions."
+3. If confirmed:
+   - Button shows "Deleting..." and is disabled
+   - Send `deleteAllDormantSessions` message to background
+   - Background identifies all dormant sessions
+   - For each session: Delete from memory → Delete from cache → Delete from persistent storage
+   - Return results with success count and errors
+4. On success: UI refreshed automatically
+5. On error: Alert shown with error details
+
+**Deletion Strategy**:
+- **Sequential Processing**: One session at a time to ensure atomicity
+- **Error Resilience**: Continues deleting even if one fails
+- **Same Deletion Logic**: Uses identical multi-layer deletion as single session deletion
+- **Comprehensive Logging**: Each session deletion logged for debugging
+
+**Deletion Scope (per session)**:
+- **In-memory**: `sessionStore.sessions`, `sessionStore.cookieStore`, `tabMetadataCache`
+- **Persistent**: IndexedDB (sessions, cookies, tab mappings, tab metadata)
+- **Persistent**: chrome.storage.local (all data structures synced)
+
+**State Changes**:
+- For each dormant session:
+  - `delete sessionStore.sessions[sessionId]`
+  - `delete sessionStore.cookieStore[sessionId]`
+  - `tabMetadataCache` entries cleaned up
+  - Persistent storage updated via storage manager
+- Final state: All dormant sessions removed from all storage layers
+
+**Performance**:
+- **Time**: ~50-100ms per session
+- **Batch Size**: No limit (processes all dormant sessions)
+- **Memory**: Minimal impact (deletes from memory first)
+- **I/O**: Sequential writes prevent race conditions
+
+**UI Enhancements**:
+- Red-themed button (`#ff6b6b`) indicates destructive action
+- Hover effects with background color change
+- Disabled state during deletion
+- Theme-aware styling (light/dark modes)
+- Only visible when dormant sessions exist
+
+**Related Documentation**:
+- API: [docs/api.md - deleteAllDormantSessions](api.md#deletealldormantsessions)
+- Technical: [docs/technical.md - deleteAllDormantSessions()](technical.md#deletealldormantsessions)
+
+---
+
 ### 6. Browser Restart Persistence
 
 **Overview**: Sessions and cookies persist across browser restarts via `chrome.storage.local`.
