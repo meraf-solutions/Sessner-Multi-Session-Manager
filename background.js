@@ -296,6 +296,11 @@ const sessionStore = {
   domainToSessionActivity: {}
 };
 
+// In-memory tab metadata cache (solves race condition with debounced persistence)
+// Updates immediately on every tab change (no debouncing)
+// Used by cleanupSession() to capture tab URLs BEFORE tabs are removed
+const tabMetadataCache = new Map(); // tabId -> { url, title, sessionId, timestamp }
+
 // ============= Utilities =============
 
 /**
@@ -1348,20 +1353,9 @@ async function loadPersistedSessions() {
   console.log('[Session Restore] Loaded from storage:', Object.keys(loadedSessions).length, 'sessions');
   console.log('[Session Restore] Loaded from storage:', Object.keys(loadedTabToSession).length, 'tab mappings');
 
-  // Ensure all sessions have lastAccessed field (for backward compatibility)
+  // Clean up temporary flags that shouldn't persist across restarts
   Object.keys(loadedSessions).forEach(sessionId => {
     const session = loadedSessions[sessionId];
-    if (!session.lastAccessed) {
-      // Set to createdAt or current time as fallback
-      session.lastAccessed = session.createdAt || Date.now();
-      console.log('[Session Restore] Added lastAccessed to session:', sessionId);
-    }
-
-    // Ensure all sessions have name field (for backward compatibility with session naming feature)
-    if (session.name === undefined) {
-      session.name = null; // Initialize to null (no custom name)
-      console.log('[Session Restore] Added name field to session:', sessionId);
-    }
 
     // Remove _isCreating flag if present (shouldn't persist across restarts)
     if (session._isCreating) {
@@ -1373,158 +1367,36 @@ async function loadPersistedSessions() {
   // ========== STEP 4: TIER-BASED SESSION RESTORATION ==========
 
   if (!shouldAutoRestore) {
-    // ========== FREE/PREMIUM TIER: Dormant Session Preservation (No Tab Restoration) ==========
-    console.log('[Session Restore] FREE/PREMIUM TIER: No auto-restore, preserving sessions as dormant...');
+    // ========== FREE/PREMIUM TIER: Simple Session Load (No Tab Restoration) ==========
+    console.log('[Session Restore] FREE/PREMIUM TIER: Loading sessions without auto-restore...');
 
-    // CRITICAL FIX: Wait for Edge to restore tabs before cleanup
-    // Edge assigns NEW tab IDs on restart and restores tabs asynchronously
-    // Without this delay, chrome.tabs.query() returns 0 tabs → all sessions deleted!
-    console.log('[Session Restore] Waiting 2 seconds for Edge to restore tabs...');
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-
-    // Retry logic: Try up to 3 times to get restored tabs (same as Enterprise tier)
-    let tabs = [];
-    let attempt = 0;
-    const maxAttempts = 3;
-
-    while (attempt < maxAttempts) {
-      tabs = await new Promise((resolve) => {
-        chrome.tabs.query({}, (result) => {
-          if (chrome.runtime.lastError) {
-            console.error('[Session Restore] Failed to query tabs:', chrome.runtime.lastError);
-            resolve([]);
-          } else {
-            resolve(result || []);
-          }
-        });
-      });
-
-      console.log(`[Session Restore] Tab query attempt ${attempt + 1}: Found ${tabs.length} tabs`);
-
-      // If we found tabs, break out of retry loop
-      if (tabs.length > 0) {
-        break;
-      }
-
-      // If no tabs found, wait and retry
-      if (attempt < maxAttempts - 1) {
-        console.log(`[Session Restore] No tabs found, waiting 1 second before retry...`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-
-      attempt++;
-    }
-
-    const existingTabIds = new Set(tabs.map(t => t.id));
-    console.log('[Session Restore] Found', existingTabIds.size, 'existing tabs in browser');
-
-    // Clear tab mappings immediately (no tab restoration for Free/Premium)
-    // Tab IDs have changed after restart, old mappings are invalid
-    sessionStore.tabToSession = {};
-    console.log('[Session Restore] Tab mappings cleared (tabs have new IDs after restart)');
-
-    // Cleanup sessions with invalid/missing tabs
-    const sessionsToDelete = [];
-
-    // For Free/Premium: Any session with tabs should be validated
-    // Since we're not restoring tabs, sessions from previous browser session have stale tab IDs
-    // We need to check if those tab IDs still exist in current browser
-
-    // Validate each session's tab list
-    Object.keys(loadedSessions).forEach(sessionId => {
-      const session = loadedSessions[sessionId];
-
-      // Ensure session has tabs array
-      if (!session.tabs) {
-        session.tabs = [];
-      }
-
-      // Filter out non-existent tabs (stale tab IDs from before restart)
-      const originalTabCount = session.tabs.length;
-      const validTabs = session.tabs.filter(tabId => existingTabIds.has(tabId));
-
-      if (validTabs.length !== originalTabCount) {
-        const removedCount = originalTabCount - validTabs.length;
-        console.log(`[Session Restore] Session ${sessionId}: Removed ${removedCount} stale tabs (${originalTabCount} -> ${validTabs.length})`);
-        session.tabs = validTabs;
-      }
-
-      // CRITICAL FIX: Check persistedTabs, not just tabs!
-      // Sessions with persistedTabs are DORMANT (preserve them)
-      // Sessions without persistedTabs are ORPHANED (delete them)
-      console.log(`[Session Restore] Checking session ${sessionId}`);
-      console.log(`[Session Restore]   - tabs: ${session.tabs.length}`);
-      console.log(`[Session Restore]   - persistedTabs: ${session.persistedTabs?.length || 0}`);
-
-      if (validTabs.length === 0) {
-        // No active tabs - check if session has persistedTabs metadata
-        if (session.persistedTabs && session.persistedTabs.length > 0) {
-          // Session has persisted tab metadata → DORMANT (preserve it!)
-          console.log(`[Session Restore] ✓ Session ${sessionId} preserved as DORMANT (${session.persistedTabs.length} persisted tabs)`);
-        } else {
-          // Session has no persisted tab metadata → ORPHANED (delete it!)
-          console.log(`[Session Restore] ✗ Session ${sessionId} marked as ORPHANED (no persistedTabs)`);
-          sessionsToDelete.push(sessionId);
-        }
-      }
-    });
-
-    // Delete orphaned sessions (no persistedTabs metadata)
-    if (sessionsToDelete.length > 0) {
-      console.log(`[Session Restore] Deleting ${sessionsToDelete.length} orphaned sessions (no persistedTabs)`);
-      sessionsToDelete.forEach(sessionId => {
-        console.log('[Session Restore] Deleting session:', sessionId);
-
-        // Clear badges and favicon for all tabs that belonged to this session
-        const session = loadedSessions[sessionId];
-        if (session && session.tabs && session.tabs.length > 0) {
-          session.tabs.forEach(tabId => {
-            console.log(`[Session Restore] Clearing badges for orphaned tab ${tabId}`);
-
-            // Clear extension icon badge
-            clearBadge(tabId);
-
-            // Clear favicon badge by notifying content script to remove overlay
-            chrome.tabs.sendMessage(tabId, {
-              action: 'clearSessionFavicon'
-            }, (response) => {
-              if (chrome.runtime.lastError) {
-                // Tab might not exist or content script not loaded - silent ignore
-                console.log(`[Session Restore] Could not clear favicon for tab ${tabId} (tab may not exist)`);
-              } else {
-                console.log(`[Session Restore] Cleared favicon badge for tab ${tabId}`);
-              }
-            });
-          });
-        }
-
-        delete loadedSessions[sessionId];
-        delete loadedCookieStore[sessionId];
-      });
-    } else {
-      console.log('[Session Restore] ✓ No orphaned sessions found, all sessions have persistedTabs or active tabs');
-    }
-
-    // Apply cleaned data to sessionStore IMMEDIATELY
+    // Restore sessions and cookies from storage
     sessionStore.sessions = loadedSessions;
     sessionStore.cookieStore = loadedCookieStore;
 
-    // Persist cleaned state if we made changes
-    if (sessionsToDelete.length > 0) {
-      console.log('[Session Restore] Persisting cleaned-up state (Free/Premium)...');
-      persistSessions(true);
-    }
+    // Clear all tab mappings (tab IDs are stale after browser restart)
+    sessionStore.tabToSession = {};
+    console.log('[Session Restore] Cleared tab mappings (no auto-restore for Free/Premium)');
 
-    // Log final state
-    const activeCount = getActiveSessionCount();
-    const totalCount = Object.keys(sessionStore.sessions).length;
-    const dormantCount = totalCount - activeCount;
+    // Clear tabs array from all sessions (they're now dormant)
+    Object.keys(sessionStore.sessions).forEach(sessionId => {
+      const session = sessionStore.sessions[sessionId];
+      if (session.tabs && session.tabs.length > 0) {
+        console.log(`[Session Restore] Session ${sessionId}: Clearing ${session.tabs.length} stale tab references`);
+        session.tabs = [];
+      }
+    });
 
-    console.log('[Session Restore] ✓ FREE/PREMIUM session preservation complete');
-    console.log('[Session Restore] Active sessions (with tabs):', activeCount);
-    console.log('[Session Restore] Dormant sessions (no tabs):', dormantCount);
-    console.log('[Session Restore] Total sessions in storage:', totalCount);
-    console.log('[Session Restore] Tier:', tier);
+    // Count sessions for reporting
+    const totalSessions = Object.keys(sessionStore.sessions).length;
+    const dormantSessions = Object.values(sessionStore.sessions).filter(s =>
+      s.persistedTabs && s.persistedTabs.length > 0
+    ).length;
+
+    console.log('[Session Restore] ✓ FREE/PREMIUM session load complete');
+    console.log('[Session Restore] Total sessions loaded:', totalSessions);
+    console.log('[Session Restore] Dormant sessions (with persistedTabs):', dormantSessions);
+    console.log('[Session Restore] All sessions available for manual reopen from popup');
     console.log('[Session Restore] ================================================');
 
     return; // Exit early, no need for Enterprise auto-restore logic
@@ -2764,17 +2636,147 @@ function extractDomain(url) {
 
 /**
  * Cleanup session when all tabs are closed
+ * CRITICAL: For Free/Premium tiers, convert to DORMANT instead of deleting
  * @param {string} sessionId
+ * @param {Array<number>} tabsSnapshot - Optional snapshot of tab IDs before removal (for metadata retrieval)
  */
-async function cleanupSession(sessionId) {
+async function cleanupSession(sessionId, tabsSnapshot = null) {
   if (sessionStore.sessions[sessionId]) {
-    // Check if session has any tabs left
-    const tabs = sessionStore.sessions[sessionId].tabs || [];
+    // Use tabsSnapshot if provided (contains tab IDs before removal)
+    // Otherwise use current session tabs (may be empty if called after tab removal)
+    const tabs = tabsSnapshot || sessionStore.sessions[sessionId].tabs || [];
     const activeTabs = tabs.filter(tabId => sessionStore.tabToSession[tabId] === sessionId);
 
     if (activeTabs.length === 0) {
       console.log(`[cleanupSession] Starting cleanup for session ${sessionId}`);
       console.log(`[cleanupSession] Session has ${tabs.length} total tabs, ${activeTabs.length} active tabs`);
+
+      // Get current tier to determine cleanup strategy
+      let tier = 'free';
+      try {
+        if (typeof licenseManager !== 'undefined' && licenseManager.isInitialized) {
+          tier = licenseManager.getTier();
+        }
+      } catch (error) {
+        console.error('[cleanupSession] Error getting tier:', error);
+        tier = 'free'; // Default to free tier on error
+      }
+      console.log(`[cleanupSession] Current tier: ${tier}`);
+
+      // CRITICAL: For Free/Premium tiers, preserve session as DORMANT
+      // Only Enterprise tier with auto-restore can delete ephemeral sessions
+      if (tier !== 'enterprise') {
+        console.log(`[cleanupSession] FREE/PREMIUM TIER: Converting session to DORMANT (preserving metadata)`);
+
+        const session = sessionStore.sessions[sessionId];
+
+        // Use existing persistedTabs if available (from previous conversions)
+        if (!session.persistedTabs) {
+          session.persistedTabs = [];
+        }
+
+        // CRITICAL: Use in-memory cache first (immediate, no race conditions)
+        // By the time cleanupSession() is called, tab is already removed from Chrome
+        // The cache is updated immediately on every tab change (no debouncing)
+        let cacheHits = 0;
+        let cacheMisses = 0;
+
+        for (const tabId of tabs) {
+          // Try cache first (O(1) lookup, synchronous)
+          const cachedMetadata = tabMetadataCache.get(tabId);
+
+          if (cachedMetadata && cachedMetadata.url && cachedMetadata.url !== 'about:blank' && cachedMetadata.url !== 'chrome://newtab/') {
+            try {
+              const urlObj = new URL(cachedMetadata.url);
+
+              // Check if this URL is already in persistedTabs (avoid duplicates)
+              const exists = session.persistedTabs.some(pt => pt.url === cachedMetadata.url);
+              if (!exists) {
+                session.persistedTabs.push({
+                  url: cachedMetadata.url,
+                  title: cachedMetadata.title || 'Untitled',
+                  domain: urlObj.hostname,
+                  path: urlObj.pathname
+                });
+                console.log(`[cleanupSession] ✓ Saved tab metadata (cache): ${cachedMetadata.url}`);
+                cacheHits++;
+              }
+
+              // Clean up cache entry (tab is closed)
+              tabMetadataCache.delete(tabId);
+            } catch (urlError) {
+              console.error(`[cleanupSession] Invalid URL for tab ${tabId}:`, urlError);
+            }
+          } else {
+            cacheMisses++;
+          }
+        }
+
+        console.log(`[cleanupSession] Cache performance: ${cacheHits} hits, ${cacheMisses} misses`);
+
+        // FALLBACK: If cache misses occurred, try chrome.storage.local
+        // This handles edge cases where tab was created before cache was initialized
+        if (cacheMisses > 0) {
+          console.log(`[cleanupSession] Falling back to storage for ${cacheMisses} tabs`);
+          try {
+            const tabMetadata = await new Promise((resolve) => {
+              chrome.storage.local.get(['tabMetadata'], (result) => {
+                if (chrome.runtime.lastError) {
+                  console.error('[cleanupSession] Failed to get tabMetadata:', chrome.runtime.lastError);
+                  resolve({});
+                } else {
+                  resolve(result.tabMetadata || {});
+                }
+              });
+            });
+
+            console.log(`[cleanupSession] Loaded storage tabMetadata for ${Object.keys(tabMetadata).length} tabs`);
+
+            // Process only tabs that had cache misses
+            for (const tabId of tabs) {
+              // Skip if already processed from cache
+              if (tabMetadataCache.has(tabId)) {
+                continue;
+              }
+
+              const metadata = tabMetadata[tabId];
+              if (metadata && metadata.url && metadata.url !== 'about:blank' && metadata.url !== 'chrome://newtab/') {
+                try {
+                  const urlObj = new URL(metadata.url);
+
+                  // Check if this URL is already in persistedTabs (avoid duplicates)
+                  const exists = session.persistedTabs.some(pt => pt.url === metadata.url);
+                  if (!exists) {
+                    session.persistedTabs.push({
+                      url: metadata.url,
+                      title: metadata.title || 'Untitled',
+                      domain: urlObj.hostname,
+                      path: urlObj.pathname
+                    });
+                    console.log(`[cleanupSession] ✓ Saved tab metadata (storage fallback): ${metadata.url}`);
+                  }
+                } catch (urlError) {
+                  console.error(`[cleanupSession] Invalid URL for tab ${tabId}:`, urlError);
+                }
+              }
+            }
+          } catch (error) {
+            console.error(`[cleanupSession] Error reading from storage:`, error);
+          }
+        }
+
+        // Clear tabs array (session is now dormant)
+        session.tabs = [];
+        console.log(`[cleanupSession] ✓ Session converted to DORMANT (${session.persistedTabs.length} persisted tabs)`);
+
+        // Persist the dormant session
+        persistSessions(true);
+        console.log(`[cleanupSession] ✓ Dormant session persisted`);
+        return;
+      }
+
+      // ENTERPRISE TIER: Delete ephemeral sessions (original behavior)
+      console.log(`[cleanupSession] ENTERPRISE TIER: Deleting ephemeral session`);
 
       // Delete from in-memory store FIRST
       console.log(`[cleanupSession] Deleting from in-memory store...`);
@@ -5150,17 +5152,22 @@ chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
   if (sessionId) {
     console.log(`Tab ${tabId} closed, removing from session ${sessionId}`);
 
+    // CRITICAL: Get tab list BEFORE removing the tab
+    // cleanupSession() needs the tab IDs to retrieve metadata from cache
+    const tabs = sessionStore.sessions[sessionId]?.tabs || [];
+    const tabsSnapshot = [...tabs]; // Create copy before modification
+
     // Remove from tab mapping
     delete sessionStore.tabToSession[tabId];
 
     // Remove from session's tab list
     if (sessionStore.sessions[sessionId]) {
-      const tabs = sessionStore.sessions[sessionId].tabs || [];
       sessionStore.sessions[sessionId].tabs = tabs.filter(t => t !== tabId);
     }
 
     // Cleanup session if no more tabs (this also persists)
-    cleanupSession(sessionId);
+    // Pass tabsSnapshot so cleanupSession can retrieve metadata for closed tabs
+    cleanupSession(sessionId, tabsSnapshot);
   }
 });
 
@@ -5182,6 +5189,18 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     const sessionId = sessionStore.tabToSession[tabId];
     if (sessionId) {
       console.log('[Navigation] Tab', tabId, 'has session', sessionId);
+
+      // CRITICAL: Update tab metadata cache immediately (no debouncing)
+      // This ensures cleanupSession() can retrieve tab URL even if tab closes within 1 second
+      if (changeInfo.url || changeInfo.status === 'complete') {
+        tabMetadataCache.set(tabId, {
+          url: tab.url,
+          title: tab.title || 'Untitled',
+          sessionId: sessionId,
+          timestamp: Date.now()
+        });
+        console.log(`[Tab Metadata Cache] Updated cache for tab ${tabId}: ${tab.url}`);
+      }
 
       // Update badge
       const session = sessionStore.sessions[sessionId];

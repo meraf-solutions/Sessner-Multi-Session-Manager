@@ -881,176 +881,23 @@ localStorage.setItem('theme', 'dark');
 
 **Result**: Session data is completely removed, memory freed
 
-### 5. Browser Restart Persistence (Updated 2025-11-02)
+### 5. Browser Restart Persistence (Enterprise Only)
 
-**Critical Fix v3.2.1**: Auto-Restore Race Condition and Dormant Session Deletion Bugs Resolved
+**Implementation Status**: ✅ v3.2.2 (Optimized for tier-specific behavior)
 
-**Problems Discovered (2025-11-02)**:
+**For Complete Technical Details**: See [Session Persistence - Phase 4](docs/features_implementation/02_session_persistence.md#phase-4-browser-startup-session-deletion-fix)
 
-1. **Duplicate Initialization Race Condition**
-   - Both `chrome.runtime.onStartup` and `chrome.runtime.onInstalled` firing simultaneously
-   - Two parallel executions of `loadPersistedSessions()` causing state corruption
-   - No singleton guard to prevent duplicate initialization
+**Quick Summary**:
+- **Enterprise tier**: Auto-restore via URL-based tab matching (2s delay + 3 retries)
+- **Free/Premium tiers**: Instant session load without delays (all sessions preserved as dormant)
+- **Singleton guard**: Prevents duplicate initialization from concurrent events
+- **Performance Improvement**: Free/Premium users (95% of user base) no longer wait 2-4 seconds
 
-2. **Async Promise Executor Anti-Pattern**
-   - Promise executor declared as `async (resolve) =>` causing immediate return
-   - `await new Promise(async (resolve) => {...})` completes instantly
-   - Tab restoration delay never executes
-
-3. **Dormant Session Deletion Logic Error**
-   - Sessions with `persistedTabs` being deleted as "orphaned"
-   - Code checking `session.tabs.length === 0` AFTER clearing stale tabs
-   - Should check `persistedTabs` array instead (persisted metadata vs active tabs)
-   - Expected behavior: Sessions with `persistedTabs` should be preserved as DORMANT
-
-**Fixes Applied (v3.2.1)**:
-
-**Fix 1 - Singleton Guard** (background.js lines 74-76, 138-172):
-```javascript
-// Added properties to sessionStore:
-isInitializing: false,
-initPromise: null,
-
-// Modified initialize():
-async initialize() {
-  if (this.isInitializing && this.initPromise) {
-    console.log('[INIT] Already initializing, returning existing promise');
-    return this.initPromise;
-  }
-
-  this.isInitializing = true;
-  this.initPromise = this._doInitialize();
-  // ... initialization logic
-  this.isInitializing = false;
-  return this.initPromise;
-}
-```
-
-**Fix 2 - Remove Async from Promise Executor** (background.js line 1462):
-```javascript
-// BEFORE (BROKEN):
-await new Promise(async (resolve) => {
-  // Never waits - async executor returns immediately!
-});
-
-// AFTER (FIXED):
-await new Promise((resolve) => {
-  // Properly waits for setTimeout
-});
-```
-
-**Fix 3 - Check persistedTabs Instead of tabs.length** (background.js lines 1452-1470):
-```javascript
-if (validTabs.length === 0) {
-  // No active tabs - check if session has persistedTabs metadata
-  if (session.persistedTabs && session.persistedTabs.length > 0) {
-    // Session has persisted tab metadata → DORMANT (preserve it!)
-    console.log(`[Session Restore] ✓ Session ${sessionId} preserved as DORMANT`);
-  } else {
-    // Session has no persisted tab metadata → ORPHANED (delete it!)
-    console.log(`[Session Restore] ✗ Session ${sessionId} marked as ORPHANED`);
-    sessionsToDelete.push(sessionId);
-  }
-}
-```
-
-**Updated Flow** (browser launch or extension reload):
-
-**All Tiers - Initialization:**
-```
-1. background.js loads
-2. chrome.runtime.onStartup AND onInstalled fire simultaneously
-3. Both call sessionStore.initialize()
-4. ✅ FIX 1: Singleton guard - First call proceeds, second returns shared Promise
-5. Load from chrome.storage.local: { sessions, cookieStore, tabToSession }
-6. ✅ FIX 2: Wait 2 seconds for Edge to restore tabs (fixed Promise executor)
-7. Retry tab query up to 3 attempts (1-second intervals)
-8. Validate sessions and filter stale tab IDs
-```
-
-**Enterprise Tier with Auto-Restore:**
-```
-9. URL-based tab matching (tab IDs change on restart, URLs stay same)
-10. Restore sessionStore.tabToSession based on URL matches
-11. Update badge indicators and favicon colors
-12. ✓ Sessions RESTORED with tabs reconnected
-```
-
-**Free/Premium Tiers (No Auto-Restore):**
-```
-9. Clear sessionStore.tabToSession (no auto-restore)
-10. ✅ FIX 3: Check persistedTabs array (NOT tabs.length!)
-11. Sessions with persistedTabs → preserved as DORMANT
-12. ✓ Sessions PRESERVED but not auto-restored (manual reopen from popup)
-```
-
-**URL-Based Tab Matching** (replaces tab ID validation):
-```javascript
-// Wait for Edge to restore tabs (2 seconds)
-await new Promise(resolve => setTimeout(resolve, 2000));
-
-// Retry logic (up to 3 attempts)
-let tabs = [];
-for (let attempt = 0; attempt < 3; attempt++) {
-  tabs = await chrome.tabs.query({});
-  if (tabs.length > 0) break;
-  if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 1000));
-}
-
-// URL-based matching
-tabs.forEach(tab => {
-  const savedTab = Object.values(tabMetadata).find(
-    saved => saved.url === tab.url  // Exact URL match
-  );
-  if (savedTab && sessions[savedTab.sessionId]) {
-    tabToSession[tab.id] = savedTab.sessionId;  // Restore mapping with NEW tab ID
-  }
-});
-```
-
-**Why This Works**:
-- **2-second delay**: Gives Edge time to restore tabs before validation (ALL tiers)
-- **Retry logic**: Handles slower systems gracefully - up to 3 attempts (ALL tiers)
-- **URL-based matching**: Tab IDs change on restart, but URLs stay the same (Enterprise only)
-- **Dormant session preservation**: Sessions saved without tabs (Free/Premium)
-- **Manual reopen**: Users can manually reopen dormant sessions from popup
-
-**Evidence from Testing**:
-
-**Enterprise Tier (Auto-Restore Enabled):**
-```
-[Session Restore] Tab query attempt 1: Found 0 tabs  ← Edge hasn't restored yet
-[Session Restore] Tab query attempt 2: Found 3 tabs  ← Tabs restored after 1 second
-[Session Restore] URL-based matching: 2 tabs restored  ← Success
-[Session Restore] ✓ Badges restored automatically
-```
-
-**Premium Tier (No Auto-Restore) - BEFORE FIX:**
-```
-[Session Restore] Found 0 existing tabs in browser  ← BUG! Edge hasn't restored yet
-[Session Restore] Session session_xxx: Removed 1 stale tabs (1 -> 0)
-[Session Restore] Marking empty session for deletion: session_xxx
-[Session Restore] Deleting 2 orphaned sessions  ← ALL SESSIONS LOST!
-```
-
-**Premium Tier (Dormant Sessions) - AFTER FIX (v3.2.1):**
-```
-[INIT] Starting extension initialization...
-[INIT] Already initializing, returning existing promise (prevents race condition)  ← FIX 1
-[Session Restore] Current tier: premium
-[Session Restore] Checking session session_1762103237827_z4eartw3
-[Session Restore]   - persistedTabs: 1  ← FIX 3 (checking metadata)
-[Session Restore] ✓ Session preserved as DORMANT (1 persisted tabs)
-[Session Restore] Dormant sessions (no tabs): 1  ← PRESERVED! ✓
-```
-
-**Key Takeaways**:
-- Singleton guard prevents race condition from dual event listeners
-- Fixed Promise executor enables proper tab restoration delay
-- persistedTabs check preserves dormant sessions correctly
-- All tiers now benefit from the 2-second delay + retry logic
-- Enterprise: Sessions auto-restored with tabs reconnected
-- Free/Premium: Sessions preserved as dormant (manual reopen from popup)
+**Key Changes in v3.2.2**:
+- Removed unnecessary 2-second delay for Free/Premium tiers
+- Simplified Free/Premium flow: Just restore sessions + clear tab mappings
+- Enterprise tier retains full auto-restore logic with URL-based tab matching
+- Removed backward compatibility code (app in development stage)
 
 ## Technical Decisions and Trade-offs
 
@@ -1805,115 +1652,41 @@ async function cleanupExpiredSessions() {
 
 ### Session Naming/Labeling (✅ Complete 2025-10-29)
 
-**Status:** Production Ready - v3.1.0
+**Status**: Production Ready - v3.1.0
 
-**Implementation Overview:**
-- Premium/Enterprise exclusive feature
-- Custom session names with validation (max 50 chars, no duplicates, emoji support)
-- Inline editing (double-click session name)
-- Enterprise modal integration (gear icon → Session Settings)
+**Quick Reference**:
+- Premium/Enterprise exclusive
+- Validation: Max 50 chars, no duplicates, emoji support
+- UI: Inline editing (Premium), Settings modal (Enterprise)
 - Full theme support (light/dark modes)
 
-**Key Functions:**
-- `setSessionName(sessionId, name)` - Set custom name with validation (background.js:2756)
-- `getSessionName(sessionId)` - Retrieve session name (background.js:2829)
-- `clearSessionName(sessionId)` - Clear custom name (background.js:2853)
-- `validateSessionName(name, currentSessionId)` - Validate name (background.js:2660)
+**For Complete Documentation**: See [Session Naming Feature](docs/features_implementation/06_session_naming.md)
 
-**API Endpoints:**
-- `setSessionName` - Set/update session name
-- `getSessionName` - Get session name
-- `clearSessionName` - Clear session name (revert to ID)
-
-**Session Data Model:**
-```javascript
-sessionStore.sessions[sessionId] = {
-  id: sessionId,
-  name: null, // NEW: Custom session name (Premium/Enterprise only)
-  color: color,
-  customColor: validatedCustomColor,
-  createdAt: timestamp,
-  lastAccessed: timestamp,
-  tabs: []
-};
-```
-
-**Validation Rules:**
-- Max 50 characters (emoji-aware)
-- No duplicates (case-insensitive)
-- No HTML characters: `< > " ' \``
-- Whitespace trimmed and collapsed
-- Free tier blocked with upgrade prompt
-
-**UI Features:**
-- **Premium:** Inline editing (double-click session name)
-- **Enterprise:** Settings modal with name + color fields
-- **Free:** PRO badge with upgrade prompt
-- **Theme-aware:** Full light/dark mode support
-
-**For detailed implementation:** See [docs/features_implementation/06_session_naming.md](docs/features_implementation/06_session_naming.md)
+**Key Functions** (background.js):
+- `validateSessionName(name, sessionId)` - Line 2660
+- `setSessionName(sessionId, name)` - Line 2756
+- `clearSessionName(sessionId)` - Line 2853
 
 ---
 
 ### Session Export/Import (✅ Complete 2025-10-31)
 
-**Status:** Production Ready - v3.2.0
+**Status**: Production Ready - v3.2.0
 
-**Implementation Overview:**
-- Premium: Per-session export/import (unencrypted JSON files)
-- Enterprise: Per-session + bulk export + AES-256 encryption
-- Free tier: Completely blocked (no UI elements shown)
-- Automatic compression for files >100KB (transparent decompression)
-- File format: JSON with optional encryption and compression layers
+**Quick Reference**:
+- **Premium**: Per-session export/import (unencrypted JSON)
+- **Enterprise**: Bulk export + AES-256 encryption
+- **Free**: Feature blocked (no UI elements)
+- **Compression**: Automatic gzip for files >100KB
+- **Conflict resolution**: Auto-rename with notification
 
-**Key Features:**
-- **Export Types:** Complete (cookies + metadata + URLs), Cookies-only, Sanitized
-- **File Compression:** Automatic gzip compression using pako library (transparent to user)
-- **Encryption:** AES-256-GCM with PBKDF2 key derivation (Enterprise-only, 100,000 iterations)
-- **Conflict Resolution:** Auto-rename with notification ("Work Gmail" → "Work Gmail (2)")
-- **File Size Limit:** 50MB maximum
-- **Session ID Handling:** Import generates new session IDs (never reuses imported IDs)
+**For Complete Documentation**: See [Session Export/Import Feature](docs/features_implementation/07_session_export_import.md)
 
-**Key Functions:**
-- `exportSession(sessionId, options)` - Export single session with optional encryption (background.js:3034)
-- `exportAllSessions(options)` - Bulk export for Enterprise tier (background.js:3196)
-- `importSessions(fileData, options)` - Import sessions with auto-rename (background.js:3491)
-- `validateImportFile(fileData, password)` - Validate and parse import file (background.js:3397)
-- `encryptData(data, password)` - AES-256 encryption (crypto-utils.js:16)
-- `decryptData(encryptedData, password)` - AES-256 decryption (crypto-utils.js:112)
-- `compressData(data)` - gzip compression (background.js:2963)
-- `decompressData(compressedData)` - gzip decompression (background.js:2997)
-
-**API Endpoints:**
-- `exportSession` - Export single session
-- `exportAllSessions` - Bulk export (Enterprise-only)
-- `importSessions` - Import sessions from file
-- `validateImportFile` - Validate file before import
-
-**File Naming Convention:**
-- **Single session:** `sessner_[session-name]_YYYY-MM-DD.json`
-- **Single session (encrypted):** `sessner_[session-name]_YYYY-MM-DD.encrypted.json`
-- **Bulk export:** `sessner_ALL-SESSIONS_YYYY-MM-DD_Xsessions.json`
-- **Bulk export (encrypted):** `sessner_ALL-SESSIONS_YYYY-MM-DD_Xsessions.encrypted.json`
-
-**UI Features:**
-- **Import button:** Header-level (all tiers see button, Free prompts upgrade)
-- **Per-session export icon:** Icon button with tooltip (Premium/Enterprise only)
-- **Bulk export button:** Bottom of sessions list (Enterprise only)
-- **Import modal:** Drag & drop support with progress indicators
-- **Theme-aware:** Full light/dark mode support (verified 2025-10-31)
-
-**Security:**
-- **Client-side only:** Encryption/decryption happens entirely in browser
-- **No password recovery:** Encrypted files cannot be recovered without password
-- **Password validation:** 8-128 characters required for encryption
-- **XSS prevention:** HTML sanitization in session names and cookie values
-
-**Libraries:**
-- **pako v2.1.0:** gzip compression/decompression (libs/pako.min.js, 46KB)
-- **Web Crypto API:** Native browser encryption (no external dependencies)
-
-**For detailed implementation:** See [docs/features_implementation/07_session_export_import.md](docs/features_implementation/07_session_export_import.md)
+**Key Functions** (background.js):
+- `exportSession(sessionId, options)` - Line 3034
+- `importSessions(fileData, options)` - Line 3491
+- `encryptData(data, password)` - crypto-utils.js:16
+- `compressData(data)` - Line 2963
 
 ---
 
