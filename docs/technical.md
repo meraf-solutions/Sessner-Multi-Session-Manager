@@ -712,24 +712,43 @@ const sessionId = getSessionForTab(123);
 
 ---
 
-#### `cleanupSession(sessionId)`
+#### `cleanupSession(sessionId, tabsSnapshot)`
 
-**Signature**: `void cleanupSession(string sessionId)`
+**Signature**: `async void cleanupSession(string sessionId, Array<number> tabsSnapshot = null)`
 
-**Purpose**: Remove session when no tabs remain
+**Purpose**: Handle session cleanup when all tabs close - converts to DORMANT or deletes based on tier and auto-restore preference
 
 **Parameters**:
 - `sessionId`: Session to clean up
+- `tabsSnapshot`: Optional snapshot of tab IDs before removal (for metadata retrieval)
+
+**Behavior (v3.2.4)**:
+- **Free/Premium tiers**: Always convert to DORMANT (preserve URLs and cookies)
+- **Enterprise + auto-restore disabled**: Convert to DORMANT (preserve URLs and cookies)
+- **Enterprise + auto-restore enabled**: Delete ephemeral session (will restore on browser startup)
 
 **Flow**:
-1. Delete session metadata
-2. Delete cookie store
-3. Persist immediately
+1. Check tier and auto-restore preference
+2. If not deleting ephemeral:
+   - Capture tab metadata from cache or storage
+   - Convert session to DORMANT (clear tabs, populate persistedTabs)
+   - Persist immediately
+3. If deleting ephemeral:
+   - Delete from in-memory store
+   - Delete from persistent storage (IndexedDB + chrome.storage.local)
+   - Verify deletion
 
 **Example**:
 ```javascript
-cleanupSession('session_1234567890_abc123');
+// Called when last tab closes
+const tabsSnapshot = [...session.tabs]; // Capture before removal
+cleanupSession('session_1234567890_abc123', tabsSnapshot);
 ```
+
+**Critical Notes**:
+- Uses `tabsSnapshot` to retrieve metadata after tab removal (solves race condition)
+- Uses `tabMetadataCache` for immediate URL capture (solves debounce race condition)
+- See [CLAUDE.md - Dormant Session Deletion](../CLAUDE.md#dormant-session-deletion--complete-2025-11-03) for complete behavior matrix
 
 ---
 

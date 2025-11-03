@@ -918,6 +918,78 @@ chrome.runtime.sendMessage(
 
 ---
 
+#### deleteDormantSession
+
+**Status:** ✅ Tested & Working (2025-11-03, v3.2.4)
+
+Deletes a dormant session from all storage layers (in-memory, IndexedDB, chrome.storage.local).
+
+**Tier Availability:** All Tiers (Free, Premium, Enterprise)
+
+**Request:**
+```javascript
+{
+  action: 'deleteDormantSession',
+  sessionId: string  // Session ID to delete
+}
+```
+
+**Response:**
+```javascript
+{
+  success: boolean,
+  message?: string,  // Success message if success=true
+  error?: string     // Error message if success=false
+}
+```
+
+**Example:**
+```javascript
+chrome.runtime.sendMessage(
+  {
+    action: 'deleteDormantSession',
+    sessionId: 'session_1234567890_abc123'
+  },
+  (response) => {
+    if (response.success) {
+      console.log('Session deleted:', response.message);
+      // Refresh UI to remove deleted session
+    } else {
+      console.error('Deletion failed:', response.error);
+      alert(`Failed to delete session: ${response.error}`);
+    }
+  }
+);
+```
+
+**Error Conditions:**
+- Session not found: Returns `{success: false, error: 'Session not found'}`
+- Active session: Returns `{success: false, error: 'Cannot delete active session. Please close all tabs first.'}`
+- No session ID provided: Returns `{success: false, error: 'No session ID provided'}`
+
+**Validation:**
+- Only dormant sessions (no active tabs) can be deleted
+- Active sessions are rejected with validation error
+- Storage manager unavailable: Falls back to `persistSessions()`
+
+**Deletion Scope:**
+- In-memory: `sessionStore.sessions`, `sessionStore.cookieStore`, `tabMetadataCache`
+- Persistent: IndexedDB (sessions, cookies, tab mappings, tab metadata)
+- Persistent: chrome.storage.local (all data structures synced)
+
+**UI Integration:**
+- X icon in dormant session cards (popup.html)
+- Confirmation dialog before deletion
+- Loading state during deletion (button disabled)
+- Auto-refresh UI after successful deletion
+
+**Related Documentation:**
+- **Feature Documentation:** [CLAUDE.md - Dormant Session Deletion](../CLAUDE.md#dormant-session-deletion--complete-2025-11-03)
+- **Implementation:** background.js lines 2839-2923 (`deleteDormantSession()` function)
+- **Message Handler:** background.js lines 4945-4972
+
+---
+
 ### Cookie Management
 
 #### getCookies

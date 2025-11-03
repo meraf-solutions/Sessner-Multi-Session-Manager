@@ -1,8 +1,8 @@
 # System Architecture
 ## Sessner – Multi-Session Manager
 
-**Last Updated:** 2025-10-29
-**Extension Version:** 3.1.0
+**Last Updated:** 2025-11-03
+**Extension Version:** 3.2.4
 **Architecture Pattern:** SessionBox-Style Isolation
 
 ---
@@ -935,21 +935,80 @@ Page opens popup (window.open or target="_blank") → webNavigation fires
 
 ---
 
-### 4. Tab Closure
+### 4. Tab Closure & Session Cleanup (Updated v3.2.4)
 
 ```
 User closes tab → onRemoved fires → Look up session → Remove from mapping
-→ Remove from session.tabs → If no tabs remain: delete session → Persist
+→ Remove from session.tabs → If no tabs remain: cleanupSession() → Tier-based behavior
 ```
 
 **State Changes**:
 - `delete tabToSession[tabId]`
 - `sessions[sessionId].tabs = sessions[sessionId].tabs.filter(...)`
-- If `tabs.length === 0`: delete entire session and cookieStore
+- If `tabs.length === 0`: `cleanupSession(sessionId)` determines fate
+
+**Tier-Based Cleanup Behavior (v3.2.4)**:
+
+| Tier | Auto-Restore | Behavior | Session State | URLs & Cookies |
+|------|--------------|----------|---------------|----------------|
+| Free | N/A | Convert to DORMANT | Preserved | Saved |
+| Premium | N/A | Convert to DORMANT | Preserved | Saved |
+| Enterprise | Disabled | Convert to DORMANT | Preserved | Saved |
+| Enterprise | Enabled | Delete ephemeral | Deleted | Deleted |
+
+**DORMANT Session**:
+- Session metadata preserved with `persistedTabs` array containing tab URLs
+- All cookies preserved in `cookieStore`
+- Can be manually deleted via UI (X icon) or reopened via "Open Session" button
+- URLs restored when session reopened
+
+**Critical Fix (v3.2.4)**:
+- Previously: Enterprise tier always deleted sessions (data loss bug)
+- Now: Enterprise tier checks auto-restore preference before deletion
+- Ensures: Enterprise users without auto-restore don't lose session data
 
 ---
 
-### 5. Browser Restart Persistence
+### 5. Dormant Session Deletion (New v3.2.4)
+
+```
+User clicks X icon on dormant session → Confirmation dialog → If confirmed:
+deleteDormantSession() → Multi-layer deletion → UI refresh
+```
+
+**Tier Availability**: All Tiers (Free, Premium, Enterprise)
+
+**Deletion Scope**:
+- **In-memory**: `sessionStore.sessions`, `sessionStore.cookieStore`, `tabMetadataCache`
+- **Persistent**: IndexedDB (sessions, cookies, tab mappings, tab metadata)
+- **Persistent**: chrome.storage.local (all data structures synced)
+
+**Validation**:
+- Session must exist
+- Session must be dormant (no active tabs)
+- Cannot delete active sessions
+
+**State Changes**:
+- `delete sessionStore.sessions[sessionId]`
+- `delete sessionStore.cookieStore[sessionId]`
+- `tabMetadataCache` entries cleaned up (defense against stale cache)
+- Persistent storage updated immediately (no debounce)
+
+**UI Flow**:
+1. User clicks X icon on dormant session card
+2. Confirmation dialog: "Are you sure you want to delete this session? This will permanently delete all saved cookies and session data."
+3. If confirmed: Button disabled (loading state), send `deleteDormantSession` message
+4. Background deletes from all storage layers
+5. On success: UI refreshed, session card removed
+6. On error: Alert shown with error message
+
+**Related Documentation**:
+- API: [docs/api.md - deleteDormantSession](api.md#deletedormantsession)
+- Technical: [docs/technical.md - deleteDormantSession()](technical.md#deletedormantsessionsessionid)
+
+---
+
+### 6. Browser Restart Persistence
 
 **Overview**: Sessions and cookies persist across browser restarts via `chrome.storage.local`.
 

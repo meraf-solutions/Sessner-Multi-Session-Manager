@@ -2663,10 +2663,33 @@ async function cleanupSession(sessionId, tabsSnapshot = null) {
       }
       console.log(`[cleanupSession] Current tier: ${tier}`);
 
-      // CRITICAL: For Free/Premium tiers, preserve session as DORMANT
-      // Only Enterprise tier with auto-restore can delete ephemeral sessions
-      if (tier !== 'enterprise') {
-        console.log(`[cleanupSession] FREE/PREMIUM TIER: Converting session to DORMANT (preserving metadata)`);
+      // Get auto-restore preference
+      let autoRestoreEnabled = false;
+      try {
+        const autoRestorePref = await new Promise(resolve => {
+          chrome.storage.local.get(['autoRestorePreference'], result => {
+            resolve(result.autoRestorePreference || { enabled: false });
+          });
+        });
+        autoRestoreEnabled = Boolean(autoRestorePref.enabled);
+        console.log(`[cleanupSession] Auto-restore preference: ${autoRestoreEnabled ? 'enabled' : 'disabled'}`);
+      } catch (error) {
+        console.error('[cleanupSession] Error loading auto-restore preference:', error);
+        autoRestoreEnabled = false;
+      }
+
+      // Determine if session should be deleted (ephemeral)
+      // Only Enterprise tier with auto-restore enabled can delete ephemeral sessions
+      // All other cases (Free/Premium/Enterprise-without-auto-restore) preserve as DORMANT
+      const shouldAutoRestore = (tier === 'enterprise') && autoRestoreEnabled;
+      console.log(`[cleanupSession] Should delete ephemeral: ${shouldAutoRestore}`);
+      console.log(`[cleanupSession]   - Tier is Enterprise: ${tier === 'enterprise'}`);
+      console.log(`[cleanupSession]   - Auto-restore enabled: ${autoRestoreEnabled}`);
+
+      // CRITICAL: For Free/Premium/Enterprise-without-auto-restore, preserve session as DORMANT
+      // Only Enterprise tier with auto-restore enabled can delete ephemeral sessions
+      if (!shouldAutoRestore) {
+        console.log(`[cleanupSession] FREE/PREMIUM/ENTERPRISE-WITHOUT-AUTO-RESTORE: Converting session to DORMANT (preserving metadata)`);
 
         const session = sessionStore.sessions[sessionId];
 
@@ -2775,8 +2798,8 @@ async function cleanupSession(sessionId, tabsSnapshot = null) {
         return;
       }
 
-      // ENTERPRISE TIER: Delete ephemeral sessions (original behavior)
-      console.log(`[cleanupSession] ENTERPRISE TIER: Deleting ephemeral session`);
+      // ENTERPRISE TIER (auto-restore enabled): Delete ephemeral sessions
+      console.log(`[cleanupSession] ENTERPRISE TIER (auto-restore enabled): Deleting ephemeral session`);
 
       // Delete from in-memory store FIRST
       console.log(`[cleanupSession] Deleting from in-memory store...`);
@@ -2833,6 +2856,111 @@ async function cleanupSession(sessionId, tabsSnapshot = null) {
     }
   } else {
     console.warn(`[cleanupSession] Session ${sessionId} not found in sessionStore`);
+  }
+}
+
+/**
+ * Delete a dormant session (ALL TIERS)
+ * Removes session from all storage layers: in-memory, IndexedDB, chrome.storage.local
+ * @param {string} sessionId - Session ID to delete
+ * @returns {Promise<{success: boolean, message?: string, error?: string}>}
+ */
+async function deleteDormantSession(sessionId) {
+  console.log(`[deleteDormantSession] ================================================`);
+  console.log(`[deleteDormantSession] Deleting dormant session: ${sessionId}`);
+
+  // Validate session exists
+  if (!sessionStore.sessions[sessionId]) {
+    console.error(`[deleteDormantSession] Session ${sessionId} not found`);
+    return { success: false, error: 'Session not found' };
+  }
+
+  const session = sessionStore.sessions[sessionId];
+
+  // Verify session is dormant (no active tabs)
+  if (session.tabs && session.tabs.length > 0) {
+    console.error(`[deleteDormantSession] Session ${sessionId} is not dormant (has ${session.tabs.length} active tabs)`);
+    return { success: false, error: 'Cannot delete active session. Please close all tabs first.' };
+  }
+
+  try {
+    // 1. Delete from in-memory store
+    console.log(`[deleteDormantSession] Step 1: Deleting from in-memory store...`);
+    delete sessionStore.sessions[sessionId];
+    delete sessionStore.cookieStore[sessionId];
+    console.log(`[deleteDormantSession] ✓ Deleted from in-memory store`);
+
+    // Remove from tabMetadataCache (defense against stale cache entries)
+    console.log(`[deleteDormantSession] Checking tabMetadataCache...`);
+    if (typeof tabMetadataCache !== 'undefined' && tabMetadataCache.size > 0) {
+      let removedCacheEntries = 0;
+      for (const [tabId, metadata] of tabMetadataCache.entries()) {
+        if (metadata && metadata.sessionId === sessionId) {
+          tabMetadataCache.delete(tabId);
+          removedCacheEntries++;
+        }
+      }
+      if (removedCacheEntries > 0) {
+        console.log(`[deleteDormantSession] ✓ Removed ${removedCacheEntries} tab metadata cache entries`);
+      } else {
+        console.log(`[deleteDormantSession] No cache entries to remove`);
+      }
+    } else {
+      console.log(`[deleteDormantSession] tabMetadataCache not available or empty`);
+    }
+
+    // 2. Delete from persistent storage (IndexedDB + chrome.storage.local)
+    console.log(`[deleteDormantSession] Step 2: Deleting from persistent storage...`);
+    if (storagePersistenceManager && storagePersistenceManager.isInitialized) {
+      console.log(`[deleteDormantSession] Calling storagePersistenceManager.deleteSession()...`);
+      try {
+        const deleteResults = await storagePersistenceManager.deleteSession(sessionId);
+        console.log(`[deleteDormantSession] ✓ deleteSession() completed:`, deleteResults);
+
+        if (deleteResults.errors && deleteResults.errors.length > 0) {
+          console.error(`[deleteDormantSession] ⚠️ deleteSession() had errors:`, deleteResults.errors);
+        }
+
+        // Verify deletion
+        console.log(`[deleteDormantSession] Verifying deletion...`);
+        console.log(`[deleteDormantSession] - IndexedDB deleted:`, deleteResults.indexedDB ? '✓' : '✗');
+        console.log(`[deleteDormantSession] - chrome.storage.local synced:`, deleteResults.local ? '✓' : '✗');
+
+      } catch (error) {
+        console.error('[deleteDormantSession] ✗ Error calling deleteSession():', error);
+        console.error('[deleteDormantSession] Stack trace:', error.stack);
+
+        // Fallback: persist without the deleted session
+        console.log('[deleteDormantSession] Using fallback persistSessions() due to deleteSession() error');
+        persistSessions(true);
+      }
+    } else {
+      console.warn('[deleteDormantSession] ⚠️ storagePersistenceManager not initialized or not available');
+      console.log('[deleteDormantSession] storagePersistenceManager exists:', !!storagePersistenceManager);
+      console.log('[deleteDormantSession] storagePersistenceManager.isInitialized:', storagePersistenceManager?.isInitialized);
+
+      // Fallback to legacy persist (saves current state without deleted session)
+      console.log('[deleteDormantSession] Using fallback persistSessions()');
+      persistSessions(true);
+    }
+
+    console.log(`[deleteDormantSession] ✓ Successfully deleted dormant session ${sessionId}`);
+    console.log(`[deleteDormantSession] ================================================`);
+
+    return {
+      success: true,
+      message: 'Session deleted successfully'
+    };
+
+  } catch (error) {
+    console.error(`[deleteDormantSession] ✗ Unexpected error:`, error);
+    console.error(`[deleteDormantSession] Stack trace:`, error.stack);
+    console.log(`[deleteDormantSession] ================================================`);
+
+    return {
+      success: false,
+      error: error.message || 'Unknown error occurred'
+    };
   }
 }
 
@@ -4836,6 +4964,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: false, error: error.message });
       }
       return false; // Synchronous response
+
+    } else if (message.action === 'deleteDormantSession') {
+      // Delete a dormant session (ALL TIERS)
+      const sessionId = message.sessionId;
+
+      if (!sessionId) {
+        console.error('[Message Handler] deleteDormantSession: No session ID provided');
+        sendResponse({ success: false, error: 'No session ID provided' });
+        return false;
+      }
+
+      console.log('[Message Handler] deleteDormantSession - sessionId:', sessionId);
+
+      Promise.resolve(deleteDormantSession(sessionId))
+        .then(result => {
+          try {
+            sendResponse(result);
+          } catch (error) {
+            console.error('[Message Handler] deleteDormantSession sendResponse error:', error);
+          }
+        })
+        .catch(error => {
+          console.error('[Message Handler] deleteDormantSession error:', error);
+          sendResponse({
+            success: false,
+            error: error.message || 'Unknown error occurred'
+          });
+        });
+      return true; // Keep message channel open for async response
 
     } else if (message.action === 'deleteSessionById') {
       // Delete a specific session by ID (used by clearAllStorage in diagnostics)

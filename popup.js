@@ -1393,6 +1393,15 @@ function buildDormantSessionHTML(session, sessionMetadata, tier) {
             Last used: ${lastAccessedText}${expiresText}
           </div>
         </div>
+        <button class="delete-dormant-session-icon"
+                data-delete-session="${sessionId}"
+                title="Delete session"
+                aria-label="Delete session">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
       </div>
       <div class="tab-list">
         ${persistedTabHTML}
@@ -1402,9 +1411,10 @@ function buildDormantSessionHTML(session, sessionMetadata, tier) {
 }
 
 /**
- * Attach event listeners to dormant session "Open Session" buttons
+ * Attach event listeners to dormant session "Open Session" and "Delete" buttons
  */
 function attachDormantSessionListeners() {
+  // Open session buttons
   document.querySelectorAll('.open-dormant-session-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -1441,6 +1451,58 @@ function attachDormantSessionListeners() {
         // Re-enable button
         btn.disabled = false;
         btn.textContent = 'Open Session';
+      }
+    });
+  });
+
+  // Delete session buttons
+  document.querySelectorAll('.delete-dormant-session-icon').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const sessionId = btn.dataset.deleteSession;
+
+      console.log('[Dormant Session] Delete requested for session:', sessionId);
+
+      // Confirmation dialog
+      const confirmed = confirm(
+        'Are you sure you want to delete this dormant session?\n\n' +
+        'This will permanently remove all session data including cookies and settings.\n\n' +
+        'This action cannot be undone.'
+      );
+
+      if (!confirmed) {
+        console.log('[Dormant Session] Deletion cancelled by user');
+        return;
+      }
+
+      // Disable button and show loading state
+      btn.disabled = true;
+      btn.style.opacity = '0.3';
+
+      try {
+        const response = await sendMessage({
+          action: 'deleteDormantSession',
+          sessionId: sessionId
+        });
+
+        if (response && response.success) {
+          console.log('[Dormant Session] Successfully deleted session:', sessionId);
+          // Refresh sessions to show updated state
+          await refreshSessions();
+        } else {
+          console.error('[Dormant Session] Failed to delete session:', response?.error);
+          alert('Failed to delete session: ' + (response?.error || 'Unknown error'));
+          // Re-enable button
+          btn.disabled = false;
+          btn.style.opacity = '';
+        }
+      } catch (error) {
+        console.error('[Dormant Session] Error deleting session:', error);
+        alert('Error deleting session: ' + error.message);
+        // Re-enable button
+        btn.disabled = false;
+        btn.style.opacity = '';
       }
     });
   });

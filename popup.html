@@ -476,6 +476,37 @@
       transform: none;
     }
 
+    /* Delete dormant session icon */
+    .delete-dormant-session-icon {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 6px;
+      margin-left: 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      border-radius: 4px;
+      opacity: 0.6;
+      flex-shrink: 0;
+    }
+
+    .delete-dormant-session-icon:hover {
+      opacity: 1;
+      background-color: rgba(255, 107, 107, 0.1);
+      transform: scale(1.1);
+    }
+
+    .delete-dormant-session-icon:active {
+      transform: scale(0.95);
+    }
+
+    .delete-dormant-session-icon svg {
+      display: block;
+      color: #333;
+    }
+
     .loading {
       text-align: center;
       padding: 20px;
@@ -1362,6 +1393,14 @@
 
       .dormant-session-timestamp {
         color: #888;
+      }
+
+      .delete-dormant-session-icon svg {
+        color: #e0e0e0;
+      }
+
+      .delete-dormant-session-icon:hover {
+        background-color: rgba(255, 107, 107, 0.2);
       }
 
       .sessions-list::-webkit-scrollbar-track {

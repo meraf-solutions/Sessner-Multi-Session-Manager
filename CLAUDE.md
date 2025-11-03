@@ -1625,8 +1625,9 @@ async function cleanupExpiredSessions() {
 - Enterprise tier: Pending testing (Test Category 3-9)
 
 **Key Behaviors:**
-- **Enterprise with auto-restore enabled:** Tab mappings restored via URL-based matching
-- **Free/Premium tiers:** Tab mappings cleared (sessions saved but NOT restored)
+- **Enterprise with auto-restore enabled:** Tab mappings restored via URL-based matching, ephemeral sessions deleted on tab close
+- **Enterprise with auto-restore disabled:** Sessions converted to DORMANT on tab close (same as Free/Premium)
+- **Free/Premium tiers:** Sessions converted to DORMANT on tab close
 - **Tier downgrade:** Auto-restore preference automatically disabled, notification shown
 - **Edge browser restore detection:** Upgrade notification for Free/Premium users
 
@@ -1687,6 +1688,85 @@ async function cleanupExpiredSessions() {
 - `importSessions(fileData, options)` - Line 3491
 - `encryptData(data, password)` - crypto-utils.js:16
 - `compressData(data)` - Line 2963
+
+---
+
+### Dormant Session Deletion (✅ Complete 2025-11-03)
+
+**Status**: Production Ready - v3.2.4
+
+**Quick Reference**:
+- **All Tiers**: Delete dormant sessions via X icon
+- **UI**: Theme-aware delete icon with confirmation dialog
+- **Backend**: Multi-layer deletion (in-memory, IndexedDB, chrome.storage.local)
+- **Validation**: Prevents deletion of active sessions
+
+**Implementation Overview**:
+
+**UI Components** (popup.html/popup.js):
+- Delete icon (X) in upper right corner of dormant session cards
+- Theme-aware styling (light/dark mode support)
+- Confirmation dialog: "Are you sure you want to delete this dormant session?"
+- Loading state during deletion (button disabled, opacity reduced)
+- Error handling with user-friendly alerts
+
+**Backend Logic** (background.js):
+- `deleteDormantSession(sessionId)` - Line 2839-2923
+  - Validates session exists and is dormant (no active tabs)
+  - Deletes from in-memory store (sessionStore.sessions, cookieStore)
+  - Cleans up tabMetadataCache entries
+  - Deletes from persistent storage (IndexedDB + chrome.storage.local)
+  - Falls back to persistSessions() if storage manager unavailable
+  - Returns: `{success: boolean, message?: string, error?: string}`
+
+**Message Handler**:
+- Action: `deleteDormantSession`
+- Request: `{action: 'deleteDormantSession', sessionId: string}`
+- Response: `{success: boolean, message?: string, error?: string}`
+
+**Edge Cases Handled**:
+1. ✅ Deleting active session → Validation error
+2. ✅ Session not found → Error response
+3. ✅ Storage manager not initialized → Fallback to persistSessions()
+4. ✅ Tab metadata cache cleanup → Prevents stale entries
+
+**Behavior Matrix**:
+
+| Tier | Session State | Delete Button | Behavior |
+|------|---------------|---------------|----------|
+| Free | Active | Hidden | N/A |
+| Free | Dormant | Visible | Multi-layer deletion ✅ |
+| Premium | Active | Hidden | N/A |
+| Premium | Dormant | Visible | Multi-layer deletion ✅ |
+| Enterprise | Active | Hidden | N/A |
+| Enterprise | Dormant | Visible | Multi-layer deletion ✅ |
+
+**Critical Fix (v3.2.4)**: Enterprise Tier Session Persistence
+
+**Problem**: Enterprise tier sessions were always deleted on tab close, ignoring auto-restore preference. This caused data loss for Enterprise users with auto-restore disabled.
+
+**Solution**: Updated `cleanupSession()` logic (lines 2666-2802) to check auto-restore preference:
+```javascript
+const shouldAutoRestore = (tier === 'enterprise') && autoRestoreEnabled;
+
+if (!shouldAutoRestore) {
+  // Convert to DORMANT (Free/Premium/Enterprise-without-auto-restore)
+} else {
+  // Delete ephemeral (Enterprise with auto-restore only)
+}
+```
+
+**Session Cleanup Behavior Matrix**:
+
+| Tier | Auto-Restore | Tab Close Behavior |
+|------|--------------|-------------------|
+| Free | N/A | Convert to DORMANT ✅ |
+| Premium | N/A | Convert to DORMANT ✅ |
+| Enterprise | Disabled | Convert to DORMANT ✅ **(FIXED in v3.2.4)** |
+| Enterprise | Enabled | Delete ephemeral ✅ |
+
+**Before v3.2.4**: Enterprise tier (auto-restore disabled) → Sessions DELETED → Data loss ❌
+**After v3.2.4**: Enterprise tier (auto-restore disabled) → Sessions DORMANT → URLs/cookies preserved ✅
 
 ---
 
