@@ -182,7 +182,12 @@
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Closing Sessions</h3>
 </div>
-<p dir="auto">Simply close the tab! The session is automatically cleaned up.</p>
+<p dir="auto">Simply close the tab! The session automatically converts to a "dormant" state (preserving your cookies and URLs for later use).</p>
+<ul dir="auto">
+	<li><strong>Free/Premium/Enterprise (auto-restore disabled):</strong> Session becomes dormant - reopen anytime via "Open Session" button</li>
+	<li><strong>Enterprise (auto-restore enabled):</strong> Session deleted - will auto-restore on next browser startup</li>
+	<li><strong>Manual deletion:</strong> Use the X icon on dormant sessions to permanently delete (v3.2.4)</li>
+</ul>
 
 <p style="text-align: center; margin: 30px 0;"><a style="margin: 0 10px;" href="#what-is-this">📖 What Is This?</a> | <a style="margin: 0 10px;" href="#key-features">✨ Key Features</a> | <a style="margin: 0 10px;" href="#installation">📦 Installation</a> | <a style="margin: 0 10px;" href="#how-to-use">🎓 How to Use</a> | <a style="margin: 0 10px;" href="#common-use-cases">💡 Use Cases</a> | <a style="margin: 0 10px;" href="#understanding-key-features">🔍 Understanding</a> | <a style="margin: 0 10px;" href="#troubleshooting">🛠️ Troubleshooting</a> | <a style="margin: 0 10px;" href="#privacy-security">🔐 Privacy</a> | <a style="margin: 0 10px;" href="#tips-best-practices">💡 Tips</a> | <a style="margin: 0 10px;" href="#faq">❓ FAQ</a> | <a style="margin: 0 10px;" href="#pricing">💰 Pricing</a> | <a style="margin: 0 10px;" href="#technical-information">📋 Technical</a></p>
 
@@ -572,7 +577,12 @@
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Q: Can I use this with Chrome or Firefox?</h3>
 </div>
-<p dir="auto"><strong>A:</strong> Currently designed for Microsoft Edge, but the code could be adapted for Chrome with minimal changes. Firefox uses different APIs and would require significant modifications.</p>
+<p dir="auto"><strong>A:</strong> Currently available for Microsoft Edge only. Chrome and Firefox versions are in our development roadmap:</p>
+<ul dir="auto">
+	<li><strong>Chrome:</strong> Coming soon - minimal adaptation required (similar Chromium base)</li>
+	<li><strong>Firefox:</strong> Planned - requires significant API modifications</li>
+	<li><strong>Current availability:</strong> Microsoft Edge (Chromium-based, version 88+)</li>
+</ul>
 
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Q: Does this work on mobile?</h3>
@@ -582,7 +592,7 @@
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Q: Can I backup my sessions?</h3>
 </div>
-<p dir="auto"><strong>A:</strong> Yes! Version 3.2.0 adds session export/import functionality:</p>
+<p dir="auto"><strong>A:</strong> Yes, export/import functionality available to Premium & Enterprise tier only:</p>
 <ul dir="auto">
  	<li><strong>Premium tier:</strong> Export/import individual sessions to JSON files</li>
  	<li><strong>Enterprise tier:</strong> Bulk export all sessions + AES-256 encryption for sensitive data</li>
@@ -621,7 +631,7 @@
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Q: Can I rename sessions or add labels?</h3>
 </div>
-<p dir="auto"><strong>A:</strong> Yes! Version 3.1.0 adds session naming/labeling for Premium and Enterprise tiers:</p>
+<p dir="auto"><strong>A:</strong> Yes, session naming/labeling feature is available to Premium & Enterprise tier only:</p>
 <ul dir="auto">
  	<li><strong>Premium/Enterprise:</strong> Custom session names (e.g., "Work Gmail", "Personal Facebook")</li>
  	<li><strong>Inline editing:</strong> Double-click session name to edit</li>
