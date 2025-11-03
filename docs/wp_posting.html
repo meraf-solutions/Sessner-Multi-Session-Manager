@@ -80,12 +80,14 @@
  	<li>No session confusion or errors</li>
 </ul>
 <div class="markdown-heading" dir="auto">
-<h3 class="heading-element" dir="auto" tabindex="-1">💾 Persistent Sessions</h3>
+<h3 class="heading-element" dir="auto" tabindex="-1">💾 Persistent Sessions & Dormant Session Management</h3>
 </div>
 <ul dir="auto">
  	<li><strong>Session data saved locally</strong> - All session cookies and storage persist across browser restarts</li>
  	<li><strong>Tier-based retention</strong> - Free tier: 7 days, Premium/Enterprise: Permanent storage</li>
  	<li><strong>Auto-restore on browser restart (Enterprise only)</strong> - Intelligent tab restoration with URL-based matching reconnects sessions automatically</li>
+ 	<li><strong>Dormant session management (All tiers - v3.2.4)</strong> - Sessions without tabs become "dormant" (preserve URLs/cookies), delete via X icon, reopen anytime</li>
+ 	<li><strong>Unlimited dormant sessions</strong> - No limit on number of dormant sessions (only retention period applies)</li>
  	<li><strong>Smart cleanup</strong> - Automatic cleanup when tabs close or sessions expire</li>
  	<li><strong>Manual session recreation</strong> - Free/Premium users can manually recreate sessions using saved data after browser restart</li>
 </ul>
@@ -580,7 +582,13 @@
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Q: Can I backup my sessions?</h3>
 </div>
-<p dir="auto"><strong>A:</strong> Session mappings are stored locally. Currently, there's no export/import feature, but sessions persist as long as the extension is installed.</p>
+<p dir="auto"><strong>A:</strong> Yes! Version 3.2.0 adds session export/import functionality:</p>
+<ul dir="auto">
+ 	<li><strong>Premium tier:</strong> Export/import individual sessions to JSON files</li>
+ 	<li><strong>Enterprise tier:</strong> Bulk export all sessions + AES-256 encryption for sensitive data</li>
+ 	<li><strong>Free tier:</strong> Feature not available (upgrade to Premium or Enterprise)</li>
+</ul>
+<p dir="auto">Sessions are also stored locally and persist across browser restarts with tier-based retention (Free: 7 days, Premium/Enterprise: permanent).</p>
 
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Q: Will this slow down my browser?</h3>
@@ -613,7 +621,47 @@
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Q: Can I rename sessions or add labels?</h3>
 </div>
-<p dir="auto"><strong>A:</strong> The current version focuses on simplicity without manual session management. Each session is automatically managed per tab.</p>
+<p dir="auto"><strong>A:</strong> Yes! Version 3.1.0 adds session naming/labeling for Premium and Enterprise tiers:</p>
+<ul dir="auto">
+ 	<li><strong>Premium/Enterprise:</strong> Custom session names (e.g., "Work Gmail", "Personal Facebook")</li>
+ 	<li><strong>Inline editing:</strong> Double-click session name to edit</li>
+ 	<li><strong>Full validation:</strong> Max 50 chars, emoji support, duplicate detection</li>
+ 	<li><strong>Free tier:</strong> Feature not available (upgrade for session naming)</li>
+</ul>
+
+<div class="markdown-heading" dir="auto">
+<h3 class="heading-element" dir="auto" tabindex="-1">Q: What is a dormant session and when does a session become dormant?</h3>
+</div>
+<p dir="auto"><strong>A:</strong> A dormant session is a session without any active tabs, but with all its data (cookies and URLs) preserved for later use.</p>
+
+<p dir="auto"><strong>A session becomes dormant when:</strong></p>
+<ul dir="auto">
+ 	<li><strong>You close all tabs in that session</strong> - The session automatically converts to dormant state</li>
+ 	<li><strong>Browser restart (Free/Premium tiers)</strong> - Tab mappings are cleared, sessions become dormant</li>
+ 	<li><strong>Browser restart (Enterprise with auto-restore disabled)</strong> - Sessions convert to dormant</li>
+</ul>
+
+<p dir="auto"><strong>What happens to dormant sessions:</strong></p>
+<ul dir="auto">
+ 	<li><strong>Data preserved:</strong> All cookies and tab URLs are saved</li>
+ 	<li><strong>Reopenable:</strong> Click "Open Session" button to restore the session with exact URLs and cookies</li>
+ 	<li><strong>Retention period:</strong> Free tier (7 days), Premium/Enterprise (permanent)</li>
+ 	<li><strong>No quantity limit:</strong> You can have unlimited dormant sessions (only time retention applies)</li>
+ 	<li><strong>Manual deletion:</strong> Use the X icon to delete unwanted dormant sessions (v3.2.4)</li>
+</ul>
+
+<p dir="auto"><strong>Enterprise tier exception:</strong> Enterprise users with auto-restore ENABLED do not create dormant sessions - sessions are completely deleted when all tabs close (will auto-restore on next browser startup).</p>
+
+<div class="markdown-heading" dir="auto">
+<h3 class="heading-element" dir="auto" tabindex="-1">Q: Can I delete dormant sessions?</h3>
+</div>
+<p dir="auto"><strong>A:</strong> Yes! Version 3.2.4 adds dormant session deletion for all tiers:</p>
+<ul dir="auto">
+ 	<li><strong>All tiers:</strong> X icon on dormant session cards for manual deletion</li>
+ 	<li><strong>Confirmation dialog:</strong> Prevents accidental deletion</li>
+ 	<li><strong>Multi-layer deletion:</strong> Removes from all storage layers (in-memory, IndexedDB, chrome.storage.local)</li>
+ 	<li><strong>No limit:</strong> Keep as many dormant sessions as you want (only retention period applies)</li>
+</ul>
 
 <p style="text-align: center; margin: 30px 0;"><a style="margin: 0 10px;" href="#what-is-this">📖 What Is This?</a> | <a style="margin: 0 10px;" href="#key-features">✨ Key Features</a> | <a style="margin: 0 10px;" href="#installation">📦 Installation</a> | <a style="margin: 0 10px;" href="#how-to-use">🎓 How to Use</a> | <a style="margin: 0 10px;" href="#common-use-cases">💡 Use Cases</a> | <a style="margin: 0 10px;" href="#understanding-key-features">🔍 Understanding</a> | <a style="margin: 0 10px;" href="#troubleshooting">🛠️ Troubleshooting</a> | <a style="margin: 0 10px;" href="#privacy-security">🔐 Privacy</a> | <a style="margin: 0 10px;" href="#tips-best-practices">💡 Tips</a> | <a style="margin: 0 10px;" href="#faq">❓ FAQ</a> | <a style="margin: 0 10px;" href="#pricing">💰 Pricing</a> | <a style="margin: 0 10px;" href="#technical-information">📋 Technical</a></p>
 

@@ -1,6 +1,6 @@
 # 🌐 Sessner – Multi-Session Manager
 
-**Version 3.2.0** - The simple way to manage multiple accounts on any website
+**Version 3.2.4** - The simple way to manage multiple accounts on any website
 
 ---
 
@@ -63,6 +63,13 @@ When a website opens a popup window (for reports, OAuth login, payment processin
 - Intelligent retry logic handles slow system startups
 - Automatic preference disabling on tier downgrade with notification
 - **Free/Premium users:** Sessions saved but tab mappings cleared on restart (manual session recreation required)
+
+**Dormant Session Management (All Tiers - v3.2.4):**
+- Sessions without active tabs become "dormant" (preserve URLs and cookies)
+- Manually delete unwanted dormant sessions via X icon in UI
+- Reopen dormant sessions to restore exact URLs and cookies
+- No limit on number of dormant sessions (only retention period applies)
+- Confirmation dialog prevents accidental deletion
 
 ### 🚀 Simple Workflow
 
@@ -521,7 +528,37 @@ Sessions are also stored locally and persist across browser restarts.
 
 ### Q: Can I rename sessions or add labels?
 
-**A:** Version 3.0 focuses on simplicity without manual session management. Each session is automatically managed per tab.
+**A:** Yes! Version 3.1.0 adds session naming/labeling for Premium and Enterprise tiers:
+- **Premium/Enterprise:** Custom session names (e.g., "Work Gmail", "Personal Facebook")
+- **Inline editing:** Double-click session name to edit
+- **Full validation:** Max 50 chars, emoji support, duplicate detection
+- **Free tier:** Feature not available (upgrade for session naming)
+
+### Q: What is a dormant session and when does a session become dormant?
+
+**A:** A dormant session is a session without any active tabs, but with all its data (cookies and URLs) preserved for later use.
+
+**A session becomes dormant when:**
+- **You close all tabs in that session** - The session automatically converts to dormant state
+- **Browser restart (Free/Premium tiers)** - Tab mappings are cleared, sessions become dormant
+- **Browser restart (Enterprise with auto-restore disabled)** - Sessions convert to dormant
+
+**What happens to dormant sessions:**
+- **Data preserved:** All cookies and tab URLs are saved
+- **Reopenable:** Click "Open Session" button to restore the session with exact URLs and cookies
+- **Retention period:** Free tier (7 days), Premium/Enterprise (permanent)
+- **No quantity limit:** You can have unlimited dormant sessions (only time retention applies)
+- **Manual deletion:** Use the X icon to delete unwanted dormant sessions (v3.2.4)
+
+**Enterprise tier exception:** Enterprise users with auto-restore ENABLED do not create dormant sessions - sessions are completely deleted when all tabs close (will auto-restore on next browser startup).
+
+### Q: Can I delete dormant sessions?
+
+**A:** Yes! Version 3.2.4 adds dormant session deletion for all tiers:
+- **All tiers:** X icon on dormant session cards for manual deletion
+- **Confirmation dialog:** Prevents accidental deletion
+- **Multi-layer deletion:** Removes from all storage layers (in-memory, IndexedDB, chrome.storage.local)
+- **No limit:** Keep as many dormant sessions as you want (only retention period applies)
 
 ---
 
@@ -586,7 +623,34 @@ This extension is open source! The code is documented and structured for readabi
 
 ## 🚀 Version History
 
-### Version 3.2.0 (Current - 2025-10-31)
+### Version 3.2.4 (Current - 2025-11-03)
+- **Feature**: Dormant Session Deletion (All Tiers)
+  - X icon on dormant session cards for manual deletion
+  - Confirmation dialog with warning message
+  - Multi-layer deletion (in-memory + IndexedDB + chrome.storage.local)
+  - Theme-aware UI (light/dark mode support)
+- **Critical Fix**: Enterprise Tier Session Persistence Bug
+  - Fixed: Enterprise sessions with auto-restore disabled now convert to DORMANT (preserve URLs/cookies)
+  - Previously: Sessions were incorrectly deleted, causing data loss
+  - Behavior: Enterprise + auto-restore disabled now same as Free/Premium (DORMANT preservation)
+- **Code Quality**: 4 improvements (removed duplicate handlers, fixed logging bugs, added cache cleanup, DRY principle)
+- **Testing**: 2 scenarios tested and passed (Enterprise DORMANT conversion + dormant deletion)
+
+### Version 3.2.3 (2025-11-02)
+- **Fix**: Race condition in dormant session persistence with in-memory cache
+- **Improvement**: Tab metadata cache for immediate URL capture
+- **Performance**: Eliminates debounce race condition during tab closure
+
+### Version 3.2.2 (2025-11-01)
+- **Fix**: Auto-restore preference validation race condition
+- **Improvement**: Enhanced error handling for tier detection
+
+### Version 3.2.1 (2025-11-01)
+- **Fix**: Auto-restore race condition on browser startup
+- **Fix**: Dormant session URL restoration bug
+- **Improvement**: Enhanced logging for tab restoration debugging
+
+### Version 3.2.0 (2025-10-31)
 - **Feature**: Session Export/Import (Premium/Enterprise exclusive)
   - Export sessions to JSON files (per-session or bulk)
   - Import sessions with automatic conflict resolution
@@ -709,6 +773,6 @@ You're all set! Start creating isolated sessions and enjoy the freedom of managi
 
 ---
 
-**Sessner – Multi-Session Manager v3.1.0**
+**Sessner – Multi-Session Manager v3.2.4**
 **Made for Microsoft Edge**
 **100% Local, 100% Private**
