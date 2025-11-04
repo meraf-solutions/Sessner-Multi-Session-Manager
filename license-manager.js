@@ -51,7 +51,7 @@ class LicenseManager {
     // API Configuration
     // NOTE: Development keys work with SANDBOX API only
     // For production deployment, switch to prod.merafsolutions.com with production keys
-    this.IS_DEVELOPMENT = true;
+    this.IS_DEVELOPMENT = false;
     this.API_BASE_URL = this.IS_DEVELOPMENT ? 'https://sandbox.merafsolutions.com' : 'https://prod.merafsolutions.com';
     this.PRODUCT_NAME = 'Sessner';
 
