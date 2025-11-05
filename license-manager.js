@@ -7,9 +7,9 @@
  *
  * Privacy Guarantee: All license data stored locally only.
  * No analytics, no tracking, no data collection beyond license validation.
+ *
+ * ES6 Module - MV3 Compatible
  */
-
-'use strict';
 
 /**
  * @typedef {'free' | 'premium' | 'enterprise'} Tier
@@ -51,7 +51,7 @@ class LicenseManager {
     // API Configuration
     // NOTE: Development keys work with SANDBOX API only
     // For production deployment, switch to prod.merafsolutions.com with production keys
-    this.IS_DEVELOPMENT = false;
+    this.IS_DEVELOPMENT = true;
     this.API_BASE_URL = this.IS_DEVELOPMENT ? 'https://sandbox.merafsolutions.com' : 'https://prod.merafsolutions.com';
     this.PRODUCT_NAME = 'Sessner';
 
@@ -209,31 +209,79 @@ class LicenseManager {
    * Generate browser fingerprint
    * Uses stable, privacy-preserving characteristics
    *
+   * FIXED (MV3): Service workers don't have access to window/screen APIs.
+   * Now uses service worker-compatible APIs only.
+   *
    * @returns {Promise<string>}
    */
   async generateFingerprint() {
-    const components = [
-      navigator.userAgent,
-      navigator.language,
-      screen.width + 'x' + screen.height,
-      screen.colorDepth,
-      new Date().getTimezoneOffset(),
-      navigator.hardwareConcurrency || 'unknown',
-      navigator.deviceMemory || 'unknown',
-      navigator.platform
-    ];
+    try {
+      // Service worker-compatible components only
+      const components = [];
 
-    const fingerprintString = components.join('|');
+      // 1. Platform info (service worker-compatible)
+      try {
+        const platformInfo = await chrome.runtime.getPlatformInfo();
+        components.push(platformInfo.os || 'unknown');         // "win", "mac", "linux"
+        components.push(platformInfo.arch || 'unknown');       // "x86-64", "arm"
+      } catch (error) {
+        console.warn('[Fingerprint] getPlatformInfo failed:', error);
+        components.push('unknown', 'unknown');
+      }
 
-    // Hash using SHA-256 via Web Crypto API
-    const encoder = new TextEncoder();
-    const data = encoder.encode(fingerprintString);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      // 2. Extension version (stable identifier)
+      try {
+        const manifest = chrome.runtime.getManifest();
+        components.push(manifest.version || 'unknown');
+      } catch (error) {
+        console.warn('[Fingerprint] getManifest failed:', error);
+        components.push('unknown');
+      }
 
-    // Return first 16 characters for brevity
-    return hashHex.substring(0, 16);
+      // 3. Timezone offset (stable for user's location)
+      components.push(String(new Date().getTimezoneOffset()));
+
+      // 4. Language (if available via navigator in service worker)
+      if (typeof navigator !== 'undefined' && navigator.language) {
+        components.push(navigator.language);
+      } else {
+        components.push('unknown');
+      }
+
+      // 5. Random salt for additional uniqueness (stored in storage)
+      // This ensures device ID is unique even if all other components match
+      const stored = await this.storage.get('fingerprintSalt');
+      let salt = stored.fingerprintSalt;
+
+      if (!salt) {
+        salt = this.generateRandomSalt();
+        await this.storage.set({ fingerprintSalt: salt });
+        console.log('[Fingerprint] Generated new fingerprint salt');
+      }
+
+      components.push(salt);
+
+      const fingerprintString = components.join('|');
+      console.log('[Fingerprint] Components:', fingerprintString);
+
+      // Hash using SHA-256 via Web Crypto API
+      const encoder = new TextEncoder();
+      const data = encoder.encode(fingerprintString);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+      // Return first 16 characters for brevity
+      return hashHex.substring(0, 16);
+
+    } catch (error) {
+      console.error('[Fingerprint] Error generating fingerprint:', error);
+
+      // Fallback: Generate simple random ID and store it
+      const fallbackId = 'device_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11);
+      console.warn('[Fingerprint] Using fallback ID:', fallbackId);
+      return fallbackId;
+    }
   }
 
   /**
@@ -278,15 +326,13 @@ class LicenseManager {
    * @returns {void}
    */
   startValidationTimer() {
-    if (this.validationTimer) {
-      clearInterval(this.validationTimer);
-    }
-
-    this.validationTimer = setInterval(async () => {
-      await this.checkAndValidate();
-    }, this.CHECK_INTERVAL_MS);
-
-    console.log('[LicenseManager] Validation timer started (checks every hour)');
+    /**
+     * MV3: License validation now handled by chrome.alarms API
+     * See modules/alarm_handlers.js LICENSE_VALIDATION alarm (runs every 24 hours)
+     * The alarm calls licenseManager.validateLicenseOnline() directly
+     */
+    console.log('[LicenseManager] Validation timer (MV3: handled by chrome.alarms.LICENSE_VALIDATION)');
+    // REMOVED for MV3: setInterval for validation (now handled by chrome.alarms)
   }
 
   /**
@@ -576,7 +622,7 @@ class LicenseManager {
               console.log('[LicenseManager] Redirecting license tab:', tab.id, tab.url);
 
               // Clear badge
-              chrome.browserAction.setBadgeText({ text: '', tabId: tab.id }, () => {
+              chrome.action.setBadgeText({ text: '', tabId: tab.id }, () => {
                 if (chrome.runtime.lastError) {
                   console.warn('[LicenseManager] Badge clear error:', chrome.runtime.lastError);
                 }
@@ -1006,7 +1052,8 @@ class LicenseManager {
 // Create singleton instance
 const licenseManager = new LicenseManager();
 
-// Export for use in background.js
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = licenseManager;
-}
+// Export ES6 module
+export { LicenseManager, licenseManager };
+export default licenseManager;
+
+console.log('[LicenseManager] ✓ License manager loaded (ES6 module)');

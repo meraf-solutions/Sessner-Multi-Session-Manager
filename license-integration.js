@@ -2,10 +2,8 @@
  * License Integration for background.js
  * Provides message handlers and session limit enforcement
  *
- * Include this file in manifest.json background scripts AFTER license-manager.js
+ * ES6 Module - MV3 Compatible
  */
-
-'use strict';
 
 /**
  * Initialize license system on extension startup
@@ -351,8 +349,8 @@ function createNewSessionWithLicense(url, callback) {
     sessionStore.sessions[sessionId].tabs.push(tab.id);
 
     // Set badge
-    chrome.browserAction.setBadgeText({ text: '●', tabId: tab.id });
-    chrome.browserAction.setBadgeBackgroundColor({ color: color, tabId: tab.id });
+    chrome.action.setBadgeText({ text: '●', tabId: tab.id });
+    chrome.action.setBadgeBackgroundColor({ color: color, tabId: tab.id });
 
     // Update favicon badge
     updateFaviconBadge(tab.id, color);
@@ -408,7 +406,15 @@ async function initializeLicenseIntegration() {
   console.log('[License Integration] ✓ Integration complete (legacy mode)');
 }
 
-// REMOVED: Auto-initialization on script load
-// Initialization is now controlled by initializationManager in background.js
-// This prevents race conditions where license operations run before license manager is ready
-console.log('[License Integration] License integration loaded (initialization managed by initializationManager)');
+// Export all functions as ES6 module
+export {
+  initializeLicenseSystem,
+  checkSessionCreationAllowed,
+  enforceSessionPersistence,
+  handleLicenseMessage,
+  createNewSessionWithLicense,
+  setupPersistenceEnforcement,
+  initializeLicenseIntegration
+};
+
+console.log('[License Integration] ✓ License integration loaded (ES6 module)');

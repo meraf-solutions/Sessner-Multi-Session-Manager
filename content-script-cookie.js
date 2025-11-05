@@ -16,17 +16,21 @@
 (function() {
   'use strict';
 
-  // Skip execution on extension pages and local HTML files
+  // Skip execution on extension pages, local files, and browser internal pages
   const isExtensionProtocol = window.location.protocol === 'chrome-extension:' ||
                               window.location.protocol === 'edge-extension:';
   const isFileProtocol = window.location.protocol === 'file:';
+  const isBrowserInternalPage = window.location.protocol === 'chrome:' ||
+                                window.location.protocol === 'edge:' ||
+                                window.location.protocol === 'about:' ||
+                                window.location.protocol === 'chrome-search:';
   const isExtensionHTML = window.location.href.includes('storage-diagnostics.html') ||
                           window.location.href.includes('popup-license.html') ||
                           window.location.href.includes('license-details.html');
   const isPopup = window.location.href.includes('/popup.html');
 
-  if ((isExtensionProtocol && !isPopup) || isFileProtocol || (isExtensionHTML && !isPopup)) {
-    console.log('[Cookie Isolation] Skipping execution on extension/local page');
+  if ((isExtensionProtocol && !isPopup) || isFileProtocol || isBrowserInternalPage || (isExtensionHTML && !isPopup)) {
+    // Silent skip for browser internal pages (chrome://newtab/, edge://newtab/, etc.)
     return;
   }
 
@@ -252,22 +256,41 @@
   };
 
   /**
-   * Injects the page script into the page context
+   * Injects the page script into the page context using CSP-compliant method
+   *
+   * Chrome MV3 Fix: Use external script file loaded via chrome.runtime.getURL()
+   * to avoid CSP violations from inline scripts.
    */
   function injectPageScript() {
     try {
+      // Method 1: Use external script file (CSP-compliant)
       const script = document.createElement('script');
-      script.textContent = '(' + injectedScript.toString() + ')();';
+      script.src = chrome.runtime.getURL('inject-cookie-override.js');
+      script.onload = function() {
+        console.log('[Cookie Isolation] Page script injected successfully (external file)');
+        script.remove(); // Clean up after execution
+      };
+      script.onerror = function(error) {
+        console.error('[Cookie Isolation] Failed to load external script, falling back to inline:', error);
+
+        // Method 2: Fallback to inline injection (for browsers that allow it)
+        try {
+          const fallbackScript = document.createElement('script');
+          fallbackScript.textContent = '(' + injectedScript.toString() + ')();';
+          (document.head || document.documentElement).appendChild(fallbackScript);
+          fallbackScript.remove();
+          console.log('[Cookie Isolation] Page script injected successfully (inline fallback)');
+        } catch (fallbackError) {
+          console.error('[Cookie Isolation] Both injection methods failed:', fallbackError);
+          console.warn('[Cookie Isolation] Cookie isolation will rely on chrome.cookies API only');
+        }
+      };
 
       // Inject before any other scripts
       (document.head || document.documentElement).appendChild(script);
-
-      // Remove script element after execution
-      script.remove();
-
-      console.log('[Cookie Isolation] Page script injected successfully');
     } catch (error) {
       console.error('[Cookie Isolation] Failed to inject page script:', error);
+      console.warn('[Cookie Isolation] Cookie isolation will rely on chrome.cookies API only');
     }
   }
 

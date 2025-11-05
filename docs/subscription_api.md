@@ -1,10 +1,24 @@
 # Subscription & Licensing API Documentation
 ## Sessner  Multi-Session Manager
 
-**Last Updated:** 2025-10-21
+**Last Updated:** 2025-11-04
+**Extension Version:** 4.0.0
+**Manifest:** V3
 **API Version:** 1.0
 **Provider:** Meraf Solutions
 **Product:** Sessner
+
+---
+
+## Manifest V3 Compatibility Note
+
+**Version 4.0.0** includes significant changes to support Manifest V3:
+
+- **Service Worker Architecture**: License manager now operates in a service worker context (no access to DOM APIs)
+- **Device ID Generation**: Uses `chrome.runtime.getPlatformInfo()` instead of `navigator`/`screen` APIs
+- **Keep-Alive Mechanism**: Implements 20-second ping during license activation to prevent service worker termination
+- **State Persistence**: License data persisted across service worker restarts using multi-layer storage
+- **Backward Compatibility**: All API endpoints remain unchanged; only client-side implementation updated
 
 ---
 
@@ -653,7 +667,52 @@ Device ID is generated using privacy-preserving browser fingerprinting with SHA-
 - No invasive fingerprinting (no canvas, audio, or WebGL)
 - No cross-site tracking
 
-See [docs/technical.md - Device ID Generation](technical.md#2-device-id-generation) for complete algorithm implementation and code examples.
+### Manifest V3 Service Worker Implementation
+
+**Challenge**: Service workers don't have access to DOM APIs (`window`, `screen`, `navigator.userAgent`, etc.).
+
+**Solution**: Version 4.0.0 uses `chrome.runtime.getPlatformInfo()` instead of DOM APIs.
+
+**MV3 Implementation** (Service Worker):
+```javascript
+async function generateDeviceId() {
+  // Get platform information from Chrome API (no DOM access)
+  const platformInfo = await chrome.runtime.getPlatformInfo();
+
+  const components = {
+    os: platformInfo.os,           // 'mac', 'win', 'linux', 'chromeos'
+    arch: platformInfo.arch,       // 'x86-32', 'x86-64', 'arm'
+    naclArch: platformInfo.nacl_arch,  // Native Client architecture
+    // Note: No screen/window APIs available in service worker
+  };
+
+  // SHA-256 hash + salt (same algorithm as MV2)
+  const fingerprint = JSON.stringify(components);
+  const hashBuffer = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(fingerprint)
+  );
+
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const fingerprintId = hashHex.substring(0, 12);
+
+  // Add random salt
+  const salt = generateRandomString(10);
+
+  return `SESSNER_${fingerprintId}_${salt}`;
+}
+```
+
+**Key Differences from MV2**:
+- `navigator.userAgent` → `platformInfo.os` + `platformInfo.arch`
+- `screen.width/height` → Not available (removed from fingerprint)
+- `screen.colorDepth` → Not available (removed from fingerprint)
+- Fingerprint still unique due to random salt
+
+**Impact**: Slightly less detailed fingerprint than MV2, but still unique per device.
+
+See [docs/technical.md - Service Worker-Compatible Device ID Generation](technical.md#service-worker-compatible-device-id-generation) for complete implementation details.
 
 ---
 
@@ -669,21 +728,29 @@ See [docs/technical.md - Device ID Generation](technical.md#2-device-id-generati
                             |
                             v
 +--------------------------------------------------------------+
-| 2. Extension generates device ID (if not exists)            |
+| 2. Service worker starts keep-alive (MV3)                   |
+|    Prevents termination during activation                   |
+|    20-second ping mechanism                                 |
++--------------------------------------------------------------+
+                            |
+                            v
++--------------------------------------------------------------+
+| 3. Extension generates device ID (if not exists)            |
 |    Device ID: SESSNER_abc123def456_X7Y8Z9W0V1               |
+|    Uses chrome.runtime.getPlatformInfo() (MV3)              |
 |    Stored in: chrome.storage.local                          |
 +--------------------------------------------------------------+
                             |
                             v
 +--------------------------------------------------------------+
-| 3. Call: /api/license/register/device/{device_id}/         |
+| 4. Call: /api/license/register/device/{device_id}/         |
 |          {secret}/{license_key}                             |
 |    Response: "Device added successfully"                    |
 +--------------------------------------------------------------+
                             |
                             v
 +--------------------------------------------------------------+
-| 4. Call: /api/license/verify/{secret}/{license_key}         |
+| 5. Call: /api/license/verify/{secret}/{license_key}         |
 |    Returns: Full license details                            |
 |    {                                                         |
 |      status: "active",                                       |
@@ -696,20 +763,24 @@ See [docs/technical.md - Device ID Generation](technical.md#2-device-id-generati
                             |
                             v
 +--------------------------------------------------------------+
-| 5. Detect tier from response                                |
+| 6. Detect tier from response                                |
 |    maxDevices=1, maxDomains=999 -> Tier: premium            |
 +--------------------------------------------------------------+
                             |
                             v
 +--------------------------------------------------------------+
-| 6. Store license data locally (chrome.storage.local)        |
+| 7. Store license data locally (chrome.storage.local)        |
+|    Multi-layer persistence (MV3):                           |
+|    - chrome.storage.session (fast recovery)                 |
+|    - chrome.storage.local (persistent)                      |
+|    - IndexedDB (backup for large data)                      |
 |    {                                                         |
 |      key: "YEKE94W0E6...",                                   |
 |      tier: "premium",                                        |
 |      status: "active",                                       |
 |      email: "user@example.com",                              |
-|      dateActivated: "2025-10-21T12:00:00.000Z",              |
-|      lastValidated: "2025-10-21T12:00:00.000Z",              |
+|      dateActivated: "2025-11-04T12:00:00.000Z",              |
+|      lastValidated: "2025-11-04T12:00:00.000Z",              |
 |      deviceId: "SESSNER_abc123...",                          |
 |      features: { /* cached features */ }                     |
 |    }                                                         |
@@ -717,7 +788,13 @@ See [docs/technical.md - Device ID Generation](technical.md#2-device-id-generati
                             |
                             v
 +--------------------------------------------------------------+
-| 7. Features unlocked immediately                            |
+| 8. Stop keep-alive mechanism (MV3)                          |
+|    Service worker can now idle                              |
++--------------------------------------------------------------+
+                            |
+                            v
++--------------------------------------------------------------+
+| 9. Features unlocked immediately                            |
 |    Show notification: "Welcome to Sessner PREMIUM!"         |
 +--------------------------------------------------------------+
 ```### Code Example

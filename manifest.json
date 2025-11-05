@@ -1,12 +1,11 @@
 {
-  "manifest_version": 2,
-  "name": "Sessner – Multi-Session Manager for Microsoft Edge",
+  "manifest_version": 3,
+  "name": "Sessner – Multi-Session Manager",
   "short_name": "Sessner",
-  "version": "3.2.5",
+  "version": "4.0.0",
   "description": "Run multiple accounts on any website with true session isolation. Each tab has separate cookies and storage. 100% local and private.",
   "permissions": [
     "webRequest",
-    "webRequestBlocking",
     "cookies",
     "tabs",
     "storage",
@@ -14,23 +13,18 @@
     "webNavigation",
     "notifications",
     "alarms",
-    "downloads",
+    "downloads"
+  ],
+  "host_permissions": [
     "<all_urls>"
   ],
   "background": {
-    "scripts": [
-      "libs/pako.min.js",
-      "crypto-utils.js",
-      "storage-persistence-layer.js",
-      "license-manager.js",
-      "license-integration.js",
-      "background.js"
-    ],
-    "persistent": true
+    "service_worker": "background_sw.js",
+    "type": "module"
   },
-  "browser_action": {
+  "action": {
     "default_popup": "popup.html",
-    "default_title": "Sessner – Multi-Session Manager for Microsoft Edge",
+    "default_title": "Sessner – Multi-Session Manager",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -63,9 +57,17 @@
     "128": "icons/icon128.png"
   },
   "web_accessible_resources": [
-    "icons/icon48.png",
-    "icons/icon16.png",
-    "icons/icon128.png"
+    {
+      "resources": [
+        "icons/icon48.png",
+        "icons/icon16.png",
+        "icons/icon128.png",
+        "libs/pako.min.js",
+        "inject-cookie-override.js",
+        "inject-favicon-override.js"
+      ],
+      "matches": ["<all_urls>"]
+    }
   ],
   "incognito": "spanning"
 }

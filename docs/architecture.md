@@ -1,25 +1,59 @@
 # System Architecture
 ## Sessner – Multi-Session Manager
 
-**Last Updated:** 2025-11-03
-**Extension Version:** 3.2.4
-**Architecture Pattern:** SessionBox-Style Isolation
+**Last Updated:** 2025-11-04
+**Extension Version:** 4.0.0
+**Manifest Version:** 3
+**Architecture Pattern:** SessionBox-Style Isolation with Service Worker
 
 ---
 
 ## Table of Contents
 
-1. [System Overview](#system-overview)
-2. [Design Pattern](#design-pattern)
-3. [Component Architecture](#component-architecture)
-4. [Multi-Layer Isolation Architecture](#multi-layer-isolation-architecture)
-5. [Data Flow Diagrams](#data-flow-diagrams)
-6. [State Management](#state-management)
-7. [Persistence Architecture](#persistence-architecture)
-8. [Session Lifecycle](#session-lifecycle)
-9. [Integration Points](#integration-points)
-10. [Security Architecture](#security-architecture)
-11. [Performance Architecture](#performance-architecture)
+1. [Manifest V3 Architecture](#manifest-v3-architecture)
+2. [System Overview](#system-overview)
+3. [Design Pattern](#design-pattern)
+4. [Component Architecture](#component-architecture)
+5. [Multi-Layer Isolation Architecture](#multi-layer-isolation-architecture)
+6. [Data Flow Diagrams](#data-flow-diagrams)
+7. [State Management](#state-management)
+8. [Persistence Architecture](#persistence-architecture)
+9. [Session Lifecycle](#session-lifecycle)
+10. [Integration Points](#integration-points)
+11. [Security Architecture](#security-architecture)
+12. [Performance Architecture](#performance-architecture)
+
+---
+
+## Manifest V3 Architecture
+
+Version 4.0.0 represents a complete migration to Manifest V3, replacing the persistent background page with a **service worker** architecture.
+
+### Key MV3 Changes
+
+1. **Service Worker Instead of Background Page**
+   - Non-persistent: May terminate after 30 seconds of inactivity
+   - State persisted across multi-layer storage (session → local → IndexedDB)
+   - Keep-alive mechanism (20-second pings) for active operations
+
+2. **ES6 Module System**
+   - All scripts use `import`/`export` syntax
+   - Modular architecture: state_manager.js, alarm_handlers.js, etc.
+   - Background.js converted to ES6 module (6000+ lines)
+
+3. **Chrome Alarms API**
+   - Replaces `setInterval` for periodic tasks
+   - Cookie cleaner: Every 2 minutes (was 2 seconds)
+   - License validation: Every 24 hours
+   - Session cleanup: Every 1 hour
+
+4. **Browser Compatibility**
+   - ✅ Google Chrome (any version)
+   - ✅ Microsoft Edge (version 88+)
+   - ✅ Brave Browser
+   - ✅ Opera Browser
+   - ✅ All Chromium-based browsers
+   - ❌ Firefox (different extension API)
 
 ---
 
@@ -32,7 +66,7 @@ Sessner is a SessionBox-style multi-session browser extension that creates **com
 1. **Virtual Session Pattern**: Each tab belongs to a virtual session completely isolated from others
 2. **Multi-Layer Defense**: Cookie/storage isolation at HTTP, JavaScript, and Page Context levels
 3. **100% Local, 100% Private**: Zero cloud dependency, all data stored locally
-4. **Persistent Background Page**: Manifest V2 with always-running background script
+4. **Service Worker Architecture**: Manifest V3 with non-persistent service worker and multi-layer state management
 5. **Transparent Isolation**: Web applications work without modification
 6. **Fair Enforcement**: License system never locks out users, graceful degradation
 
@@ -48,14 +82,19 @@ Sessner is a SessionBox-style multi-session browser extension that creates **com
 └──────────────────────────────────────────────────────────────────┘
                             ↕
 ┌──────────────────────────────────────────────────────────────────┐
-│                    Extension Components                           │
+│                    Extension Components (MV3)                     │
 │                                                                   │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │            Background Script (Persistent)                 │   │
+│  │            Service Worker (Non-Persistent)                │   │
+│  │  • background_sw.js (entry point)                         │   │
+│  │  • background.js (ES6 module)                             │   │
+│  │  • State Manager (multi-layer persistence)                │   │
 │  │  • Session Manager                                        │   │
-│  │  • Cookie Store (in-memory)                               │   │
+│  │  • Cookie Store (in-memory + persistent)                  │   │
 │  │  • License Manager                                        │   │
 │  │  • WebRequest Interceptor                                 │   │
+│  │  • Chrome Alarms (periodic tasks)                         │   │
+│  │  • Keep-Alive Mechanism (20s pings)                       │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                            ↕                                      │
 │  ┌──────────────────────────────────────────────────────────┐   │
@@ -72,17 +111,18 @@ Sessner is a SessionBox-style multi-session browser extension that creates **com
 └──────────────────────────────────────────────────────────────────┘
                             ↕
 ┌──────────────────────────────────────────────────────────────────┐
-│                    Persistence Layer                              │
-│  • chrome.storage.local (10MB quota)                             │
+│                    Persistence Layer (Multi-Tier)                 │
+│  • chrome.storage.session (fast, survives until browser close)   │
+│  • chrome.storage.local (10MB quota, survives restarts)          │
 │  • IndexedDB (session data, cookies, metadata)                   │
-│  • Storage Persistence Manager (dual-layer sync)                 │
+│  • Storage Persistence Manager (tri-layer sync)                  │
 │  • License data (device ID, tier, features)                      │
 └──────────────────────────────────────────────────────────────────┘
                             ↕
 ┌──────────────────────────────────────────────────────────────────┐
 │                    External Services                              │
 │  • Meraf Solutions Licensing API (HTTPS only)                    │
-│  • Validation every 7 days, 30-day grace period                  │
+│  • Validation every 24 hours (via chrome.alarms)                 │
 └──────────────────────────────────────────────────────────────────┘
 ```
 

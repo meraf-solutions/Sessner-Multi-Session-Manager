@@ -4,7 +4,7 @@
  * Enterprise tier exclusive
  */
 
-const cryptoUtils = {
+export const cryptoUtils = {
   /**
    * Encryption configuration
    */
@@ -247,9 +247,4 @@ const cryptoUtils = {
   }
 };
 
-// Export for use in background script
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = cryptoUtils;
-}
-
-console.log('[Crypto Utils] ✓ Crypto utilities loaded');
+console.log('[Crypto Utils] ✓ Crypto utilities loaded (ES6 module)');

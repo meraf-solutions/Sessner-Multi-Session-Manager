@@ -1,9 +1,9 @@
 # Extension API Documentation
-## Sessner  Multi-Session Manager
+## Sessner Multi-Session Manager
 
-**Last Updated:** 2025-10-31
-**Extension Version:** 3.2.0
-**Manifest Version:** 2
+**Last Updated:** 2025-11-04
+**Extension Version:** 4.0.0
+**Manifest Version:** 3
 
 ---
 
@@ -11,7 +11,7 @@
 
 1. [Overview](#overview)
 2. [Message Passing Architecture](#message-passing-architecture)
-3. [Background Script API](#background-script-api)
+3. [Service Worker API](#service-worker-api)
 4. [Content Script API](#content-script-api)
 5. [Popup UI API](#popup-ui-api)
 6. [Chrome Extension APIs Used](#chrome-extension-apis-used)
@@ -25,18 +25,28 @@
 
 Sessner uses Chrome's message passing API for communication between different components:
 
-- **Background Script** (`background.js`): Persistent background page managing session state
+- **Service Worker** (`background_sw.js`, `background.js`): Non-persistent service worker managing session state
 - **Content Scripts** (`content-script-storage.js`, `content-script-cookie.js`): Injected into web pages
 - **Popup UI** (`popup.js`, `popup-license.js`): User interface for session and license management
+
+### Manifest V3 Architecture
+
+Version 4.0.0 uses Manifest V3 with a **service worker** architecture instead of a persistent background page. Key differences:
+
+- **Service Worker**: May terminate after 30 seconds of inactivity (state persisted via multi-layer storage)
+- **ES6 Modules**: All scripts use ES6 module format (`import`/`export`)
+- **Chrome Alarms**: Periodic tasks use `chrome.alarms` API instead of `setInterval`
+- **Browser Compatibility**: Works on Chrome, Edge, Brave, Opera, and all Chromium browsers
 
 ### Communication Flow
 
 ```
                       chrome.runtime.sendMessage
    +-----------+           ------>              +--------------+
-   | Popup UI  |                                |  Background  |
-   |           |   <------                      |    Script    |
-   +-----------+       Response (callback)      +--------------+
+   | Popup UI  |                                |   Service    |
+   |           |   <------                      |    Worker    |
+   +-----------+       Response (callback)      | (background) |
+                                                 +--------------+
                                                         |
                                            chrome.runtime.sendMessage
                                                         |
@@ -70,7 +80,7 @@ All messages follow a consistent structure:
 
 ### Sending Messages
 
-**From Popup/Content Script to Background:**
+**From Popup/Content Script to Service Worker:**
 ```javascript
 chrome.runtime.sendMessage(
   { action: 'actionName', param1: 'value1' },
@@ -84,7 +94,7 @@ chrome.runtime.sendMessage(
 );
 ```
 
-**From Background to Content Script:**
+**From Service Worker to Content Script:**
 ```javascript
 chrome.tabs.sendMessage(
   tabId,
@@ -94,6 +104,8 @@ chrome.tabs.sendMessage(
   }
 );
 ```
+
+**Note**: All message handlers in the service worker must return `true` to keep the message channel open for async responses.
 
 ### Error Handling Pattern
 
@@ -116,7 +128,7 @@ chrome.runtime.sendMessage(message, (response) => {
 
 ---
 
-## Background Script API
+## Service Worker API
 
 ### Session Management
 
@@ -1597,13 +1609,13 @@ chrome.runtime.sendMessage(
 
 ## Content Script API
 
-Content scripts receive messages from the background script and can send messages back.
+Content scripts receive messages from the service worker and can send messages back.
 
 ### Storage Isolation Messages
 
 #### getSessionId (sent by content script)
 
-Already documented in Background Script API. Content scripts call this during initialization to get their session ID.
+Already documented in Service Worker API. Content scripts call this during initialization to get their session ID.
 
 #### Storage Operation Queue
 
@@ -1673,7 +1685,7 @@ window.postMessage(
 
 ## Popup UI API
 
-The popup UI uses the same message passing API as documented in Background Script API. Common patterns:
+The popup UI uses the same message passing API as documented in Service Worker API. Common patterns:
 
 ### Refresh Sessions List
 
@@ -2114,7 +2126,7 @@ chrome.browserAction.setBadgeBackgroundColor({
 
 ## Event Listeners
 
-### Background Script Event Listeners
+### Service Worker Event Listeners
 
 | Event | Purpose | Handler Function |
 |-------|---------|-----------------|
@@ -2176,7 +2188,7 @@ chrome.runtime.sendMessage(message, (response) => {
     console.error('Runtime error:', chrome.runtime.lastError.message);
     // Common causes:
     // - Extension context invalidated (extension updated/reloaded)
-    // - Receiving end does not exist (background script crashed)
+    // - Receiving end does not exist (service worker not active)
     return;
   }
 
@@ -2240,7 +2252,7 @@ try {
 document.getElementById('newSessionBtn').addEventListener('click', () => {
   const url = document.getElementById('urlInput').value || 'about:blank';
 
-  // 2. Send message to background script
+  // 2. Send message to service worker
   chrome.runtime.sendMessage(
     {
       action: 'createNewSession',

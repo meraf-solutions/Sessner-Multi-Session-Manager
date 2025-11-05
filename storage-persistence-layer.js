@@ -21,7 +21,7 @@
 
 // ============= Storage Configuration =============
 
-const STORAGE_CONFIG = {
+export const STORAGE_CONFIG = {
   // IndexedDB configuration
   IDB_NAME: 'SessnerStorage',
   IDB_VERSION: 1,
@@ -1552,3 +1552,6 @@ const storagePersistenceManager = new StoragePersistenceManager();
 if (typeof window !== 'undefined') {
   window.storagePersistenceManager = storagePersistenceManager;
 }
+
+// Export as ES6 module (CRITICAL: Required for background.js import)
+export { storagePersistenceManager };
