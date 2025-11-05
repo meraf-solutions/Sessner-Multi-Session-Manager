@@ -1,5 +1,10 @@
 # Multi-Session Browser Extension - Technical Documentation
 
+**Extension Version:** 3.2.4
+**Manifest:** V2 (MV2)
+**Last Updated:** 2025-11-05 (MV2 Browser Compatibility Documentation)
+**Browser Compatibility:** Edge, Brave, Opera, Vivaldi (NOT Chrome - MV2 deprecated)
+
 ## 📚 Documentation Structure
 
 This project has comprehensive documentation organized across multiple files:
@@ -196,6 +201,51 @@ The Proxy intercepts:
 - **storage**: Persist sessions and cookies to chrome.storage.local for browser restart survival
 - **webNavigation**: Detect when new tabs/popups are created to enable session inheritance
 - **<all_urls>**: Required scope for webRequest and content script injection across all websites
+
+## Browser Compatibility
+
+### Supported Browsers (Manifest V2)
+
+This extension uses **Manifest V2** which provides the `webRequestBlocking` API essential for complete cookie isolation.
+
+| Browser | Minimum Version | Status | Notes |
+|---------|----------------|--------|-------|
+| **Microsoft Edge** | 88+ | ✅ Fully Supported | Chromium-based, MV2 fully supported |
+| **Brave** | 1.0+ | ✅ Fully Supported | Chromium-based, MV2 fully supported |
+| **Opera** | 60+ | ✅ Fully Supported | Chromium-based, MV2 fully supported |
+| **Vivaldi** | 2.0+ | ✅ Fully Supported | Chromium-based, MV2 fully supported |
+| **Google Chrome** | Any version | ❌ Not Supported | Chrome deprecated MV2, cannot load unpacked MV2 extensions |
+| **Firefox** | Any version | ❌ Not Supported | Different extension API (WebExtensions) |
+
+### Why Manifest V2 (Not V3)?
+
+**Critical Requirement**: This extension REQUIRES `webRequestBlocking` for industrial-grade session isolation.
+
+**Manifest V3 Limitations:**
+- ❌ Removed `webRequestBlocking` API (restricted to enterprise policies only)
+- ❌ Cannot modify HTTP request/response headers synchronously
+- ❌ Set-Cookie headers reach browser → Cookies leak to native store
+- ❌ Cookie request headers cannot be modified → Sessions contaminate each other
+- ❌ Result: Partial isolation with 3-second leak window (unacceptable for production)
+
+**Manifest V2 Advantages:**
+- ✅ Full `webRequestBlocking` support (synchronous header modification)
+- ✅ Complete cookie isolation (zero leakage between sessions)
+- ✅ Set-Cookie headers removed before reaching browser
+- ✅ Cookie request headers modified with session-specific cookies
+- ✅ Industrial-grade isolation guarantee
+
+**Why Chrome Is Not Supported:**
+- Chrome officially deprecated Manifest V2 in 2023
+- Chrome Canary/Dev channels already block unpacked MV2 extensions
+- Chrome stable will fully block MV2 extensions in 2024
+- Google mandates migration to MV3 for Chrome Web Store
+- Alternative Chromium browsers (Edge, Brave, Opera, Vivaldi) continue to support MV2
+
+**Installation Method:**
+- **Production**: .CRX file drag-and-drop to browser's extension page
+- **Development**: Load unpacked (developer mode) on Edge/Brave/Opera/Vivaldi only
+- **Not available**: Chrome Web Store (Chrome blocks MV2), Firefox Add-ons (different API)
 
 ## Key Files and Components
 
@@ -1373,8 +1423,8 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 ### Installation
 
 ```
-1. User installs extension from Chrome Web Store or loads unpacked
-2. Chrome creates extension context
+1. User drags .CRX file to browser's extension page (edge://extensions/, brave://extensions/, etc.)
+2. Browser creates extension context (Edge/Brave/Opera/Vivaldi)
 3. background.js loads
 4. chrome.runtime.onInstalled fires
 5. loadPersistedSessions() called
@@ -1382,10 +1432,16 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 7. Extension ready, icon appears in toolbar
 ```
 
+**Alternative (Development)**:
+```
+1. Developer loads unpacked extension (Developer mode ON)
+2. Only works on Edge/Brave/Opera/Vivaldi (Chrome blocks MV2)
+```
+
 ### Browser Startup
 
 ```
-1. Chrome launches
+1. Browser launches (Edge/Brave/Opera/Vivaldi)
 2. Extension system initializes
 3. background.js loads
 4. chrome.runtime.onStartup fires
@@ -1398,22 +1454,25 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 ### Extension Update
 
 ```
-1. Chrome Web Store publishes new version
-2. Chrome downloads update
-3. Old extension context terminates
-4. New extension context starts
-5. background.js loads
-6. chrome.runtime.onInstalled fires (reason: 'update')
-7. loadPersistedSessions() called
-8. Sessions restored from storage
-9. Extension ready with new version
+1. User downloads new .CRX file
+2. User drags .CRX to browser's extension page
+3. Browser prompts to update extension
+4. Old extension context terminates
+5. New extension context starts
+6. background.js loads
+7. chrome.runtime.onInstalled fires (reason: 'update')
+8. loadPersistedSessions() called
+9. Sessions restored from storage
+10. Extension ready with new version
 ```
+
+**Note**: No automatic updates (not available in official stores due to MV2)
 
 ### Uninstallation
 
 ```
-1. User uninstalls extension
-2. Chrome removes extension files
+1. User uninstalls extension from browser's extension page
+2. Browser removes extension files
 3. chrome.storage.local is deleted
 4. All session data is permanently lost
 5. Browser cookies (if any leaked) remain
@@ -1437,14 +1496,16 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 
 ### Known Limitations
 
-1. **Manifest V2**: Will require migration to MV3 eventually (major rewrite)
-2. **Chrome Only**: Firefox requires MV3 (webRequest.onBeforeRequest different API)
-3. **HTTP/HTTPS Only**: file://, chrome://, about: URLs not intercepted
-4. **Service Workers**: Some edge cases may bypass interception (mitigated by cleaner)
-5. **WebSockets**: Cookies in WS handshake not modified after connection
-6. **Performance**: Large cookie stores (1000+ cookies) may slow persistence
-7. **Storage Quota**: chrome.storage.local 10MB limit (unlikely to hit)
-8. **Color Reuse**: Only 12 colors, sessions may share if >12 exist
+1. **Chrome Not Supported**: Chrome deprecated MV2, extension only works on Edge/Brave/Opera/Vivaldi
+2. **Manifest V2 Dependency**: Cannot migrate to MV3 (would lose webRequestBlocking, breaking core functionality)
+3. **Firefox Not Supported**: Requires WebExtensions API (different architecture)
+4. **HTTP/HTTPS Only**: file://, chrome://, edge://, about: URLs not intercepted
+5. **Service Workers**: Some edge cases may bypass interception (mitigated by cleaner)
+6. **WebSockets**: Cookies in WS handshake not modified after connection
+7. **Performance**: Large cookie stores (1000+ cookies) may slow persistence
+8. **Storage Quota**: chrome.storage.local 10MB limit (unlikely to hit)
+9. **Color Reuse**: Only 12 colors, sessions may share if >12 exist
+10. **Installation Method**: .CRX drag-and-drop only (not available in official stores)
 
 ## Comparison to Alternatives
 
@@ -1459,7 +1520,7 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 - **Containers**: Persistent, user-named, manually assigned
 - **Sessions**: Ephemeral, auto-created, tab-specific
 - **Firefox**: Built-in browser feature
-- **This Extension**: Chrome extension with full browser support
+- **This Extension**: Chromium extension (Edge/Brave/Opera/Vivaldi) with MV2 support
 
 ### vs SessionBox Extension
 

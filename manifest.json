@@ -1,6 +1,6 @@
 {
   "manifest_version": 2,
-  "name": "Sessner – Multi-Session Manager for Microsoft Edge",
+  "name": "Sessner – Multi-Session Manager for Chromium-based Browsers",
   "short_name": "Sessner",
   "version": "3.2.5",
   "description": "Run multiple accounts on any website with true session isolation. Each tab has separate cookies and storage. 100% local and private.",
@@ -30,7 +30,7 @@
   },
   "browser_action": {
     "default_popup": "popup.html",
-    "default_title": "Sessner – Multi-Session Manager for Microsoft Edge",
+    "default_title": "Sessner – Multi-Session Manager for Chromium-based Browsers",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

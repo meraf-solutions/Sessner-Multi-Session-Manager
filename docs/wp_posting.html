@@ -110,26 +110,42 @@
 <h2 class="heading-element" dir="auto" tabindex="-1">📦 Installation</h2>
 </div>
 <div class="markdown-heading" dir="auto">
-<h3 class="heading-element" dir="auto" tabindex="-1">Step 1: Get the Extension Files</h3>
-</div>
-<p dir="auto">Download or get this extension from official sources.</p>
-
-<div class="markdown-heading" dir="auto">
-<h3 class="heading-element" dir="auto" tabindex="-1">Step 2: Load Into Microsoft Edge</h3>
+<h3 class="heading-element" dir="auto" tabindex="-1">Method 1: Install .CRX Package (Recommended)</h3>
 </div>
 <ol dir="auto">
- 	<li>Open Microsoft Edge</li>
- 	<li>Navigate to <code>edge://extensions/</code></li>
- 	<li>Enable <strong>"Developer mode"</strong> (toggle in the bottom left corner)</li>
+ 	<li>Download the latest <strong>.CRX file</strong> from the official release page</li>
+ 	<li>Open your browser's extension page:
+		<ul>
+			<li><strong>Edge:</strong> Navigate to <code>edge://extensions/</code></li>
+			<li><strong>Brave:</strong> Navigate to <code>brave://extensions/</code></li>
+			<li><strong>Opera:</strong> Navigate to <code>opera://extensions/</code></li>
+			<li><strong>Vivaldi:</strong> Navigate to <code>vivaldi://extensions/</code></li>
+		</ul>
+	</li>
+ 	<li>Drag and drop the <strong>.CRX file</strong> onto the extensions page</li>
+ 	<li>Click <strong>"Add extension"</strong> when prompted</li>
+ 	<li>The extension icon will appear in your toolbar</li>
+</ol>
+<p dir="auto"><strong>Important:</strong> This extension uses Manifest V2 and is compatible with <strong>Edge, Brave, Opera, and Vivaldi</strong> only. Chrome does not support Manifest V2 extensions.</p>
+
+<div class="markdown-heading" dir="auto">
+<h3 class="heading-element" dir="auto" tabindex="-1">Method 2: Load Unpacked (For Developers)</h3>
+</div>
+<ol dir="auto">
+ 	<li>Download or clone the extension source code</li>
+ 	<li>Open your Chromium browser (Edge/Brave/Opera/Vivaldi) and navigate to the extensions page</li>
+ 	<li>Enable <strong>"Developer mode"</strong> (toggle in the top right or bottom left)</li>
  	<li>Click <strong>"Load unpacked"</strong></li>
  	<li>Select the extension folder</li>
  	<li>The extension icon will appear in your toolbar</li>
 </ol>
+<p dir="auto"><strong>Important:</strong> This method only works on Edge, Brave, Opera, and Vivaldi. Chrome does not support loading unpacked Manifest V2 extensions.</p>
+
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Step 3: Pin the Extension (Recommended)</h3>
 </div>
 <ol dir="auto">
- 	<li>Click the puzzle icon in your Edge toolbar</li>
+ 	<li>Click the puzzle icon in your browser toolbar</li>
  	<li>Find "<strong>Sessner – Multi-Session Manager"</strong></li>
  	<li>Click the pin icon to keep it visible</li>
 </ol>
@@ -577,11 +593,27 @@
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Q: Can I use this with Chrome or Firefox?</h3>
 </div>
-<p dir="auto"><strong>A:</strong> Currently available for Microsoft Edge only. Chrome and Firefox versions are in our development roadmap:</p>
+<p dir="auto"><strong>A:</strong> This extension uses <strong>Manifest V2</strong> which Chrome no longer supports.</p>
+
+<p dir="auto"><strong>Compatible browsers:</strong></p>
 <ul dir="auto">
-	<li><strong>Chrome:</strong> Coming soon - minimal adaptation required (similar Chromium base)</li>
-	<li><strong>Firefox:</strong> Planned - requires significant API modifications</li>
-	<li><strong>Current availability:</strong> Microsoft Edge (Chromium-based, version 88+)</li>
+	<li>✅ <strong>Microsoft Edge</strong> (Chromium-based, version 88+)</li>
+	<li>✅ <strong>Brave</strong> (Version 1.0+)</li>
+	<li>✅ <strong>Opera</strong> (Version 60+)</li>
+	<li>✅ <strong>Vivaldi</strong> (Version 2.0+)</li>
+</ul>
+
+<p dir="auto"><strong>Not compatible:</strong></p>
+<ul dir="auto">
+	<li>❌ <strong>Chrome</strong> - Chrome deprecated Manifest V2 support and does not allow loading MV2 extensions</li>
+	<li>❌ <strong>Firefox</strong> - Requires significant API changes (uses WebExtensions API instead of Chrome Extension API)</li>
+</ul>
+
+<p dir="auto"><strong>Why Manifest V2?</strong></p>
+<ul dir="auto">
+	<li>Chrome's Manifest V3 removed the <code>webRequestBlocking</code> API which is essential for complete cookie isolation</li>
+	<li>Without blocking mode, sessions can leak cookies between each other, breaking the core functionality</li>
+	<li>Manifest V2 provides the necessary APIs for industrial-grade session isolation</li>
 </ul>
 
 <div class="markdown-heading" dir="auto">
@@ -913,10 +945,27 @@
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Browser Compatibility</h3>
 </div>
+<p dir="auto">This extension uses <strong>Manifest V2</strong> for complete cookie isolation via <code>webRequestBlocking</code> API.</p>
+
+<p dir="auto"><strong>Supported Browsers:</strong></p>
 <ul dir="auto">
- 	<li><strong>Microsoft Edge:</strong> Chromium-based Edge (version 88+)</li>
- 	<li><strong>Chrome:</strong> Coming soon.</li>
- 	<li><strong>Firefox:</strong> Coming soon.</li>
+ 	<li>✅ <strong>Microsoft Edge:</strong> Chromium-based Edge (version 88+)</li>
+ 	<li>✅ <strong>Brave:</strong> Version 1.0+</li>
+ 	<li>✅ <strong>Opera:</strong> Version 60+</li>
+ 	<li>✅ <strong>Vivaldi:</strong> Version 2.0+</li>
+</ul>
+
+<p dir="auto"><strong>Not Supported:</strong></p>
+<ul dir="auto">
+ 	<li>❌ <strong>Chrome:</strong> Does not support Manifest V2 (deprecated by Google)</li>
+ 	<li>❌ <strong>Firefox:</strong> Requires significant API changes (WebExtensions API)</li>
+</ul>
+
+<p dir="auto"><strong>Why MV2?</strong></p>
+<ul dir="auto">
+ 	<li>Chrome MV3 removed <code>webRequestBlocking</code> which is essential for session isolation</li>
+ 	<li>Without blocking mode, cookies leak between sessions (security issue)</li>
+ 	<li>MV2 provides industrial-grade isolation guarantee</li>
 </ul>
 <div class="markdown-heading" dir="auto">
 <h3 class="heading-element" dir="auto" tabindex="-1">Required Permissions</h3>

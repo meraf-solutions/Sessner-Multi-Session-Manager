@@ -6,7 +6,7 @@
 
 ## 📖 What Is This?
 
-Sessner – Multi-Session Manager is a Microsoft Edge extension that lets you use multiple accounts on the same website at the same time - without the hassle of browser profiles or constantly logging in and out.
+Sessner – Multi-Session Manager is a Chromium browser extension that lets you use multiple accounts on the same website at the same time - without the hassle of browser profiles or constantly logging in and out. Compatible with Microsoft Edge, Brave, Opera, and Vivaldi.
 
 Think of it like having multiple browsers running at once, but all in one window. Each tab gets its own isolated session with completely separate cookies and storage. Log into Gmail with your work account in one tab, your personal account in another, and a client account in a third - all simultaneously!
 
@@ -82,22 +82,34 @@ When a website opens a popup window (for reports, OAuth login, payment processin
 
 ## 📦 Installation
 
-### Step 1: Get the Extension Files
+### Method 1: Install .CRX Package (Recommended)
 
-Download or clone this extension to your computer.
+1. Download the latest `.CRX` file from the releases page
+2. Open your browser's extension page:
+   - **Edge:** Navigate to `edge://extensions/`
+   - **Brave:** Navigate to `brave://extensions/`
+   - **Opera:** Navigate to `opera://extensions/`
+   - **Vivaldi:** Navigate to `vivaldi://extensions/`
+3. Drag and drop the `.CRX` file onto the extensions page
+4. Click "Add extension" when prompted
+5. The extension icon will appear in your toolbar
 
-### Step 2: Load Into Microsoft Edge
+**Important:** Chrome does not support Manifest V2 extensions. This extension is compatible with Edge, Brave, Opera, and Vivaldi only.
 
-1. Open Microsoft Edge
-2. Navigate to `edge://extensions/`
-3. Enable **"Developer mode"** (toggle in the bottom left corner)
+### Method 2: Load Unpacked (For Developers)
+
+1. Download or clone this extension to your computer
+2. Open your Chromium browser (Edge/Brave/Opera/Vivaldi) and navigate to the extensions page
+3. Enable **"Developer mode"** (toggle in the top right or bottom left)
 4. Click **"Load unpacked"**
 5. Select the extension folder
 6. The extension icon will appear in your toolbar
 
+**Important:** This method only works on Edge, Brave, Opera, and Vivaldi. Chrome does not support loading unpacked Manifest V2 extensions.
+
 ### Step 3: Pin the Extension (Recommended)
 
-1. Click the puzzle icon in your Edge toolbar
+1. Click the puzzle icon in your browser toolbar
 2. Find "Sessner – Multi-Session Manager"
 3. Click the pin icon to keep it visible
 
@@ -280,7 +292,7 @@ Each session is assigned a unique color from a palette of 12 distinct colors:
 ### Issue: Extension Icon Not Showing
 
 **Solution:**
-1. Go to `edge://extensions/`
+1. Go to your browser's extensions page (e.g., `edge://extensions/` for Edge)
 2. Verify the extension is enabled
 3. Click the puzzle icon in toolbar and pin the extension
 
@@ -490,7 +502,22 @@ Sessner:
 
 ### Q: Can I use this with Chrome or Firefox?
 
-**A:** Currently designed for Microsoft Edge, but the code could be adapted for Chrome with minimal changes. Firefox uses different APIs and would require significant modifications.
+**A:** This extension uses **Manifest V2** which Chrome no longer supports for unpacked extensions.
+
+**Compatible browsers:**
+- ✅ **Microsoft Edge** (Chromium-based, version 88+)
+- ✅ **Brave** (Version 1.0+)
+- ✅ **Opera** (Version 60+)
+- ✅ **Vivaldi** (Version 2.0+)
+
+**Not compatible:**
+- ❌ **Chrome** - Chrome deprecated Manifest V2 support and does not allow loading MV2 extensions
+- ❌ **Firefox** - Requires significant API changes (uses WebExtensions API instead of Chrome Extension API)
+
+**Why Manifest V2?**
+- Chrome's Manifest V3 removed the `webRequestBlocking` API which is essential for complete cookie isolation
+- Without blocking mode, sessions can leak cookies between each other, breaking the core functionality
+- Manifest V2 provides the necessary APIs for industrial-grade session isolation
 
 ### Q: Does this work on mobile?
 
@@ -564,7 +591,7 @@ Sessions are also stored locally and persist across browser restarts.
 
 ## 🎯 Quick Start Checklist
 
-- [ ] Install extension in Microsoft Edge
+- [ ] Install extension in your Chromium browser (Edge/Brave/Opera/Vivaldi)
 - [ ] Pin extension icon to toolbar
 - [ ] Click extension icon
 - [ ] Click "New Session" to create your first isolated session
@@ -733,9 +760,22 @@ This extension is open source! The code is documented and structured for readabi
 
 ### Browser Compatibility
 
-- **Microsoft Edge:** Chromium-based Edge (version 88+)
-- **Chrome:** Compatible with minor modifications
-- **Firefox:** Requires significant API changes
+This extension uses **Manifest V2** for complete cookie isolation via `webRequestBlocking` API.
+
+**Supported Browsers:**
+- ✅ **Microsoft Edge:** Chromium-based Edge (version 88+)
+- ✅ **Brave:** Version 1.0+
+- ✅ **Opera:** Version 60+
+- ✅ **Vivaldi:** Version 2.0+
+
+**Not Supported:**
+- ❌ **Chrome:** Does not support Manifest V2 (deprecated by Google)
+- ❌ **Firefox:** Requires significant API changes (WebExtensions API)
+
+**Why MV2?**
+- Chrome MV3 removed `webRequestBlocking` which is essential for session isolation
+- Without blocking mode, cookies leak between sessions (security issue)
+- MV2 provides industrial-grade isolation guarantee
 
 ### Required Permissions
 
@@ -755,7 +795,7 @@ This extension is open source! The code is documented and structured for readabi
 
 ## 🙏 Acknowledgments
 
-Sessner – Multi-Session Manager is inspired by SessionBox and similar multi-account management tools, built to provide simple, effective session isolation for Microsoft Edge users.
+Sessner – Multi-Session Manager is inspired by SessionBox and similar multi-account management tools, built to provide simple, effective session isolation for Chromium browser users (Edge, Brave, Opera, Vivaldi).
 
 ---
 
@@ -774,5 +814,6 @@ You're all set! Start creating isolated sessions and enjoy the freedom of managi
 ---
 
 **Sessner – Multi-Session Manager v3.2.4**
-**Made for Microsoft Edge**
+**Made for Chromium Browsers (Edge, Brave, Opera, Vivaldi)**
 **100% Local, 100% Private**
+**Not compatible with Chrome (Manifest V2)**
