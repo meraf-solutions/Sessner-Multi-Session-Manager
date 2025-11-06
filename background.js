@@ -6226,3 +6226,411 @@ function showUpdateNotification(updateInfo) {
     requireInteraction: true
   });
 }
+
+// ============================================================================
+// RELEASE ZIP CREATOR (Developer Tool)
+// ============================================================================
+
+/**
+ * Create a release ZIP file from the extension directory
+ * USAGE: Call from background console: createReleaseZip()
+ *
+ * Excluded files/folders:
+ * - .claude/
+ * - docs/
+ * - assets/sources/
+ * - releases/
+ * - CLAUDE.md
+ * - CHANGELOG.md
+ * - .gitignore
+ * - README.md
+ * - commit_message.txt
+ */
+async function createReleaseZip() {
+  console.log('[Release] Starting release ZIP creation...');
+
+  try {
+    // Get version from manifest
+    const manifest = chrome.runtime.getManifest();
+    const version = manifest.version;
+
+    // Generate filename with timestamp
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+
+    const dateStr = `${year}${month}${day}_${hours}${minutes}`;
+    const filename = `Sessner-Multi-Session_Manager_v${version}_build_${dateStr}.zip`;
+
+    console.log(`[Release] Creating ${filename}...`);
+
+    // Files/folders to exclude
+    const excludedPaths = [
+      '.claude',
+      'docs',
+      'assets/sources',
+      'releases',
+      'CLAUDE.md',
+      'CHANGELOG.md',
+      '.gitignore',
+      'README.md',
+      'commit_message.txt'
+    ];
+
+    // Get extension root URL
+    const extensionUrl = chrome.runtime.getURL('');
+
+    // Recursively fetch all files from extension directory
+    const files = await fetchAllExtensionFiles(extensionUrl, '', excludedPaths);
+
+    if (files.length === 0) {
+      console.error('[Release] No files found to zip!');
+      return { success: false, error: 'No files found' };
+    }
+
+    console.log(`[Release] Found ${files.length} files to include`);
+
+    // Create ZIP using pako (gzip compression)
+    const zipData = await createZipFromFiles(files);
+
+    // Download the ZIP file
+    const blob = new Blob([zipData], { type: 'application/zip' });
+    const url = URL.createObjectURL(blob);
+
+    // Trigger download
+    chrome.downloads.download({
+      url: url,
+      filename: filename,  // Saves to user's Downloads folder
+      saveAs: false  // Auto-save without dialog
+    }, (downloadId) => {
+      if (chrome.runtime.lastError) {
+        console.error('[Release] Download failed:', chrome.runtime.lastError.message);
+      } else {
+        console.log(`[Release] ✓ ZIP created successfully: ${filename}`);
+        console.log(`[Release] Download ID: ${downloadId}`);
+        console.log(`[Release] Files included: ${files.length}`);
+        console.log(`[Release] Location: User's Downloads folder`);
+        console.log(`[Release] To move to extension releases folder, run:`);
+        console.log(`[Release]   move "%USERPROFILE%\\Downloads\\${filename}" "d:\\Sessner – Multi-Session Manager\\releases\\"`);
+
+        // Clean up blob URL after download starts
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+    });
+
+    return {
+      success: true,
+      filename: filename,
+      fileCount: files.length,
+      version: version
+    };
+
+  } catch (error) {
+    console.error('[Release] Error creating ZIP:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Recursively fetch all files from extension directory
+ * @param {string} baseUrl - Extension base URL
+ * @param {string} currentPath - Current directory path
+ * @param {Array<string>} excludedPaths - Paths to exclude
+ * @returns {Promise<Array<{path: string, data: ArrayBuffer}>>}
+ */
+async function fetchAllExtensionFiles(baseUrl, currentPath, excludedPaths) {
+  const files = [];
+
+  // Check if current path is excluded
+  const isExcluded = excludedPaths.some(excluded => {
+    if (currentPath === excluded) return true;
+    if (currentPath.startsWith(excluded + '/')) return true;
+    return false;
+  });
+
+  if (isExcluded) {
+    console.log(`[Release] Excluding: ${currentPath}`);
+    return files;
+  }
+
+  // List of known files and folders in extension root
+  // Note: Chrome extensions don't have directory listing API, so we need to know the structure
+  const knownPaths = [
+    // Root files (only files that actually exist in the extension)
+    'manifest.json',
+    'background.js',
+    'popup.html',
+    'popup.js',
+    'popup-license.html',
+    'popup-license.js',
+    'license-details.html',
+    'license-details.js',
+    'license-manager.js',
+    'license-integration.js',
+    'license-utils.js',
+    'storage-persistence-layer.js',
+    'storage-diagnostics.html',
+    'storage-diagnostics.js',
+    'crypto-utils.js',
+    'content-script-storage.js',
+    'content-script-cookie.js',
+    'content-script-favicon.js',
+    // Folders (will be processed recursively)
+    'icons',
+    'libs',
+    'assets'
+  ];
+
+  // For root directory, process known paths
+  if (currentPath === '') {
+    for (const path of knownPaths) {
+      // Skip excluded paths
+      if (excludedPaths.includes(path)) {
+        console.log(`[Release] Excluding: ${path}`);
+        continue;
+      }
+
+      // Check if it's a file or folder
+      const fullUrl = baseUrl + path;
+
+      try {
+        // Try to fetch as file
+        const response = await fetch(fullUrl);
+
+        // Check if path has a file extension (indicates it's a file, not a folder)
+        const hasFileExtension = /\.(html|js|json|css|png|jpg|jpeg|svg|gif|txt|md|woff|woff2|ttf|eot|ico)$/i.test(path);
+
+        if (response.ok) {
+          // Check Content-Type to determine if it's a file or folder
+          const contentType = response.headers.get('Content-Type') || '';
+
+          // If path has a file extension, always treat as file (even if Content-Type is text/html)
+          if (hasFileExtension) {
+            const data = await response.arrayBuffer();
+            if (data.byteLength > 0) {
+              files.push({
+                path: path,
+                data: data
+              });
+              console.log(`[Release] Added file: ${path} (${data.byteLength} bytes)`);
+            } else {
+              console.warn(`[Release] ⚠ Skipping empty file: ${path}`);
+            }
+          }
+          // If no file extension and Content-Type suggests HTML/directory listing, treat as folder
+          else if (contentType.includes('text/html') || contentType === '') {
+            console.log(`[Release] Detected folder: ${path}`);
+            const subFiles = await fetchFolderFiles(baseUrl, path, excludedPaths);
+            files.push(...subFiles);
+          }
+          // Otherwise, treat as file (has content type but no extension - unusual but handle it)
+          else {
+            const data = await response.arrayBuffer();
+            if (data.byteLength > 0) {
+              files.push({
+                path: path,
+                data: data
+              });
+              console.log(`[Release] Added file: ${path} (${data.byteLength} bytes)`);
+            } else {
+              console.warn(`[Release] ⚠ Skipping empty file: ${path}`);
+            }
+          }
+        } else {
+          // Response not OK - only treat as folder if no file extension
+          if (!hasFileExtension) {
+            console.log(`[Release] Attempting to process ${path} as folder (status: ${response.status})`);
+            const subFiles = await fetchFolderFiles(baseUrl, path, excludedPaths);
+            if (subFiles.length > 0) {
+              files.push(...subFiles);
+            } else {
+              console.warn(`[Release] ⚠ Path not found and no subfiles discovered: ${path}`);
+            }
+          } else {
+            console.warn(`[Release] ⚠ Failed to fetch file: ${path} (status: ${response.status})`);
+          }
+        }
+      } catch (error) {
+        // Fetch failed - check if it has file extension first
+        const hasFileExtension = /\.(html|js|json|css|png|jpg|jpeg|svg|gif|txt|md|woff|woff2|ttf|eot|ico)$/i.test(path);
+
+        if (!hasFileExtension) {
+          // No file extension - might be a folder, try to process as folder
+          console.log(`[Release] Fetch failed for ${path}, attempting as folder`);
+          try {
+            const subFiles = await fetchFolderFiles(baseUrl, path, excludedPaths);
+            if (subFiles.length > 0) {
+              files.push(...subFiles);
+            } else {
+              console.warn(`[Release] ⚠ Could not process ${path} as file or folder`);
+            }
+          } catch (folderError) {
+            console.error(`[Release] Error processing ${path}:`, folderError.message);
+          }
+        } else {
+          // Has file extension - it's a file that failed to fetch
+          console.error(`[Release] ✗ Failed to fetch file ${path}:`, error.message);
+        }
+      }
+    }
+  }
+
+  return files;
+}
+
+/**
+ * Fetch files from known folder structures
+ * Attempts to discover all files in a folder by trying known patterns and extensions
+ */
+async function fetchFolderFiles(baseUrl, folderPath, excludedPaths) {
+  const files = [];
+
+  // Check if folder is excluded
+  const isExcluded = excludedPaths.some(excluded => {
+    if (folderPath === excluded) return true;
+    if (folderPath.startsWith(excluded + '/')) return true;
+    // Note: Do NOT check if excluded.startsWith(folderPath) - that would incorrectly
+    // exclude parent folders when only a subfolder should be excluded
+    // (e.g., 'assets' would be excluded if 'assets/sources' is in excludedPaths)
+    return false;
+  });
+
+  if (isExcluded) {
+    console.log(`[Release] Excluding folder: ${folderPath}`);
+    return files;
+  }
+
+  // Known folder structures (actual files that exist in the extension)
+  const folderStructures = {
+    'icons': ['icon16.png', 'icon48.png', 'icon128.png'],
+    'libs': ['pako.min.js'],
+    'assets': ['Sessner_brand.png', 'Sessner_logo.png', 'Sessner_market_design_1.png', 'Sessner_market_design_2.png']
+  };
+
+  // Get known files for this folder
+  const knownFiles = folderStructures[folderPath] || [];
+
+  console.log(`[Release] Processing folder: ${folderPath} (${knownFiles.length} known files)`);
+
+  // Fetch each known file
+  for (const file of knownFiles) {
+    const filePath = `${folderPath}/${file}`;
+    const fullUrl = baseUrl + filePath;
+
+    try {
+      const response = await fetch(fullUrl);
+      if (response.ok) {
+        const contentType = response.headers.get('Content-Type') || '';
+
+        // Skip if it's a directory listing
+        if (contentType.includes('text/html')) {
+          console.log(`[Release] Skipping directory listing: ${filePath}`);
+          continue;
+        }
+
+        const data = await response.arrayBuffer();
+
+        // Validate that we got actual file data
+        if (data.byteLength > 0) {
+          files.push({
+            path: filePath,
+            data: data
+          });
+          console.log(`[Release] ✓ Added file: ${filePath} (${data.byteLength} bytes)`);
+        } else {
+          console.warn(`[Release] ⚠ Skipping empty file: ${filePath}`);
+        }
+      } else {
+        console.warn(`[Release] ⚠ Failed to fetch ${filePath}: HTTP ${response.status}`);
+      }
+    } catch (error) {
+      console.error(`[Release] ✗ Error fetching ${filePath}:`, error.message);
+    }
+  }
+
+  // If folder not in known structures, try to discover files
+  if (!folderStructures[folderPath]) {
+    console.log(`[Release] Attempting auto-discovery for unknown folder: ${folderPath}`);
+
+    // Try common file extensions that might exist
+    const commonExtensions = ['js', 'json', 'html', 'css', 'png', 'jpg', 'svg'];
+    const commonNames = ['index', 'main', 'config', 'utils', 'helper'];
+
+    for (const name of commonNames) {
+      for (const ext of commonExtensions) {
+        const fileName = `${name}.${ext}`;
+        const filePath = `${folderPath}/${fileName}`;
+        const fullUrl = baseUrl + filePath;
+
+        try {
+          const response = await fetch(fullUrl);
+          if (response.ok) {
+            const contentType = response.headers.get('Content-Type') || '';
+            if (!contentType.includes('text/html')) {
+              const data = await response.arrayBuffer();
+              if (data.byteLength > 0) {
+                files.push({
+                  path: filePath,
+                  data: data
+                });
+                console.log(`[Release] ✓ Auto-discovered: ${filePath} (${data.byteLength} bytes)`);
+              }
+            }
+          }
+        } catch (error) {
+          // Silently ignore failed attempts
+        }
+      }
+    }
+  }
+
+  if (files.length === 0) {
+    console.warn(`[Release] ⚠ No files found in folder: ${folderPath}`);
+  } else {
+    console.log(`[Release] ✓ Found ${files.length} file(s) in ${folderPath}`);
+  }
+
+  return files;
+}
+
+/**
+ * Create ZIP file from files array using JSZip library
+ * This replaces the manual ZIP implementation with a battle-tested library
+ */
+async function createZipFromFiles(files) {
+  // Check if JSZip is available
+  if (typeof JSZip === 'undefined') {
+    throw new Error('JSZip library not loaded. Please add jszip.min.js to libs/ folder and manifest.json');
+  }
+
+  console.log('[createZipFromFiles] Creating ZIP with JSZip library, files:', files.length);
+
+  const zip = new JSZip();
+
+  // Add all files to ZIP
+  for (const file of files) {
+    console.log('[createZipFromFiles] Adding file:', file.path, 'size:', file.data.length);
+    zip.file(file.path, file.data);
+  }
+
+  // Generate ZIP file (compressed with DEFLATE)
+  const zipData = await zip.generateAsync({
+    type: 'uint8array',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 }
+  });
+
+  console.log('[createZipFromFiles] ✓ ZIP generated successfully, size:', zipData.length);
+
+  return zipData;
+}
+
+// Manual ZIP helper functions removed - now using JSZip library
+
+console.log('[Release] ZIP creator loaded. Use createReleaseZip() to create a release.');

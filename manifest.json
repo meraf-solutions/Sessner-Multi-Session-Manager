@@ -20,6 +20,7 @@
   "background": {
     "scripts": [
       "libs/pako.min.js",
+      "libs/jszip.min.js",
       "crypto-utils.js",
       "storage-persistence-layer.js",
       "license-manager.js",
