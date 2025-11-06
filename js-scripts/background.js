@@ -1799,7 +1799,7 @@ function ensureNotificationListener() {
 
     if (buttonIndex === 0) {
       // "Upgrade to Enterprise" / "View Enterprise Plans" button
-      chrome.tabs.create({ url: 'popup-license.html' });
+      chrome.tabs.create({ url: 'html/popup-license.html' });
     }
     chrome.notifications.clear(notifId);
   });
@@ -6362,26 +6362,11 @@ async function fetchAllExtensionFiles(baseUrl, currentPath, excludedPaths) {
   // List of known files and folders in extension root
   // Note: Chrome extensions don't have directory listing API, so we need to know the structure
   const knownPaths = [
-    // Root files (only files that actually exist in the extension)
+    // Root files
     'manifest.json',
-    'background.js',
-    'popup.html',
-    'popup.js',
-    'popup-license.html',
-    'popup-license.js',
-    'license-details.html',
-    'license-details.js',
-    'license-manager.js',
-    'license-integration.js',
-    'license-utils.js',
-    'storage-persistence-layer.js',
-    'storage-diagnostics.html',
-    'storage-diagnostics.js',
-    'crypto-utils.js',
-    'content-script-storage.js',
-    'content-script-cookie.js',
-    'content-script-favicon.js',
     // Folders (will be processed recursively)
+    'html',
+    'js-scripts',
     'icons',
     'libs',
     'assets'
@@ -6508,8 +6493,30 @@ async function fetchFolderFiles(baseUrl, folderPath, excludedPaths) {
 
   // Known folder structures (actual files that exist in the extension)
   const folderStructures = {
+    'html': [
+      'popup.html',
+      'popup-license.html',
+      'license-details.html',
+      'storage-diagnostics.html'
+    ],
+    'js-scripts': [
+      'background.js',
+      'popup.js',
+      'popup-license.js',
+      'license-details.js',
+      'license-manager.js',
+      'license-integration.js',
+      'license-utils.js',
+      'storage-persistence-layer.js',
+      'storage-diagnostics.js',
+      'crypto-utils.js',
+      'content-script-storage.js',
+      'content-script-cookie.js',
+      'content-script-favicon.js',
+      'count-tlds.js'
+    ],
     'icons': ['icon16.png', 'icon48.png', 'icon128.png'],
-    'libs': ['pako.min.js'],
+    'libs': ['pako.min.js', 'jszip.min.js'],
     'assets': ['Sessner_brand.png', 'Sessner_logo.png', 'Sessner_market_design_1.png', 'Sessner_market_design_2.png']
   };
 

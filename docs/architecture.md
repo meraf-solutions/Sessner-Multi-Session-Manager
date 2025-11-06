@@ -139,7 +139,63 @@ Session B (ID: session_1234567890_def456)
 
 ## Component Architecture
 
-### 1. Background Script (background.js)
+### Project File Structure
+
+The extension follows an organized directory structure with clear separation of concerns:
+
+```
+sessner-extension/
+├── manifest.json                 # Extension manifest (V2)
+├── html/                         # All HTML files
+│   ├── popup.html               # Main popup UI
+│   ├── popup-license.html       # License activation UI
+│   ├── license-details.html     # License details page
+│   └── storage-diagnostics.html # Storage debugging UI
+├── js-scripts/                   # All JavaScript files
+│   ├── background.js            # Core session management
+│   ├── popup.js                 # Popup UI logic
+│   ├── popup-license.js         # License activation logic
+│   ├── license-details.js       # License details logic
+│   ├── license-manager.js       # License validation core
+│   ├── license-integration.js   # License system integration
+│   ├── license-utils.js         # License utility functions
+│   ├── storage-persistence-layer.js # IndexedDB + chrome.storage sync
+│   ├── storage-diagnostics.js   # Storage debugging tools
+│   ├── crypto-utils.js          # Encryption utilities (AES-256)
+│   ├── content-script-storage.js # Storage isolation (Proxy)
+│   ├── content-script-cookie.js  # Cookie isolation
+│   ├── content-script-favicon.js # Favicon color overlay
+│   └── count-tlds.js            # TLD counting utility
+├── icons/                        # Extension icons
+│   ├── icon16.png
+│   ├── icon48.png
+│   └── icon128.png
+├── libs/                         # Third-party libraries
+│   ├── pako.min.js              # Deflate compression
+│   └── jszip.min.js             # ZIP file generation
+├── assets/                       # Brand assets
+│   ├── Sessner_brand.png
+│   ├── Sessner_logo.png
+│   ├── Sessner_market_design_1.png
+│   ├── Sessner_market_design_2.png
+│   └── sources/                 # Source files (excluded from releases)
+├── docs/                         # Documentation
+│   ├── architecture.md          # This file
+│   ├── technical.md             # Technical implementation
+│   ├── api.md                   # API reference
+│   └── subscription_api.md      # Licensing API reference
+└── releases/                     # Release builds (ZIP files)
+```
+
+**Key Organizational Principles**:
+- **Separation of Concerns**: HTML and JS files organized in dedicated folders
+- **Easy Navigation**: Related files grouped together by type
+- **Build Process**: `createReleaseZip()` automatically discovers and packages files
+- **Exclusions**: `docs/`, `assets/sources/`, and development files excluded from releases
+
+---
+
+### 1. Background Script (js-scripts/background.js)
 
 **Role**: Core session management, cookie interception, license validation
 
@@ -198,7 +254,7 @@ sessionStore.sessions[sessionId] = {
 
 ### 2. Content Scripts
 
-#### content-script-storage.js
+#### js-scripts/content-script-storage.js
 
 **Role**: Transparent localStorage/sessionStorage isolation
 
@@ -232,7 +288,7 @@ window.localStorage = new Proxy(originalLocalStorage, {
 
 ---
 
-#### content-script-cookie.js
+#### js-scripts/content-script-cookie.js
 
 **Role**: Transparent document.cookie isolation
 

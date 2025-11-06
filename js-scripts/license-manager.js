@@ -584,7 +584,7 @@ class LicenseManager {
 
               // Redirect to popup.html
               chrome.tabs.update(tab.id, {
-                url: chrome.runtime.getURL('popup.html')
+                url: chrome.runtime.getURL('html/popup.html')
               }, () => {
                 if (chrome.runtime.lastError) {
                   console.error('[LicenseManager] Tab update error:', chrome.runtime.lastError);
@@ -975,7 +975,7 @@ class LicenseManager {
    */
   openPopupWindow() {
     chrome.windows.create({
-      url: chrome.runtime.getURL('popup.html'),
+      url: chrome.runtime.getURL('html/popup.html'),
       type: 'popup',
       width: 400,
       height: 600

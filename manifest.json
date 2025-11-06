@@ -21,16 +21,16 @@
     "scripts": [
       "libs/pako.min.js",
       "libs/jszip.min.js",
-      "crypto-utils.js",
-      "storage-persistence-layer.js",
-      "license-manager.js",
-      "license-integration.js",
-      "background.js"
+      "js-scripts/crypto-utils.js",
+      "js-scripts/storage-persistence-layer.js",
+      "js-scripts/license-manager.js",
+      "js-scripts/license-integration.js",
+      "js-scripts/background.js"
     ],
     "persistent": true
   },
   "browser_action": {
-    "default_popup": "popup.html",
+    "default_popup": "html/popup.html",
     "default_title": "Sessner – Multi-Session Manager for Chromium-based Browsers",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -41,19 +41,19 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content-script-storage.js"],
+      "js": ["js-scripts/content-script-storage.js"],
       "run_at": "document_start",
       "all_frames": true
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["content-script-cookie.js"],
+      "js": ["js-scripts/content-script-cookie.js"],
       "run_at": "document_start",
       "all_frames": true
     },
     {
       "matches": ["<all_urls>"],
-      "js": ["content-script-favicon.js"],
+      "js": ["js-scripts/content-script-favicon.js"],
       "run_at": "document_idle",
       "all_frames": false
     }

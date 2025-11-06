@@ -46,7 +46,7 @@ function showRuntimeError() {
       <li>Find "Sessner – Multi-Session Manager"</li>
       <li>Click "Details"</li>
       <li>Find the Extension ID (e.g., "abcdefghijklmnop...")</li>
-      <li>Open: <code>chrome-extension://[YOUR-EXTENSION-ID]/storage-diagnostics.html</code></li>
+      <li>Open: <code>chrome-extension://[YOUR-EXTENSION-ID]/html/storage-diagnostics.html</code></li>
     </ol>
     <p style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #f44336; color: #666;">
       <strong>Current URL:</strong> ${window.location.href}
