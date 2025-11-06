@@ -82,30 +82,33 @@ When a website opens a popup window (for reports, OAuth login, payment processin
 
 ## 📦 Installation
 
-### Method 1: Install .CRX Package (Recommended)
+### Method 1: Install from ZIP Package (Recommended)
 
-1. Download the latest `.CRX` file from the releases page
-2. Open your browser's extension page:
+1. Download the latest `.zip` file from the releases page
+2. Extract the ZIP file to a location on your computer (e.g., `Documents/Sessner`)
+3. Open your browser's extension page:
    - **Edge:** Navigate to `edge://extensions/`
    - **Brave:** Navigate to `brave://extensions/`
    - **Opera:** Navigate to `opera://extensions/`
    - **Vivaldi:** Navigate to `vivaldi://extensions/`
-3. Drag and drop the `.CRX` file onto the extensions page
-4. Click "Add extension" when prompted
-5. The extension icon will appear in your toolbar
+4. Enable **"Developer mode"** (toggle in the top right corner)
+5. Click **"Load unpacked"**
+6. Select the extracted extension folder (the folder containing `manifest.json`)
+7. The extension icon will appear in your toolbar
 
 **Important:** Chrome does not support Manifest V2 extensions. This extension is compatible with Edge, Brave, Opera, and Vivaldi only.
 
-### Method 2: Load Unpacked (For Developers)
+### Method 2: Automatic Update (In-App)
 
-1. Download or clone this extension to your computer
-2. Open your Chromium browser (Edge/Brave/Opera/Vivaldi) and navigate to the extensions page
-3. Enable **"Developer mode"** (toggle in the top right or bottom left)
-4. Click **"Load unpacked"**
-5. Select the extension folder
-6. The extension icon will appear in your toolbar
+Starting with version 3.2.5, the extension includes an automatic update system:
 
-**Important:** This method only works on Edge, Brave, Opera, and Vivaldi. Chrome does not support loading unpacked Manifest V2 extensions.
+1. The extension checks for updates automatically (every 24 hours)
+2. When an update is available, you'll see an update banner in the extension popup
+3. Click **"Download"** to download the new version as a ZIP file
+4. Extract the ZIP and replace the files in your existing extension folder
+5. Click **"Reload Extension"** in the popup to apply the update
+
+**Tip:** The extension will show you the exact path to your extension folder for easy updating.
 
 ### Step 3: Pin the Extension (Recommended)
 

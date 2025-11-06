@@ -5432,6 +5432,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
       return false; // Synchronous response (debouncing is async internally)
 
+    } else if (message.action === 'checkForUpdates') {
+      // Manually check for updates
+      checkForUpdates(message.showNotification !== false)
+        .then(result => {
+          sendResponse(result);
+        })
+        .catch(error => {
+          console.error('[Update] Manual check failed:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+      return true; // Keep channel open for async response
+
+    } else if (message.action === 'getPendingUpdate') {
+      // Get pending update info
+      chrome.storage.local.get(['pendingUpdate'], (data) => {
+        if (chrome.runtime.lastError) {
+          sendResponse({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          sendResponse({
+            success: true,
+            updateAvailable: !!data.pendingUpdate,
+            updateInfo: data.pendingUpdate || null
+          });
+        }
+      });
+      return true; // Keep channel open for async response
+
+    } else if (message.action === 'getInitializationState') {
+      // Get current initialization state
+      sendResponse(initializationManager.getState());
+      return false; // Synchronous response
+
     } else {
       // Try license message handlers
       if (typeof handleLicenseMessage !== 'undefined') {
@@ -5830,6 +5862,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   initializationManager.initialize().catch(error => {
     console.error('[INIT] Failed to initialize on install:', error);
   });
+
+  // Initialize update checker
+  initializeUpdateChecker();
 });
 
 /**
@@ -5934,6 +5969,12 @@ chrome.alarms.onAlarm.addListener(alarm => {
     });
 
     console.log('[Edge Restart Fix] ✓ Alarm handled, recreated for next restart');
+  } else if (alarm.name === 'updateChecker') {
+    // Periodic update check (every 24 hours)
+    console.log('[Update] Periodic update check triggered');
+    checkForUpdates(false).catch(error => {
+      console.error('[Update] Periodic check failed:', error);
+    });
   } else if (alarm.name === 'periodicWakeUp') {
     console.log('[Edge Restart Fix] Periodic wake-up alarm fired');
 
@@ -5978,3 +6019,210 @@ chrome.tabs.onActivated.addListener(activeInfo => {
 });
 
 console.log('[Edge Restart Fix] ✓ Wake-up mechanisms installed (alarm + tab activation)');
+
+// ============================================================================
+// AUTOMATIC UPDATE SYSTEM
+// ============================================================================
+
+const UPDATE_CHECK_INTERVAL = 24 * 60; // 24 hours in minutes
+
+/**
+ * Initialize automatic update checker
+ */
+function initializeUpdateChecker() {
+  console.log('[Update] Initializing automatic update checker...');
+
+  // Check on extension startup (after 10 seconds to let extension fully load)
+  setTimeout(() => {
+    checkForUpdates(false).catch(error => {
+      console.error('[Update] Startup check failed:', error);
+    });
+  }, 10000);
+
+  // Setup periodic check (every 24 hours)
+  chrome.alarms.create('updateChecker', {
+    periodInMinutes: UPDATE_CHECK_INTERVAL
+  });
+
+  console.log('[Update] ✓ Scheduled periodic update checks (every 24 hours)');
+}
+
+/**
+ * Check for updates from API
+ * @param {boolean} showNotification - Show notification if update available
+ * @returns {Promise<Object>} Update info
+ */
+async function checkForUpdates(showNotification = false) {
+  try {
+    console.log('[Update] Checking for updates...');
+
+    const currentVersion = chrome.runtime.getManifest().version;
+    const updateUrl = `${licenseManager.API_BASE_URL}/api/product/changelog/Sessner/${licenseManager.SECRET_KEY_RETRIEVE}`;
+
+    console.log('[Update] API URL:', updateUrl);
+    console.log('[Update] Current version:', currentVersion);
+
+    const response = await fetch(updateUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const text = await response.text();
+    console.log('[Update] API response (raw):', text);
+
+    const data = JSON.parse(text);
+    console.log('[Update] API response (parsed):', data);
+
+    // Validate response
+    if (!validateUpdateResponse(data)) {
+      throw new Error('Invalid update response format');
+    }
+
+    // Check if newer version
+    const updateAvailable = isNewerVersion(data.version, currentVersion);
+
+    if (updateAvailable) {
+      console.log(`[Update] ✓ New version available: ${data.version}`);
+
+      // Store update info
+      await chrome.storage.local.set({
+        pendingUpdate: {
+          version: data.version,
+          url: data.url,
+          changelog: data.changelog,
+          size_bytes: data.size_bytes || 0,
+          fetchedAt: Date.now()
+        }
+      });
+
+      // Show notification if requested
+      if (showNotification) {
+        showUpdateNotification(data);
+      }
+
+      // Set badge on extension icon
+      chrome.browserAction.setBadgeText({ text: '!' });
+      chrome.browserAction.setBadgeBackgroundColor({ color: '#FF6B6B' });
+
+      return {
+        success: true,
+        updateAvailable: true,
+        version: data.version,
+        url: data.url,
+        changelog: data.changelog,
+        size_bytes: data.size_bytes || 0
+      };
+    } else {
+      console.log('[Update] No updates available (current version is up-to-date)');
+
+      // Clear any pending update
+      await chrome.storage.local.remove('pendingUpdate');
+
+      // Clear badge
+      chrome.browserAction.setBadgeText({ text: '' });
+
+      return {
+        success: true,
+        updateAvailable: false,
+        currentVersion: currentVersion,
+        latestVersion: data.version
+      };
+    }
+
+  } catch (error) {
+    console.error('[Update] Check failed:', error);
+
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Validate update API response
+ * @param {Object} response - API response
+ * @returns {boolean} True if valid
+ */
+function validateUpdateResponse(response) {
+  // Required fields
+  if (!response || typeof response !== 'object') {
+    console.error('[Update] Invalid response: not an object');
+    return false;
+  }
+
+  if (!response.version || typeof response.version !== 'string') {
+    console.error('[Update] Invalid response: missing or invalid version');
+    return false;
+  }
+
+  if (!response.url || typeof response.url !== 'string') {
+    console.error('[Update] Invalid response: missing or invalid url');
+    return false;
+  }
+
+  // Must be ZIP file
+  if (!response.url.endsWith('.zip')) {
+    console.error('[Update] Invalid response: URL must point to .zip file');
+    return false;
+  }
+
+  // Must be HTTPS
+  if (!response.url.startsWith('https://')) {
+    console.error('[Update] Invalid response: URL must use HTTPS');
+    return false;
+  }
+
+  // Must be from official domain
+  try {
+    const url = new URL(response.url);
+    if (!url.hostname.endsWith('merafsolutions.com')) {
+      console.error('[Update] Invalid response: URL must be from merafsolutions.com domain');
+      return false;
+    }
+  } catch (error) {
+    console.error('[Update] Invalid response: malformed URL');
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Compare version strings (semantic versioning)
+ * @param {string} newVersion - New version (e.g., "3.2.5")
+ * @param {string} currentVersion - Current version (e.g., "3.2.4")
+ * @returns {boolean} True if newVersion > currentVersion
+ */
+function isNewerVersion(newVersion, currentVersion) {
+  const newParts = newVersion.split('.').map(Number);
+  const currentParts = currentVersion.split('.').map(Number);
+
+  for (let i = 0; i < 3; i++) {
+    if (newParts[i] > currentParts[i]) return true;
+    if (newParts[i] < currentParts[i]) return false;
+  }
+
+  return false; // Same version
+}
+
+/**
+ * Show update notification
+ * @param {Object} updateInfo - Update information
+ */
+function showUpdateNotification(updateInfo) {
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: 'icons/icon128.png',
+    title: 'Sessner Update Available',
+    message: `Version ${updateInfo.version} is now available!\n\nClick the extension icon to download.`,
+    priority: 2,
+    requireInteraction: true
+  });
+}

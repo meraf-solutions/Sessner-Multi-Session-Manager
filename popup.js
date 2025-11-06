@@ -2529,6 +2529,175 @@ document.addEventListener('DOMContentLoaded', async () => {
     await refreshSessions();
     updatePopupHeight(); // Update height after refresh
   });
+
+  // ============= Update System (v3.2.5+) =============
+
+  async function initializeUpdateSystem() {
+    try {
+      const response = await sendMessage({ action: 'getPendingUpdate' });
+      if (response && response.success && response.updateAvailable) {
+        showUpdateAvailable(response.updateInfo);
+      }
+    } catch (error) {
+      console.error('[Update] Error checking for updates:', error);
+    }
+  }
+
+  function showUpdateAvailable(updateInfo) {
+    const section = $('#updateSection');
+    section.style.display = 'block';
+
+    const currentVersion = chrome.runtime.getManifest().version;
+    $('#updateVersionInfo').textContent = `v${currentVersion} → v${updateInfo.version}`;
+
+    const sizeKB = (updateInfo.size_bytes / 1024).toFixed(0);
+    $('#updateSize').textContent = `Size: ${sizeKB} KB`;
+
+    const changelog = updateInfo.changelog || 'No changelog available';
+    $('#changelogContent').innerHTML = `<pre>${escapeHtml(changelog)}</pre>`;
+
+    updatePopupHeight();
+  }
+
+  async function downloadUpdate(updateInfo) {
+    const btn = $('#downloadUpdateBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span>Downloading...</span>';
+
+    try {
+      const downloadId = await new Promise((resolve, reject) => {
+        chrome.downloads.download({
+          url: updateInfo.url,
+          filename: `Sessner-Multi-Session_Manager_v${updateInfo.version}.zip`,
+          saveAs: true
+        }, (id) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(id);
+          }
+        });
+      });
+
+      // Monitor download progress
+      chrome.downloads.onChanged.addListener(function handler(delta) {
+        if (delta.id === downloadId) {
+          if (delta.state && delta.state.current === 'complete') {
+            chrome.downloads.onChanged.removeListener(handler);
+            showInstallInstructions(updateInfo, downloadId);
+          } else if (delta.error) {
+            chrome.downloads.onChanged.removeListener(handler);
+            alert('Download failed: ' + delta.error.current);
+            btn.disabled = false;
+            btn.innerHTML = `
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span>Download</span>
+            `;
+          }
+        }
+      });
+    } catch (error) {
+      alert('Download failed: ' + error.message);
+      btn.disabled = false;
+      btn.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        <span>Download</span>
+      `;
+    }
+  }
+
+  function showInstallInstructions(updateInfo, downloadId) {
+    $('#downloadUpdateBtn').style.display = 'none';
+    $('#installInstructions').style.display = 'block';
+
+    const extensionId = chrome.runtime.id;
+    const pathTemplate = getExtensionPath(extensionId, updateInfo.version);
+    $('#pathTemplatePath').textContent = pathTemplate;
+
+    setupInstallInstructionHandlers(pathTemplate, downloadId);
+    updatePopupHeight();
+  }
+
+  function getExtensionPath(extensionId, version) {
+    const platform = navigator.platform.toLowerCase();
+    const browserName = getBrowserName();
+
+    if (platform.includes('win')) {
+      return `C:\\Users\\[YourName]\\AppData\\Local\\${browserName}\\User Data\\Default\\Extensions\\${extensionId}\\${version}_0`;
+    } else if (platform.includes('mac')) {
+      return `~/Library/Application Support/${browserName}/Default/Extensions/${extensionId}/${version}_0`;
+    } else {
+      return `~/.config/${browserName.toLowerCase()}/Default/Extensions/${extensionId}/${version}_0`;
+    }
+  }
+
+  function getBrowserName() {
+    const ua = navigator.userAgent.toLowerCase();
+    if (ua.includes('edg/')) return 'Microsoft Edge';
+    if (ua.includes('brave')) return 'BraveSoftware/Brave-Browser';
+    if (ua.includes('opr/') || ua.includes('opera')) return 'Opera';
+    if (ua.includes('vivaldi')) return 'Vivaldi';
+    return 'Chrome';
+  }
+
+  function getExtensionsPageUrl() {
+    const ua = navigator.userAgent.toLowerCase();
+    if (ua.includes('edg/')) return 'edge://extensions';
+    if (ua.includes('brave')) return 'brave://extensions';
+    if (ua.includes('opr/') || ua.includes('opera')) return 'opera://extensions';
+    if (ua.includes('vivaldi')) return 'vivaldi://extensions';
+    return 'chrome://extensions';
+  }
+
+  function setupInstallInstructionHandlers(pathTemplate, downloadId) {
+    $('#copyPathBtn').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(pathTemplate);
+        const btn = $('#copyPathBtn');
+        const originalHTML = btn.innerHTML;
+        btn.innerHTML = '✓';
+        setTimeout(() => btn.innerHTML = originalHTML, 2000);
+      } catch (error) {
+        alert('Failed to copy path');
+      }
+    });
+
+    $('#openExtensionsBtn').addEventListener('click', () => {
+      chrome.tabs.create({ url: getExtensionsPageUrl() });
+    });
+
+    $('#extensionsPageLabel').textContent = getExtensionsPageUrl();
+
+    $('#openDownloadsBtn').addEventListener('click', () => {
+      chrome.downloads.show(downloadId);
+    });
+
+    $('#reloadExtensionBtn').addEventListener('click', () => {
+      chrome.runtime.reload();
+    });
+  }
+
+  // Initialize update system
+  await initializeUpdateSystem();
+
+  // Download button handler
+  const downloadBtn = $('#downloadUpdateBtn');
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', async () => {
+      const response = await sendMessage({ action: 'getPendingUpdate' });
+      if (response && response.updateAvailable) {
+        await downloadUpdate(response.updateInfo);
+      }
+    });
+  }
 });
 
 console.log('Popup script loaded');

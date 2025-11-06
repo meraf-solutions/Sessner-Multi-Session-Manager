@@ -1,8 +1,8 @@
 # Extension API Documentation
 ## Sessner  Multi-Session Manager
 
-**Last Updated:** 2025-10-31
-**Extension Version:** 3.2.0
+**Last Updated:** 2025-11-06
+**Extension Version:** 3.2.5
 **Manifest Version:** 2
 
 ---
@@ -1068,6 +1068,154 @@ chrome.runtime.sendMessage(
 
 ---
 
+### Update System
+
+#### checkForUpdates
+
+**Status:** ✅ Implemented (2025-11-06, v3.2.5)
+
+Checks the license server API for available extension updates.
+
+**Tier Availability:** All Tiers (Free, Premium, Enterprise)
+
+**Request:**
+```javascript
+{
+  action: 'checkForUpdates'
+}
+```
+
+**Response:**
+```javascript
+{
+  success: boolean,
+  updateAvailable: boolean,
+  currentVersion: string,       // e.g., "3.2.5"
+  latestVersion?: string,       // e.g., "3.2.6"
+  updateInfo?: {
+    version: string,
+    url: string,                // HTTPS .zip download URL
+    changelog: string,          // Newline-separated changelog
+    size_bytes: number          // File size in bytes
+  },
+  message?: string,             // Human-readable message
+  error?: string                // Error message if check failed
+}
+```
+
+**Example:**
+```javascript
+chrome.runtime.sendMessage(
+  { action: 'checkForUpdates' },
+  (response) => {
+    if (response.success && response.updateAvailable) {
+      console.log(`Update available: ${response.currentVersion} → ${response.latestVersion}`);
+      console.log(`Download URL: ${response.updateInfo.url}`);
+      console.log(`Changelog:\n${response.updateInfo.changelog}`);
+    } else if (response.success) {
+      console.log('No update available (already on latest version)');
+    } else {
+      console.error('Update check failed:', response.error);
+    }
+  }
+);
+```
+
+**API Endpoint:**
+```
+${API_BASE_URL}/api/product/changelog/Sessner/${SECRET_KEY_RETRIEVE}
+```
+
+**API Response Format:**
+```json
+{
+  "version": "3.2.6",
+  "url": "https://sandbox.merafsolutions.com/download/Sessner/Sessner-Multi-Session_Manager_v3.2.6.zip",
+  "changelog": "3.2.6~date: 2025-11-06\r\n- Bug fixes\r\n- Performance improvements"
+}
+```
+
+**Version Comparison:**
+- Uses semantic versioning (3.2.6 > 3.2.5)
+- Handles edge cases: 3.2.10 > 3.2.9 (not string comparison)
+
+**Security Validation:**
+- URL must use HTTPS protocol
+- URL must end with `.zip` extension
+- URL domain must be `merafsolutions.com`
+- Version must be newer than current version
+
+**Update Check Triggers:**
+- Extension startup (10-second delay)
+- Periodic alarm (every 24 hours via chrome.alarms)
+- Manual check via this API
+
+**Related Documentation:**
+- **Implementation:** background.js lines 5984-6186 (update system)
+- **Message Handler:** background.js lines 5435-5445
+- **UI Integration:** popup.js lines 2535-2700, popup.html lines 2278-2412
+
+---
+
+#### getPendingUpdate
+
+**Status:** ✅ Implemented (2025-11-06, v3.2.5)
+
+Retrieves the pending update information if an update is available and has been checked.
+
+**Tier Availability:** All Tiers (Free, Premium, Enterprise)
+
+**Request:**
+```javascript
+{
+  action: 'getPendingUpdate'
+}
+```
+
+**Response:**
+```javascript
+{
+  success: boolean,
+  updateAvailable: boolean,
+  updateInfo?: {
+    version: string,
+    url: string,
+    changelog: string,
+    size_bytes: number
+  }
+}
+```
+
+**Example:**
+```javascript
+chrome.runtime.sendMessage(
+  { action: 'getPendingUpdate' },
+  (response) => {
+    if (response.success && response.updateAvailable) {
+      // Show update banner in UI
+      showUpdateBanner(response.updateInfo);
+    }
+  }
+);
+```
+
+**Usage:**
+- Called by popup on load to show update banner if available
+- Does NOT perform a new API check (uses cached result from last check)
+- Returns immediately with stored update info or null
+
+**Storage:**
+- Update info stored in `chrome.storage.local.pendingUpdate`
+- Persists across browser sessions
+- Cleared after user downloads update
+
+**Related Documentation:**
+- **Implementation:** background.js lines 6152-6186 (getPendingUpdate function)
+- **Message Handler:** background.js lines 5447-5457
+- **UI Integration:** popup.js lines 2535-2544
+
+---
+
 ### Cookie Management
 
 #### getCookies
@@ -2109,6 +2257,122 @@ chrome.browserAction.setBadgeBackgroundColor({
   tabId: tabId
 });
 ```
+
+---
+
+### chrome.downloads
+
+**Status:** ✅ Implemented (2025-11-06, v3.2.5)
+
+Used for downloading update ZIP files.
+
+#### download
+
+**Purpose**: Download update ZIP files from license server
+
+**Usage:**
+```javascript
+chrome.downloads.download({
+  url: 'https://sandbox.merafsolutions.com/download/Sessner/Sessner-Multi-Session_Manager_v3.2.6.zip',
+  filename: 'Sessner-Multi-Session_Manager_v3.2.6.zip',
+  saveAs: true  // Prompt user for location
+}, (downloadId) => {
+  if (chrome.runtime.lastError) {
+    console.error('Download failed:', chrome.runtime.lastError.message);
+  } else {
+    console.log('Download started with ID:', downloadId);
+  }
+});
+```
+
+**Permissions Required:**
+- `downloads`
+
+---
+
+#### onChanged
+
+**Purpose**: Monitor download progress and completion
+
+**Usage:**
+```javascript
+chrome.downloads.onChanged.addListener(function handler(delta) {
+  if (delta.id === downloadId) {
+    if (delta.state && delta.state.current === 'complete') {
+      chrome.downloads.onChanged.removeListener(handler);
+      console.log('Download complete!');
+      // Show installation instructions
+    } else if (delta.error) {
+      chrome.downloads.onChanged.removeListener(handler);
+      console.error('Download failed:', delta.error.current);
+    }
+  }
+});
+```
+
+---
+
+#### show
+
+**Purpose**: Open the downloads folder showing the downloaded file
+
+**Usage:**
+```javascript
+chrome.downloads.show(downloadId);
+```
+
+**Related Documentation:**
+- **Implementation:** popup.js lines 2562-2615 (downloadUpdate function)
+- **Update System:** background.js lines 5984-6186
+
+---
+
+### chrome.alarms
+
+**Status:** ✅ Implemented (2025-11-06, v3.2.5)
+
+Used for periodic tasks (replaces setInterval for persistent background pages).
+
+#### create
+
+**Purpose**: Schedule periodic update checks
+
+**Usage:**
+```javascript
+// Create periodic alarm (every 24 hours)
+chrome.alarms.create('updateChecker', {
+  periodInMinutes: 24 * 60  // 24 hours
+});
+
+// Create one-time alarm (10-second delay)
+chrome.alarms.create('startupCheck', {
+  delayInMinutes: 10 / 60  // 10 seconds
+});
+```
+
+**Permissions Required:**
+- `alarms`
+
+---
+
+#### onAlarm
+
+**Purpose**: Handle alarm events
+
+**Usage:**
+```javascript
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'updateChecker') {
+    checkForUpdates(false).catch(error => {
+      console.error('[Update] Periodic check failed:', error);
+    });
+  }
+});
+```
+
+**Related Documentation:**
+- **Implementation:** background.js lines 5972-5977 (alarm handler)
+- **Initialization:** background.js lines 6000-6006 (alarm creation)
 
 ---
 

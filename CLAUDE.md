@@ -243,7 +243,8 @@ This extension uses **Manifest V2** which provides the `webRequestBlocking` API 
 - Alternative Chromium browsers (Edge, Brave, Opera, Vivaldi) continue to support MV2
 
 **Installation Method:**
-- **Production**: .CRX file drag-and-drop to browser's extension page
+- **Production**: ZIP file extraction + Load unpacked on browser's extension page
+- **Automatic Updates**: In-app update system (v3.2.5+) downloads ZIP and guides users through extraction
 - **Development**: Load unpacked (developer mode) on Edge/Brave/Opera/Vivaldi only
 - **Not available**: Chrome Web Store (Chrome blocks MV2), Firefox Add-ons (different API)
 
@@ -1422,20 +1423,31 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 
 ### Installation
 
+**Production Method (ZIP Package)**:
 ```
-1. User drags .CRX file to browser's extension page (edge://extensions/, brave://extensions/, etc.)
-2. Browser creates extension context (Edge/Brave/Opera/Vivaldi)
-3. background.js loads
-4. chrome.runtime.onInstalled fires
-5. loadPersistedSessions() called
-6. If first install: sessionStore is empty
-7. Extension ready, icon appears in toolbar
+1. User downloads .zip file from releases
+2. User extracts ZIP to local folder
+3. User opens browser's extension page (edge://extensions/, brave://extensions/, etc.)
+4. User enables "Developer mode"
+5. User clicks "Load unpacked" and selects extracted folder
+6. Browser creates extension context (Edge/Brave/Opera/Vivaldi)
+7. background.js loads
+8. chrome.runtime.onInstalled fires
+9. loadPersistedSessions() called
+10. If first install: sessionStore is empty
+11. Extension ready, icon appears in toolbar
 ```
 
-**Alternative (Development)**:
+**Automatic Update Method (v3.2.5+)**:
 ```
-1. Developer loads unpacked extension (Developer mode ON)
-2. Only works on Edge/Brave/Opera/Vivaldi (Chrome blocks MV2)
+1. Extension checks for updates (startup + every 24 hours)
+2. If update available, shows update banner in popup
+3. User clicks "Download" button
+4. ZIP downloads via chrome.downloads.download()
+5. Extension shows installation instructions with path template
+6. User extracts ZIP and replaces files in extension folder
+7. User clicks "Reload Extension" button
+8. Extension reloads via chrome.runtime.reload()
 ```
 
 ### Browser Startup
@@ -1453,10 +1465,11 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 
 ### Extension Update
 
+**Manual Update Method**:
 ```
-1. User downloads new .CRX file
-2. User drags .CRX to browser's extension page
-3. Browser prompts to update extension
+1. User downloads new .zip file
+2. User extracts ZIP to replace files in extension folder
+3. User clicks "Reload" on browser's extension page (or uses in-app reload button)
 4. Old extension context terminates
 5. New extension context starts
 6. background.js loads
@@ -1466,7 +1479,26 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 10. Extension ready with new version
 ```
 
-**Note**: No automatic updates (not available in official stores due to MV2)
+**Automatic Update System (v3.2.5+)**:
+```
+1. Background script checks for updates via license server API
+   - API endpoint: ${baseUrl}/api/product/changelog/Sessner/${SECRET_KEY_RETRIEVE}
+   - Response: { version, url, changelog }
+2. Version comparison (semantic versioning: 3.2.5 > 3.2.4)
+3. Security validation (HTTPS, .zip extension, merafsolutions.com domain)
+4. If update available, stores in chrome.storage.local
+5. Popup shows update banner with version info, size, and changelog
+6. User clicks "Download" → chrome.downloads.download()
+7. Popup shows installation instructions with platform-specific path template
+8. User extracts ZIP and replaces files
+9. User clicks "Reload Extension" → chrome.runtime.reload()
+10. Update complete
+```
+
+**Update Check Triggers**:
+- Extension startup (10-second delay)
+- Periodic alarm (every 24 hours via chrome.alarms)
+- Manual check via message API
 
 ### Uninstallation
 
@@ -1505,7 +1537,7 @@ console.log(window.__COOKIE_OVERRIDE_INSTALLED__); // Should be true
 7. **Performance**: Large cookie stores (1000+ cookies) may slow persistence
 8. **Storage Quota**: chrome.storage.local 10MB limit (unlikely to hit)
 9. **Color Reuse**: Only 12 colors, sessions may share if >12 exist
-10. **Installation Method**: .CRX drag-and-drop only (not available in official stores)
+10. **Installation Method**: ZIP extraction + Load unpacked (not available in official stores due to MV2)
 
 ## Comparison to Alternatives
 
