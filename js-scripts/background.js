@@ -6535,8 +6535,10 @@ async function fetchFolderFiles(baseUrl, folderPath, excludedPaths) {
       if (response.ok) {
         const contentType = response.headers.get('Content-Type') || '';
 
-        // Skip if it's a directory listing
-        if (contentType.includes('text/html')) {
+        // Skip if it's a directory listing (text/html without file extension)
+        // But allow actual HTML files (text/html WITH file extension like .html)
+        const hasFileExtension = /\.(html|js|json|css|png|jpg|jpeg|svg|gif|txt|md|woff|woff2|ttf|eot|ico)$/i.test(filePath);
+        if (contentType.includes('text/html') && !hasFileExtension) {
           console.log(`[Release] Skipping directory listing: ${filePath}`);
           continue;
         }
