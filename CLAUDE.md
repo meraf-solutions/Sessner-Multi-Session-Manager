@@ -1,8 +1,8 @@
 # Multi-Session Browser Extension - Technical Documentation
 
-**Extension Version:** 3.2.4
+**Extension Version:** 3.2.5
 **Manifest:** V2 (MV2)
-**Last Updated:** 2025-11-05 (MV2 Browser Compatibility Documentation)
+**Last Updated:** 2025-11-09 (Critical Bug Fix: Session ID Staleness)
 **Browser Compatibility:** Edge, Brave, Opera, Vivaldi (NOT Chrome - MV2 deprecated)
 
 ## 📚 Documentation Structure
@@ -1860,6 +1860,128 @@ if (!shouldAutoRestore) {
 
 **Before v3.2.4**: Enterprise tier (auto-restore disabled) → Sessions DELETED → Data loss ❌
 **After v3.2.4**: Enterprise tier (auto-restore disabled) → Sessions DORMANT → URLs/cookies preserved ✅
+
+---
+
+### Session ID Staleness Bug Fix (✅ Fixed 2025-11-09)
+
+**Status**: Production Ready - v3.2.5 (Critical Bug Fix)
+
+**Bug Description**: After 2+ hours of tab inactivity, refreshing a session tab would cause it to capture storage/cookies from a different session, breaking session isolation.
+
+**Root Cause**:
+- Content scripts cached session ID once during page load
+- Session ID was **never refreshed** after initial fetch
+- After long periods of inactivity:
+  - Background script's `tabToSession` mapping may change
+  - Content scripts still used **stale session ID**
+  - This caused cross-session data leakage
+
+**Affected Files**:
+- `js-scripts/content-script-storage.js` (localStorage/sessionStorage isolation)
+- `js-scripts/content-script-cookie.js` (document.cookie isolation)
+
+**Fix Implementation**:
+
+**1. Session ID Refresh Mechanism** (Both Content Scripts):
+```javascript
+async function fetchSessionId(isRefresh = false) {
+  // ... existing retry logic ...
+
+  if (response && response.success && response.sessionId) {
+    const oldSessionId = currentSessionId;
+    currentSessionId = response.sessionId;
+
+    // Detect and log session ID changes
+    if (isRefresh && oldSessionId !== currentSessionId) {
+      console.warn('⚠ Session ID changed!');
+      console.warn(`Old: ${oldSessionId} → New: ${currentSessionId}`);
+    }
+  }
+}
+
+async function refreshSessionId() {
+  console.log('Refreshing session ID...');
+  await fetchSessionId(true);
+}
+```
+
+**2. Auto-Refresh Triggers**:
+
+**Visibility Change** (when tab becomes visible after being hidden):
+```javascript
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    console.log('Page became visible, refreshing session ID');
+    refreshSessionId().catch(err => {
+      console.error('Error refreshing session ID:', err);
+    });
+  }
+});
+```
+
+**Focus Event** (when tab/window gains focus):
+```javascript
+window.addEventListener('focus', () => {
+  console.log('Page focused, refreshing session ID');
+  refreshSessionId().catch(err => {
+    console.error('Error refreshing session ID:', err);
+  });
+});
+```
+
+**3. Cookie Cache Refresh** (Injected Page Script):
+```javascript
+// Inside document.cookie override installation
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    console.log('[Cookie Isolation - Page] Page became visible, refreshing cookie cache');
+    fetchCookies(true).catch(err => {
+      console.error('[Cookie Isolation - Page] Error refreshing cookie cache:', err);
+    });
+  }
+});
+
+window.addEventListener('focus', () => {
+  console.log('[Cookie Isolation - Page] Page focused, refreshing cookie cache');
+  fetchCookies(true).catch(err => {
+    console.error('[Cookie Isolation - Page] Error refreshing cookie cache:', err);
+  });
+});
+```
+
+**Expected Behavior After Fix**:
+1. User opens 2 sessions to same URL (e.g., example.com)
+2. Both sessions idle for 2+ hours
+3. User switches to second session tab (triggers `visibilitychange` + `focus` events)
+4. Session ID is automatically refreshed from background script
+5. User refreshes page → Correct session's storage/cookies are used ✅
+
+**Debug Logs**:
+- `[Storage Isolation] Page became visible, refreshing session ID`
+- `[Storage Isolation] Session ID refreshed (unchanged): session_123...`
+- `[Cookie Isolation] Page became visible, refreshing session ID`
+- `[Cookie Isolation - Page] Page became visible, refreshing cookie cache`
+
+**Warning Logs** (if session mapping changed):
+- `⚠ Session ID changed!`
+- `Old: session_123... → New: session_456...`
+
+**Testing Reproduction Steps**:
+1. Create 2 new sessions
+2. Navigate both to same URL (e.g., https://httpbin.org/cookies)
+3. Set different cookies in each session via console
+4. Wait 2 hours **OR** simulate by:
+   - Open DevTools → Background script console
+   - Manually modify `sessionStore.tabToSession` mapping
+5. Switch to second session tab (activates refresh)
+6. Refresh page
+7. Verify correct session's cookies are displayed
+
+**Impact**: This fix prevents session isolation breaches that could cause:
+- Account confusion (logged into wrong account)
+- Data leakage between sessions
+- Security issues (accessing wrong user's data)
 
 ---
 

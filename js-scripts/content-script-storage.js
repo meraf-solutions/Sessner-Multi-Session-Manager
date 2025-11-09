@@ -373,9 +373,11 @@
   /**
    * Fetches the current session ID from the background script with retry logic
    * SECURITY FIX: Removed 'default' fallback - fail explicitly instead
+   * BUG FIX (2025-11-09): Added session ID refresh mechanism to prevent stale cache
+   * @param {boolean} isRefresh - Whether this is a refresh (not initial fetch)
    * @returns {Promise<boolean>}
    */
-  async function fetchSessionId() {
+  async function fetchSessionId(isRefresh = false) {
     let attempts = 0;
     const maxAttempts = 5;
     const delays = [100, 500, 1000, 2000, 3000]; // Increasing delays in milliseconds
@@ -389,15 +391,26 @@
         });
 
         if (response && response.success && response.sessionId) {
+          const oldSessionId = currentSessionId;
           currentSessionId = response.sessionId;
           sessionIdReady = true;
-          console.log('%c[Storage Isolation] ✓ Session ready:', 'color: green; font-weight: bold', currentSessionId);
+
+          if (isRefresh && oldSessionId !== currentSessionId) {
+            console.warn('%c[Storage Isolation] ⚠ Session ID changed!', 'color: orange; font-weight: bold');
+            console.warn(`[Storage Isolation] Old: ${oldSessionId} → New: ${currentSessionId}`);
+          } else if (!isRefresh) {
+            console.log('%c[Storage Isolation] ✓ Session ready:', 'color: green; font-weight: bold', currentSessionId);
+          } else {
+            console.debug(`[Storage Isolation] Session ID refreshed (unchanged): ${currentSessionId}`);
+          }
 
           // Visual indicator disabled to prevent interference with website functionality
           // (some websites read all DOM elements, causing the indicator to appear in error dialogs)
 
-          // Process queued operations
-          executePendingOperations();
+          // Process queued operations (only on initial fetch)
+          if (!isRefresh) {
+            executePendingOperations();
+          }
           return true;
         }
       } catch (error) {
@@ -421,6 +434,39 @@
     // DO NOT execute pending operations - let them fail
     return false;
   }
+
+  /**
+   * BUG FIX (2025-11-09): Refresh session ID to prevent stale cache
+   * Called when page becomes visible or focused after period of inactivity
+   */
+  async function refreshSessionId() {
+    console.log('[Storage Isolation] Refreshing session ID...');
+    await fetchSessionId(true);
+  }
+
+  /**
+   * BUG FIX (2025-11-09): Listen for page visibility changes
+   * This prevents stale session ID after long periods of inactivity
+   */
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      console.log('[Storage Isolation] Page became visible, refreshing session ID');
+      refreshSessionId().catch(err => {
+        console.error('[Storage Isolation] Error refreshing session ID:', err);
+      });
+    }
+  });
+
+  /**
+   * BUG FIX (2025-11-09): Listen for page focus events
+   * This catches cases where visibility API doesn't fire
+   */
+  window.addEventListener('focus', () => {
+    console.log('[Storage Isolation] Page focused, refreshing session ID');
+    refreshSessionId().catch(err => {
+      console.error('[Storage Isolation] Error refreshing session ID:', err);
+    });
+  });
 
   // Visual indicator function removed to prevent interference with website functionality
   // Console logging (line 377) is sufficient for debugging session initialization

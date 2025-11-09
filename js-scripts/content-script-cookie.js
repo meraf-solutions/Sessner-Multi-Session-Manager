@@ -241,6 +241,25 @@
         // Fetch initial cookies
         fetchCookies();
 
+        // BUG FIX (2025-11-09): Refresh cookie cache when page becomes visible
+        // This prevents stale cookie cache after long periods of inactivity
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') {
+            console.log('[Cookie Isolation - Page] Page became visible, refreshing cookie cache');
+            fetchCookies(true).catch(err => {
+              console.error('[Cookie Isolation - Page] Error refreshing cookie cache:', err);
+            });
+          }
+        });
+
+        // BUG FIX (2025-11-09): Refresh cookie cache when page gains focus
+        window.addEventListener('focus', () => {
+          console.log('[Cookie Isolation - Page] Page focused, refreshing cookie cache');
+          fetchCookies(true).catch(err => {
+            console.error('[Cookie Isolation - Page] Error refreshing cookie cache:', err);
+          });
+        });
+
       } else {
         console.error('[Cookie Isolation - Page] document.cookie is not configurable, cannot override');
       }
@@ -284,9 +303,11 @@
 
   /**
    * Fetches the current session ID from background script with retry logic
+   * BUG FIX (2025-11-09): Added session ID refresh mechanism to prevent stale cache
+   * @param {boolean} isRefresh - Whether this is a refresh (not initial fetch)
    * @returns {Promise<boolean>}
    */
-  async function fetchSessionId() {
+  async function fetchSessionId(isRefresh = false) {
     let attempts = 0;
     const maxAttempts = 5;
     const delays = [100, 500, 1000, 2000, 3000]; // Increasing delays in milliseconds
@@ -300,8 +321,17 @@
         });
 
         if (response && response.success && response.sessionId) {
+          const oldSessionId = currentSessionId;
           currentSessionId = response.sessionId;
-          console.log('%c[Cookie Isolation] ✓ Session ready:', 'color: green; font-weight: bold', currentSessionId);
+
+          if (isRefresh && oldSessionId !== currentSessionId) {
+            console.warn('%c[Cookie Isolation] ⚠ Session ID changed!', 'color: orange; font-weight: bold');
+            console.warn(`[Cookie Isolation] Old: ${oldSessionId} → New: ${currentSessionId}`);
+          } else if (!isRefresh) {
+            console.log('%c[Cookie Isolation] ✓ Session ready:', 'color: green; font-weight: bold', currentSessionId);
+          } else {
+            console.debug(`[Cookie Isolation] Session ID refreshed (unchanged): ${currentSessionId}`);
+          }
           return true;
         }
       } catch (error) {
@@ -322,6 +352,39 @@
     currentSessionId = null;
     return false;
   }
+
+  /**
+   * BUG FIX (2025-11-09): Refresh session ID to prevent stale cache
+   * Called when page becomes visible or focused after period of inactivity
+   */
+  async function refreshSessionId() {
+    console.log('[Cookie Isolation] Refreshing session ID...');
+    await fetchSessionId(true);
+  }
+
+  /**
+   * BUG FIX (2025-11-09): Listen for page visibility changes
+   * This prevents stale session ID after long periods of inactivity
+   */
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      console.log('[Cookie Isolation] Page became visible, refreshing session ID');
+      refreshSessionId().catch(err => {
+        console.error('[Cookie Isolation] Error refreshing session ID:', err);
+      });
+    }
+  });
+
+  /**
+   * BUG FIX (2025-11-09): Listen for page focus events
+   * This catches cases where visibility API doesn't fire
+   */
+  window.addEventListener('focus', () => {
+    console.log('[Cookie Isolation] Page focused, refreshing session ID');
+    refreshSessionId().catch(err => {
+      console.error('[Cookie Isolation] Error refreshing session ID:', err);
+    });
+  });
 
   /**
    * Handles messages from the injected page script
