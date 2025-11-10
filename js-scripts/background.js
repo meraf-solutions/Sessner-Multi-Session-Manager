@@ -311,6 +311,45 @@ function generateSessionId() {
   return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
 
+/**
+ * Promisified chrome.storage.local.get() for Manifest V2
+ * @param {string|string[]|Object} keys - Keys to retrieve
+ * @returns {Promise<Object>} Retrieved data
+ */
+function storageGet(keys) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(keys, (result) => {
+      resolve(result);
+    });
+  });
+}
+
+/**
+ * Promisified chrome.storage.local.set() for Manifest V2
+ * @param {Object} items - Items to store
+ * @returns {Promise<void>}
+ */
+function storageSet(items) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set(items, () => {
+      resolve();
+    });
+  });
+}
+
+/**
+ * Promisified chrome.storage.local.remove() for Manifest V2
+ * @param {string|string[]} keys - Keys to remove
+ * @returns {Promise<void>}
+ */
+function storageRemove(keys) {
+  return new Promise((resolve) => {
+    chrome.storage.local.remove(keys, () => {
+      resolve();
+    });
+  });
+}
+
 // ============= Tier-Based Color Palettes =============
 
 /**
@@ -6032,6 +6071,11 @@ const UPDATE_CHECK_INTERVAL = 24 * 60; // 24 hours in minutes
 function initializeUpdateChecker() {
   console.log('[Update] Initializing automatic update checker...');
 
+  // Validate pending update immediately (clears if extension was updated)
+  validatePendingUpdate().catch(error => {
+    console.error('[Update Check] Error validating pending update:', error);
+  });
+
   // Check on extension startup (after 10 seconds to let extension fully load)
   setTimeout(() => {
     checkForUpdates(false).catch(error => {
@@ -6045,6 +6089,63 @@ function initializeUpdateChecker() {
   });
 
   console.log('[Update] ✓ Scheduled periodic update checks (every 24 hours)');
+}
+
+/**
+ * Validates if pending update is still needed (extension may have been updated)
+ * Called on extension startup to clear stale update notifications
+ * @returns {Promise<void>}
+ */
+function validatePendingUpdate() {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.storage.local.get(['pendingUpdate'], (stored) => {
+        if (!stored.pendingUpdate) {
+          resolve();
+          return;
+        }
+
+        const manifestVersion = chrome.runtime.getManifest().version;
+        const pendingVersion = stored.pendingUpdate.version;
+
+        console.log('[Update Check] Validating pending update...');
+        console.log('[Update Check] Installed version:', manifestVersion);
+        console.log('[Update Check] Pending version:', pendingVersion);
+
+        // Compare versions (semantic versioning)
+        const installedParts = manifestVersion.split('.').map(Number);
+        const pendingParts = pendingVersion.split('.').map(Number);
+
+        let isOutdated = false;
+        for (let i = 0; i < Math.max(installedParts.length, pendingParts.length); i++) {
+          const installed = installedParts[i] || 0;
+          const pending = pendingParts[i] || 0;
+
+          if (pending > installed) {
+            isOutdated = true;
+            break;
+          } else if (installed > pending) {
+            break;
+          }
+        }
+
+        if (!isOutdated) {
+          console.log('[Update Check] ✓ Extension updated to', manifestVersion, '- clearing pending update');
+          chrome.storage.local.remove('pendingUpdate', () => {
+            // Clear badge if it was set for update notification
+            chrome.browserAction.setBadgeText({ text: '' });
+            resolve();
+          });
+        } else {
+          console.log('[Update Check] Extension still outdated - keeping pending update');
+          resolve();
+        }
+      });
+    } catch (error) {
+      console.error('[Update Check] Error validating pending update:', error);
+      reject(error);
+    }
+  });
 }
 
 /**
@@ -6091,7 +6192,7 @@ async function checkForUpdates(showNotification = false) {
       console.log(`[Update] ✓ New version available: ${data.version}`);
 
       // Store update info
-      await chrome.storage.local.set({
+      await storageSet({
         pendingUpdate: {
           version: data.version,
           url: data.url,
@@ -6122,7 +6223,7 @@ async function checkForUpdates(showNotification = false) {
       console.log('[Update] No updates available (current version is up-to-date)');
 
       // Clear any pending update
-      await chrome.storage.local.remove('pendingUpdate');
+      await storageRemove('pendingUpdate');
 
       // Clear badge
       chrome.browserAction.setBadgeText({ text: '' });

@@ -2536,7 +2536,46 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const response = await sendMessage({ action: 'getPendingUpdate' });
       if (response && response.success && response.updateAvailable) {
-        showUpdateAvailable(response.updateInfo);
+        // CLIENT-SIDE FAILSAFE: Validate version before showing banner
+        const manifestVersion = chrome.runtime.getManifest().version;
+        const pendingVersion = response.updateInfo.version;
+
+        console.log('[Update Banner] Validating stored update...');
+        console.log('[Update Banner] Installed:', manifestVersion, 'Pending:', pendingVersion);
+
+        // Compare versions (semantic versioning)
+        const installedParts = manifestVersion.split('.').map(Number);
+        const pendingParts = pendingVersion.split('.').map(Number);
+
+        let isOutdated = false;
+        for (let i = 0; i < Math.max(installedParts.length, pendingParts.length); i++) {
+          const installed = installedParts[i] || 0;
+          const pending = pendingParts[i] || 0;
+
+          if (pending > installed) {
+            isOutdated = true;
+            break;
+          } else if (installed > pending) {
+            break;
+          }
+        }
+
+        if (isOutdated) {
+          console.log('[Update Banner] Showing banner - extension outdated');
+          showUpdateAvailable(response.updateInfo);
+        } else {
+          console.log('[Update Banner] ✓ Extension up to date - clearing stale update data');
+          // Clear stale data from storage
+          chrome.storage.local.remove('pendingUpdate', () => {
+            console.log('[Update Banner] Cleared stale update data');
+          });
+
+          // Hide banner if it exists
+          const updateSection = $('#updateSection');
+          if (updateSection) {
+            updateSection.style.display = 'none';
+          }
+        }
       }
     } catch (error) {
       console.error('[Update] Error checking for updates:', error);
@@ -2698,6 +2737,29 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
   }
+
+  /**
+   * Listen for storage changes to dynamically update banner visibility
+   * Handles case where background script clears pendingUpdate after extension reload
+   */
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes.pendingUpdate) {
+      const updateSection = $('#updateSection');
+      if (!updateSection) return;
+
+      if (changes.pendingUpdate.newValue === undefined) {
+        // pendingUpdate was removed - hide banner
+        console.log('[Update Banner] Hiding banner - update cleared from storage');
+        updateSection.style.display = 'none';
+        updatePopupHeight();
+      } else if (changes.pendingUpdate.newValue) {
+        // pendingUpdate was added/updated - show banner
+        const updateInfo = changes.pendingUpdate.newValue;
+        console.log('[Update Banner] Showing banner - update detected in storage');
+        showUpdateAvailable(updateInfo);
+      }
+    }
+  });
 });
 
 console.log('Popup script loaded');
