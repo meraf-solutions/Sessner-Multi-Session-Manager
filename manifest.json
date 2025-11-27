@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Sessner – Multi-Session Manager for Chromium-based Browsers",
   "short_name": "Sessner",
-  "version": "3.2.7",
+  "version": "3.2.9",
   "description": "Run multiple accounts on any website with true session isolation. Each tab has separate cookies and storage. 100% local and private.",
   "permissions": [
     "webRequest",
